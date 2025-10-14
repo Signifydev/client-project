@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/lib/database';
+import { connectDB } from '@/lib/db';
 import Loan from '@/lib/models/Loan';
 import Customer from '@/lib/models/Customer';
-import EMI from '@/lib/models/EMI';
+import EMI from '@/lib/models/EMIPayment';
 
 export async function POST(request: NextRequest) {
   try {
