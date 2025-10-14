@@ -1,12 +1,11 @@
-import type { NextConfig } from 'next'
-
-const nextConfig: NextConfig = {
-  experimental: {
-    typedRoutes: false,
-  },
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+ 
+    typedRoutes: true,
+  
   typescript: {
     ignoreBuildErrors: true,
   },
 }
 
-export default nextConfig
+module.exports = nextConfig
