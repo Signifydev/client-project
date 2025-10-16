@@ -17,17 +17,16 @@ export async function GET() {
     ]);
     const totalAmount = totalAmountResult[0]?.total || 0;
     
-    const pendingEMIs = await EMIPayment.countDocuments({ 
-      status: 'Due',
-      paymentDate: { $lt: new Date() }
-    });
+    // REPLACE pendingEMIs with totalCustomers
+    // Count all active customers (since each customer represents one loan in your system)
+    const totalCustomers = await Customer.countDocuments({ status: 'active' });
     
     const pendingRequests = await Request.countDocuments({ status: 'Pending' });
     
     const stats = {
       totalLoans,
       totalAmount,
-      pendingEMIs,
+      totalCustomers, // Changed from pendingEMIs to totalCustomers
       pendingRequests
     };
     
