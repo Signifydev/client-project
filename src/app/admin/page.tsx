@@ -1773,26 +1773,66 @@ export default function DashboardPage() {
 
  const fetchPendingRequests = async () => {
   try {
-    const response = await fetch('/api/data-entry/requests');
+    console.log('🟡 Super Admin - Fetching pending requests...');
     
-    if (response.ok) {
-      const data = await response.json();
+    // Try different API endpoints - Super Admin should use admin endpoints
+    const response = await fetch('/api/admin/requests');
+    
+    if (!response.ok) {
+      console.log('❌ Admin requests failed, trying data-entry endpoint...');
+      // Fallback to data-entry endpoint
+      const fallbackResponse = await fetch('/api/data-entry/requests');
       
-      if (Array.isArray(data)) {
-        const validRequests = data.filter(req => {
-          const hasRequired = req.customerName || req.data?.customerName;
-          return hasRequired;
-        });
-        
+      if (!fallbackResponse.ok) {
+        throw new Error(`HTTP error! status: ${fallbackResponse.status}`);
+      }
+      
+      const fallbackData = await fallbackResponse.json();
+      console.log('🔵 Data-entry requests response:', fallbackData);
+      
+      // Handle data-entry response structure
+      if (fallbackData.success && Array.isArray(fallbackData.data?.requests)) {
+        const validRequests = fallbackData.data.requests.filter((req: any) => 
+          req.customerName || req.data?.customerName
+        );
+        console.log(`✅ Setting ${validRequests.length} requests from data-entry`);
         setPendingRequests(validRequests);
       } else {
+        console.warn('⚠️ No valid requests found in data-entry response');
         setPendingRequests([]);
       }
+      return;
+    }
+
+    // Handle admin endpoint response
+    const data = await response.json();
+    console.log('🔵 Admin requests response:', data);
+    
+    if (data.success) {
+      // Handle different response structures
+      let requestsArray = [];
+      
+      if (Array.isArray(data.data)) {
+        requestsArray = data.data;
+      } else if (Array.isArray(data.data?.requests)) {
+        requestsArray = data.data.requests;
+      } else if (Array.isArray(data.requests)) {
+        requestsArray = data.requests;
+      }
+      
+      const validRequests = requestsArray.filter((req: any) => 
+        req.customerName || req.data?.customerName
+      );
+      
+      console.log(`✅ Setting ${validRequests.length} requests from admin`);
+      setPendingRequests(validRequests);
     } else {
+      console.warn('⚠️ No requests array found in admin response');
       setPendingRequests([]);
     }
+    
   } catch (error) {
-    console.error('Error fetching requests:', error);
+    console.error('❌ Error fetching requests:', error);
     setPendingRequests([]);
   }
 };

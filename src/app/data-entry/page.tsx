@@ -22,6 +22,11 @@ interface Customer {
   businessType?: string;
   isActive?: boolean;
   createdAt?: string;
+  profilePicture?: string;
+  fiDocuments?: {
+    shop?: string;
+    home?: string;
+  };
 }
 
 interface Loan {
@@ -54,6 +59,11 @@ interface CustomerDetails {
   email?: string;
   businessType?: string;
   createdAt?: string;
+  profilePicture?: string;
+  fiDocuments?: {
+    shop?: string;
+    home?: string;
+  };
   loans?: Loan[];
 }
 
@@ -73,17 +83,32 @@ interface TodayStats {
   totalCollection: number;
 }
 
-interface NewCustomer {
+interface NewCustomerStep1 {
   name: string;
   phone: string;
   businessName: string;
   area: string;
   loanNumber: string;
+  address: string;
+  profilePicture: File | null;
+  fiDocuments: {
+    shop: File | null;
+    home: File | null;
+  };
+}
+
+interface NewCustomerStep2 {
+  loanDate: string;
   loanAmount: string;
   emiAmount: string;
+  loanDays: string;
   loanType: string;
-  address: string;
-  createdBy: string;
+}
+
+interface NewCustomerStep3 {
+  loginId: string;
+  password: string;
+  confirmPassword: string;
 }
 
 interface EMIUpdate {
@@ -162,27 +187,36 @@ export default function DataEntryDashboard() {
   const [pendingRequests, setPendingRequests] = useState<Request[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  const [newCustomer, setNewCustomer] = useState<NewCustomer>({
+  // Step-by-step customer addition states
+  const [currentStep, setCurrentStep] = useState(1);
+  const [step1Data, setStep1Data] = useState<NewCustomerStep1>({
     name: '',
     phone: '',
     businessName: '',
     area: '',
     loanNumber: '',
+    address: '',
+    profilePicture: null,
+    fiDocuments: {
+      shop: null,
+      home: null
+    }
+  });
+  const [step2Data, setStep2Data] = useState<NewCustomerStep2>({
+    loanDate: new Date().toISOString().split('T')[0],
     loanAmount: '',
     emiAmount: '',
-    loanType: 'Daily',
-    address: '',
-    createdBy: 'data_entry_operator_1'
+    loanDays: '',
+    loanType: 'Daily'
   });
-
-  const [emiUpdate, setEmiUpdate] = useState<EMIUpdate>({
-    customerId: '',
-    customerName: '',
-    paymentDate: new Date().toISOString().split('T')[0],
-    amount: '',
-    status: 'Paid',
-    collectedBy: 'data_entry_operator_1'
+  const [step3Data, setStep3Data] = useState<NewCustomerStep3>({
+    loginId: '',
+    password: '',
+    confirmPassword: ''
   });
+  const [step1Errors, setStep1Errors] = useState<{[key: string]: string}>({});
+  const [step2Errors, setStep2Errors] = useState<{[key: string]: string}>({});
+  const [step3Errors, setStep3Errors] = useState<{[key: string]: string}>({});
 
   const filteredCustomers = customers.filter(customer => {
     const matchesSearch = searchQuery === '' || 
@@ -200,6 +234,648 @@ export default function DataEntryDashboard() {
       customer.status === filters.status;
 
     return matchesSearch && matchesLoanNumber && matchesLoanType && matchesStatus;
+  });
+
+  // Validation functions
+  const validateStep1 = () => {
+    const errors: {[key: string]: string} = {};
+    
+    if (!step1Data.name.trim()) {
+      errors.name = 'Customer name is required';
+    }
+    
+    if (!step1Data.phone.trim()) {
+      errors.phone = 'Phone number is required';
+    } else if (!/^\d{10}$/.test(step1Data.phone)) {
+      errors.phone = 'Please enter a valid 10-digit phone number';
+    }
+    
+    if (!step1Data.businessName.trim()) {
+      errors.businessName = 'Business name is required';
+    }
+    
+    if (!step1Data.area.trim()) {
+      errors.area = 'Area is required';
+    }
+    
+    if (!step1Data.loanNumber.trim()) {
+      errors.loanNumber = 'Loan number is required';
+    }
+    
+    if (!step1Data.address.trim()) {
+      errors.address = 'Address is required';
+    }
+    
+    setStep1Errors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const validateStep2 = () => {
+  const errors: {[key: string]: string} = {};
+  
+  if (!step2Data.loanDate) {
+    errors.loanDate = 'Loan date is required';
+  }
+  
+  const loanAmount = Number(step2Data.loanAmount);
+  if (!step2Data.loanAmount || isNaN(loanAmount) || loanAmount <= 0) {
+    errors.loanAmount = 'Valid loan amount is required';
+  }
+  
+  const emiAmount = Number(step2Data.emiAmount);
+  if (!step2Data.emiAmount || isNaN(emiAmount) || emiAmount <= 0) {
+    errors.emiAmount = 'Valid EMI amount is required';
+  }
+  
+  const loanDays = Number(step2Data.loanDays);
+  if (!step2Data.loanDays || isNaN(loanDays) || loanDays <= 0) {
+    errors.loanDays = 'Valid number of days is required';
+  }
+  
+  if (!step2Data.loanType) {
+    errors.loanType = 'Loan type is required';
+  }
+  
+  setStep2Errors(errors);
+  return Object.keys(errors).length === 0;
+};
+
+  // Replace your current validateStep3 function with:
+const validateStep3 = (): boolean => {
+  const errors: {[key: string]: string} = {};
+  
+  if (!step3Data.loginId.trim()) {
+    errors.loginId = 'Login ID is required';
+  }
+  
+  if (!step3Data.password) {
+    errors.password = 'Password is required';
+  } else if (step3Data.password.length < 6) {
+    errors.password = 'Password must be at least 6 characters';
+  }
+  
+  if (step3Data.password !== step3Data.confirmPassword) {
+    errors.confirmPassword = 'Passwords do not match';
+  }
+  
+  setStep3Errors(errors);
+  return Object.keys(errors).length === 0;
+};
+
+  const handleStep1Next = (): void => {
+  if (validateStep1()) {
+    setCurrentStep(2);
+  }
+};
+
+const handleStep2Next = (): void => {
+  if (validateStep2()) {
+    setCurrentStep(3);
+  }
+};
+
+const handleStep2Back = (): void => {
+  setCurrentStep(1);
+};
+
+const handleStep3Back = (): void => {
+  setCurrentStep(2);
+};
+
+  const handleFileUpload = (field: string, file: File | null, documentType?: 'shop' | 'home'): void => {
+  if (field === 'profilePicture') {
+    setStep1Data(prev => ({ ...prev, profilePicture: file }));
+  } else if (field === 'fiDocuments' && documentType) {
+    setStep1Data(prev => ({
+      ...prev,
+      fiDocuments: {
+        ...prev.fiDocuments,
+        [documentType]: file
+      }
+    }));
+  }
+};
+
+const generateLoginId = (): void => {
+  const namePart = step1Data.name.replace(/\s+/g, '').toLowerCase().substring(0, 4);
+  const randomPart = Math.floor(1000 + Math.random() * 9000);
+  const loginId = `${namePart}${randomPart}`;
+  setStep3Data(prev => ({ ...prev, loginId }));
+};
+
+const generatePassword = (): void => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
+  let password = '';
+  for (let i = 0; i < 8; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  setStep3Data(prev => ({ ...prev, password, confirmPassword: password }));
+};
+
+const resetCustomerForm = (): void => {
+  setCurrentStep(1);
+  setStep1Data({
+    name: '',
+    phone: '',
+    businessName: '',
+    area: '',
+    loanNumber: '',
+    address: '',
+    profilePicture: null,
+    fiDocuments: {
+      shop: null,
+      home: null
+    }
+  });
+  setStep2Data({
+    loanDate: new Date().toISOString().split('T')[0],
+    loanAmount: '',
+    emiAmount: '',
+    loanDays: '',
+    loanType: 'Daily'
+  });
+  setStep3Data({
+    loginId: '',
+    password: '',
+    confirmPassword: ''
+  });
+  setStep1Errors({});
+  setStep2Errors({});
+  setStep3Errors({});
+};
+
+  const fetchDashboardData = async () => {
+    try {
+      const statsResponse = await fetch('/api/data-entry/dashboard/stats');
+      if (!statsResponse.ok) throw new Error('Failed to fetch stats');
+      const statsData = await statsResponse.json();
+      setTodayStats(statsData);
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
+  };
+
+  const fetchCustomers = async () => {
+    try {
+      console.log('Fetching customers...');
+      const response = await fetch('/api/data-entry/customers');
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Customers API response:', data);
+        if (data.success) {
+          setCustomers(data.data || []);
+          console.log('Customers loaded:', data.data?.length || 0);
+        }
+      } else {
+        console.error('Failed to fetch customers');
+      }
+    } catch (error) {
+      console.error('Error fetching customers:', error);
+      setCustomers([]);
+    }
+  };
+
+  const fetchPendingRequests = async () => {
+  try {
+    console.log('🟡 Fetching pending requests...');
+    const response = await fetch('/api/data-entry/requests');
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log('🔵 Requests API Response:', data);
+    
+    // Your API returns: { success: true, data: { requests: [...] } }
+    if (data.success && data.data && Array.isArray(data.data.requests)) {
+      console.log(`✅ Setting ${data.data.requests.length} requests`);
+      setPendingRequests(data.data.requests);
+    } else {
+      console.warn('⚠️ No requests array found in response, setting empty array');
+      setPendingRequests([]);
+    }
+    
+  } catch (error) {
+    console.error('❌ Error fetching requests:', error);
+    // Ensure pendingRequests is always an array, even on error
+    setPendingRequests([]);
+  }
+};
+
+  useEffect(() => {
+    fetchDashboardData();
+    if (activeTab === 'customers') fetchCustomers();
+    if (activeTab === 'requests') fetchPendingRequests();
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (showUpdateEMI) {
+      console.log('EMI modal opened, fetching customers...');
+      fetchCustomers();
+    }
+  }, [showUpdateEMI]);
+
+  const handleViewDetails = async (customer: Customer) => {
+    try {
+      console.log('🔍 handleViewDetails called with customer:', customer);
+      setIsLoading(true);
+      
+      const customerId = customer._id || customer.id;
+      console.log('📋 Customer ID to fetch:', customerId);
+      
+      if (!customerId) {
+        alert('Customer ID not found');
+        setIsLoading(false);
+        return;
+      }
+
+      const response = await fetch(`/api/data-entry/customers/${customerId}`);
+      console.log('🌐 API Response status:', response.status);
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          console.log('⚠️ Customer not found in API, using basic data');
+          const customerDetailsData: CustomerDetails = {
+            _id: customer._id,
+            name: customer.name,
+            phone: customer.phone,
+            businessName: customer.businessName,
+            area: customer.area,
+            loanNumber: customer.loanNumber || 'N/A',
+            loanAmount: customer.loanAmount || 0,
+            emiAmount: customer.emiAmount || 0,
+            loanType: customer.loanType || 'Daily',
+            address: customer.address || '',
+            status: customer.status || 'active',
+            email: customer.email,
+            businessType: customer.businessType,
+            createdAt: customer.createdAt,
+            loans: []
+          };
+          
+          setCustomerDetails(customerDetailsData);
+          setShowCustomerDetails(true);
+          setIsLoading(false);
+          return;
+        }
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('📦 API Response data:', data);
+      
+      if (data.success) {
+        console.log('✅ Customer details fetched successfully:', data.data);
+        setCustomerDetails(data.data);
+        setShowCustomerDetails(true);
+      } else {
+        console.error('❌ API returned success:false', data.error);
+        alert('Failed to fetch customer details: ' + (data.error || 'Unknown error'));
+      }
+    } catch (error: any) {
+      console.error('💥 Error in handleViewDetails:', error);
+      const customerDetailsData: CustomerDetails = {
+        _id: customer._id,
+        name: customer.name,
+        phone: customer.phone,
+        businessName: customer.businessName,
+        area: customer.area,
+        loanNumber: customer.loanNumber || 'N/A',
+        loanAmount: customer.loanAmount || 0,
+        emiAmount: customer.emiAmount || 0,
+        loanType: customer.loanType || 'Daily',
+        address: customer.address || '',
+        status: customer.status || 'active',
+        email: customer.email,
+        businessType: customer.businessType,
+        createdAt: customer.createdAt,
+        loans: []
+      };
+      
+      setCustomerDetails(customerDetailsData);
+      setShowCustomerDetails(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEditCustomer = (customer: CustomerDetails) => {
+    setEditCustomerData({
+      name: customer.name,
+      phone: customer.phone,
+      businessName: customer.businessName,
+      area: customer.area,
+      loanNumber: customer.loanNumber,
+      loanAmount: customer.loanAmount.toString(),
+      emiAmount: customer.emiAmount.toString(),
+      loanType: customer.loanType,
+      address: customer.address || '',
+      customerId: customer._id
+    });
+    setShowEditCustomer(true);
+    setShowCustomerDetails(false);
+  };
+
+  const handleAddNewLoan = async () => {
+    if (!customerDetails) return;
+
+    setIsLoading(true);
+    try {
+      if (!newLoanData.amount || !newLoanData.emiAmount || !newLoanData.loanDays) {
+        alert('Please fill all required fields');
+        setIsLoading(false);
+        return;
+      }
+
+      console.log('Sending new loan data:', {
+        customerId: customerDetails._id,
+        customerName: customerDetails.name,
+        amount: Number(newLoanData.amount),
+        dateApplied: newLoanData.dateApplied,
+        emiAmount: Number(newLoanData.emiAmount),
+        loanType: newLoanData.loanType,
+        loanDays: Number(newLoanData.loanDays),
+        createdBy: 'data_entry_operator_1'
+      });
+
+      const response = await fetch('/api/data-entry/loans', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          customerId: customerDetails._id,
+          customerName: customerDetails.name,
+          amount: Number(newLoanData.amount),
+          dateApplied: newLoanData.dateApplied,
+          emiAmount: Number(newLoanData.emiAmount),
+          loanType: newLoanData.loanType,
+          loanDays: Number(newLoanData.loanDays),
+          createdBy: 'data_entry_operator_1'
+        }),
+      });
+
+      console.log('Response status:', response.status);
+
+      const responseText = await response.text();
+      console.log('Raw response:', responseText.substring(0, 200));
+
+      if (responseText.trim().startsWith('<!') || responseText.trim().startsWith('<html')) {
+        console.error('Server returned HTML instead of JSON. Likely a 404 error.');
+        throw new Error('API endpoint not found. Please check if the server route is properly configured.');
+      }
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('Failed to parse response as JSON:', parseError);
+        throw new Error('Server returned invalid JSON. Response: ' + responseText.substring(0, 200));
+      }
+
+      console.log('Parsed response data:', data);
+      
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+      }
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to add new loan');
+      }
+
+      alert(data.message || 'New loan added successfully!');
+      setShowAddLoanModal(false);
+      setNewLoanData({
+        amount: '',
+        dateApplied: new Date().toISOString().split('T')[0],
+        emiAmount: '',
+        loanType: 'Monthly',
+        loanDays: '30'
+      });
+      
+      if (customerDetails._id) {
+        await handleViewDetails(customerDetails);
+      }
+    } catch (error: any) {
+      console.error('Error adding new loan:', error);
+      alert('Error: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSaveEditCustomer = async () => {
+    setIsLoading(true);
+    try {
+      console.log('🔄 Starting edit customer request...');
+      console.log('📦 Edit data:', editCustomerData);
+
+      if (!editCustomerData.name || !editCustomerData.phone || !editCustomerData.area || !editCustomerData.loanNumber) {
+        alert('Please fill all required fields');
+        setIsLoading(false);
+        return;
+      }
+
+      const apiUrl = '/api/data-entry/edit-customer-request';
+      console.log('🌐 Calling API:', apiUrl);
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...editCustomerData,
+          loanAmount: Number(editCustomerData.loanAmount),
+          emiAmount: Number(editCustomerData.emiAmount),
+          requestedBy: 'data_entry_operator_1'
+        }),
+      });
+
+      console.log('📡 Response status:', response.status);
+
+      const responseText = await response.text();
+      console.log('📄 Raw response:', responseText);
+
+      if (responseText.trim().startsWith('<!') || responseText.trim().startsWith('<html')) {
+        console.error('❌ Server returned HTML instead of JSON. Likely a 404 error.');
+        throw new Error('API endpoint not found. Please check the server.');
+      }
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('❌ Failed to parse response as JSON:', parseError);
+        throw new Error('Server returned invalid JSON. Response: ' + responseText.substring(0, 200));
+      }
+
+      console.log('✅ Parsed response data:', data);
+      
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+      }
+
+      alert('Edit request submitted successfully! Waiting for admin approval.');
+      setShowEditCustomer(false);
+      setEditCustomerData({
+        name: '',
+        phone: '',
+        businessName: '',
+        area: '',
+        loanNumber: '',
+        loanAmount: '',
+        emiAmount: '',
+        loanType: 'Daily',
+        address: '',
+        customerId: ''
+      });
+      
+      if (activeTab === 'requests') fetchPendingRequests();
+    } catch (error: any) {
+      console.error('💥 Error in handleSaveEditCustomer:', error);
+      alert('Error: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAddCustomer = async () => {
+    if (!validateStep3()) return;
+
+    setIsLoading(true);
+    try {
+      // Create FormData to handle file uploads
+      const formData = new FormData();
+      
+      // Append step1 data
+      formData.append('name', step1Data.name);
+      formData.append('phone', step1Data.phone);
+      formData.append('businessName', step1Data.businessName);
+      formData.append('area', step1Data.area);
+      formData.append('loanNumber', step1Data.loanNumber);
+      formData.append('address', step1Data.address);
+      
+      // Append files
+      if (step1Data.profilePicture) {
+        formData.append('profilePicture', step1Data.profilePicture);
+      }
+      if (step1Data.fiDocuments.shop) {
+        formData.append('fiDocumentShop', step1Data.fiDocuments.shop);
+      }
+      if (step1Data.fiDocuments.home) {
+        formData.append('fiDocumentHome', step1Data.fiDocuments.home);
+      }
+      
+      // Append step2 data
+      formData.append('loanDate', step2Data.loanDate);
+      formData.append('loanAmount', step2Data.loanAmount);
+      formData.append('emiAmount', step2Data.emiAmount);
+      formData.append('loanDays', step2Data.loanDays);
+      formData.append('loanType', step2Data.loanType);
+      
+      // Append step3 data
+      formData.append('loginId', step3Data.loginId);
+      formData.append('password', step3Data.password);
+      formData.append('createdBy', 'data_entry_operator_1');
+
+      const response = await fetch('/api/data-entry/customers', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        if (response.status === 409) {
+          if (data.field === 'phone') {
+            throw new Error('Customer with this phone number already exists');
+          } else if (data.field === 'loanNumber') {
+            throw new Error('Loan number already exists. Please use a unique loan number');
+          }
+        }
+        throw new Error(data.error || 'Failed to add customer');
+      }
+
+      alert(data.message || 'Customer added successfully!');
+      setShowAddCustomer(false);
+      resetCustomerForm();
+      
+      fetchDashboardData();
+      fetchCustomers();
+      if (activeTab === 'requests') fetchPendingRequests();
+    } catch (error: any) {
+      alert('Error: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUpdateEMI = async () => {
+    if (!selectedCustomer) {
+      alert('Please select a customer first');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/data-entry/emi-payments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(emiUpdate),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to update EMI');
+      }
+
+      const data = await response.json();
+      alert(data.message);
+      setShowUpdateEMI(false);
+      setSelectedCustomer(null);
+      setSearchQuery('');
+      setEmiUpdate({
+        customerId: '',
+        customerName: '',
+        paymentDate: new Date().toISOString().split('T')[0],
+        amount: '',
+        status: 'Paid',
+        collectedBy: 'data_entry_operator_1'
+      });
+      
+      fetchDashboardData();
+    } catch (error: any) {
+      alert('Error: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSearchCustomer = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setEmiUpdate(prev => ({
+      ...prev,
+      customerId: customer._id || customer.id || '',
+      customerName: customer.name,
+      amount: customer.emiAmount ? customer.emiAmount.toString() : ''
+    }));
+  };
+
+  const handleLogout = () => {
+    router.push('/auth');
+  };
+
+  const [emiUpdate, setEmiUpdate] = useState<EMIUpdate>({
+    customerId: '',
+    customerName: '',
+    paymentDate: new Date().toISOString().split('T')[0],
+    amount: '',
+    status: 'Paid',
+    collectedBy: 'data_entry_operator_1'
   });
 
   const renderSearchAndFilters = () => {
@@ -368,576 +1044,466 @@ export default function DataEntryDashboard() {
     );
   };
 
-  const fetchDashboardData = async () => {
-    try {
-      const statsResponse = await fetch('/api/data-entry/dashboard/stats');
-      if (!statsResponse.ok) throw new Error('Failed to fetch stats');
-      const statsData = await statsResponse.json();
-      setTodayStats(statsData);
-    } catch (error) {
-      console.error('Error fetching stats:', error);
-    }
-  };
-
-  const fetchCustomers = async () => {
-    try {
-      console.log('Fetching customers for EMI updates...');
-      const response = await fetch('/api/data-entry/customers');
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Customers API response:', data);
-        if (data.success) {
-          setCustomers(data.data || []);
-          console.log('Customers loaded:', data.data?.length || 0);
-        }
-      } else {
-        console.error('Failed to fetch customers');
-      }
-    } catch (error) {
-      console.error('Error fetching customers:', error);
-      setCustomers([]);
-    }
-  };
-
-  const fetchPendingRequests = async () => {
-    try {
-      const response = await fetch('/api/data-entry/requests');
-      if (!response.ok) throw new Error('Failed to fetch requests');
-      const data = await response.json();
-      setPendingRequests(data || []);
-    } catch (error) {
-      console.error('Error fetching requests:', error);
-      setPendingRequests([]);
-    }
-  };
-
-  useEffect(() => {
-    fetchDashboardData();
-    if (activeTab === 'customers') fetchCustomers();
-    if (activeTab === 'requests') fetchPendingRequests();
-  }, [activeTab]);
-
-  useEffect(() => {
-    if (showUpdateEMI) {
-      console.log('EMI modal opened, fetching customers...');
-      fetchCustomers();
-    }
-  }, [showUpdateEMI]);
-
-  // FIXED: handleViewDetails function that works with your API route
-  const handleViewDetails = async (customer: Customer) => {
-    try {
-      console.log('🔍 handleViewDetails called with customer:', customer);
-      setIsLoading(true);
-      
-      const customerId = customer._id || customer.id;
-      console.log('📋 Customer ID to fetch:', customerId);
-      
-      if (!customerId) {
-        alert('Customer ID not found');
-        setIsLoading(false);
-        return;
-      }
-
-      // Use the correct API endpoint that matches your route structure
-      const response = await fetch(`/api/data-entry/customers/${customerId}`);
-      console.log('🌐 API Response status:', response.status);
-      
-      if (!response.ok) {
-        if (response.status === 404) {
-          // If customer not found in API, use the basic customer data we have
-          console.log('⚠️ Customer not found in API, using basic data');
-          const customerDetailsData: CustomerDetails = {
-            _id: customer._id,
-            name: customer.name,
-            phone: customer.phone,
-            businessName: customer.businessName,
-            area: customer.area,
-            loanNumber: customer.loanNumber || 'N/A',
-            loanAmount: customer.loanAmount || 0,
-            emiAmount: customer.emiAmount || 0,
-            loanType: customer.loanType || 'Daily',
-            address: customer.address || '',
-            status: customer.status || 'active',
-            email: customer.email,
-            businessType: customer.businessType,
-            createdAt: customer.createdAt,
-            loans: [] // Initialize empty loans array
-          };
-          
-          setCustomerDetails(customerDetailsData);
-          setShowCustomerDetails(true);
-          setIsLoading(false);
-          return;
-        }
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log('📦 API Response data:', data);
-      
-      if (data.success) {
-        console.log('✅ Customer details fetched successfully:', data.data);
-        setCustomerDetails(data.data);
-        setShowCustomerDetails(true);
-      } else {
-        console.error('❌ API returned success:false', data.error);
-        alert('Failed to fetch customer details: ' + (data.error || 'Unknown error'));
-      }
-    } catch (error: any) {
-      console.error('💥 Error in handleViewDetails:', error);
-      // Fallback: use the basic customer data we already have
-      const customerDetailsData: CustomerDetails = {
-        _id: customer._id,
-        name: customer.name,
-        phone: customer.phone,
-        businessName: customer.businessName,
-        area: customer.area,
-        loanNumber: customer.loanNumber || 'N/A',
-        loanAmount: customer.loanAmount || 0,
-        emiAmount: customer.emiAmount || 0,
-        loanType: customer.loanType || 'Daily',
-        address: customer.address || '',
-        status: customer.status || 'active',
-        email: customer.email,
-        businessType: customer.businessType,
-        createdAt: customer.createdAt,
-        loans: []
-      };
-      
-      setCustomerDetails(customerDetailsData);
-      setShowCustomerDetails(true);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleEditCustomer = (customer: CustomerDetails) => {
-    setEditCustomerData({
-      name: customer.name,
-      phone: customer.phone,
-      businessName: customer.businessName,
-      area: customer.area,
-      loanNumber: customer.loanNumber,
-      loanAmount: customer.loanAmount.toString(),
-      emiAmount: customer.emiAmount.toString(),
-      loanType: customer.loanType,
-      address: customer.address || '',
-      customerId: customer._id
-    });
-    setShowEditCustomer(true);
-    setShowCustomerDetails(false);
-  };
-
-  const handleAddNewLoan = async () => {
-    if (!customerDetails) return;
-
-    setIsLoading(true);
-    try {
-      if (!newLoanData.amount || !newLoanData.emiAmount || !newLoanData.loanDays) {
-        alert('Please fill all required fields');
-        setIsLoading(false);
-        return;
-      }
-
-      console.log('Sending new loan data:', {
-        customerId: customerDetails._id,
-        customerName: customerDetails.name,
-        loanNumber: customerDetails.loanNumber,
-        amount: Number(newLoanData.amount),
-        dateApplied: newLoanData.dateApplied,
-        emiAmount: Number(newLoanData.emiAmount),
-        loanType: newLoanData.loanType,
-        loanDays: Number(newLoanData.loanDays),
-        createdBy: 'data_entry_operator_1'
-      });
-
-      const response = await fetch('/api/data-entry/add-loan', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          customerId: customerDetails._id,
-          customerName: customerDetails.name,
-          loanNumber: customerDetails.loanNumber,
-          amount: Number(newLoanData.amount),
-          dateApplied: newLoanData.dateApplied,
-          emiAmount: Number(newLoanData.emiAmount),
-          loanType: newLoanData.loanType,
-          loanDays: Number(newLoanData.loanDays),
-          createdBy: 'data_entry_operator_1'
-        }),
-      });
-
-      console.log('Response status:', response.status);
-
-      const responseText = await response.text();
-      console.log('Raw response:', responseText.substring(0, 200));
-
-      if (responseText.trim().startsWith('<!') || responseText.trim().startsWith('<html')) {
-        console.error('Server returned HTML instead of JSON. Likely a 404 error.');
-        throw new Error('API endpoint not found. Please check if the server route is properly configured.');
-      }
-
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('Failed to parse response as JSON:', parseError);
-        throw new Error('Server returned invalid JSON. Response: ' + responseText.substring(0, 200));
-      }
-
-      console.log('Parsed response data:', data);
-      
-      if (!response.ok) {
-        throw new Error(data.error || `HTTP error! status: ${response.status}`);
-      }
-
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to add new loan');
-      }
-
-      alert(data.message || 'New loan added successfully!');
-      setShowAddLoanModal(false);
-      setNewLoanData({
-        amount: '',
-        dateApplied: new Date().toISOString().split('T')[0],
-        emiAmount: '',
-        loanType: 'Monthly',
-        loanDays: '30'
-      });
-      
-      // Refresh customer details to show the new loan
-      if (customerDetails._id) {
-        handleViewDetails(customerDetails);
-      }
-    } catch (error: any) {
-      console.error('Error adding new loan:', error);
-      alert('Error: ' + error.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSaveEditCustomer = async () => {
-    setIsLoading(true);
-    try {
-      console.log('🔄 Starting edit customer request...');
-      console.log('📦 Edit data:', editCustomerData);
-
-      if (!editCustomerData.name || !editCustomerData.phone || !editCustomerData.area || !editCustomerData.loanNumber) {
-        alert('Please fill all required fields');
-        setIsLoading(false);
-        return;
-      }
-
-      const apiUrl = '/api/data-entry/edit-customer-request';
-      console.log('🌐 Calling API:', apiUrl);
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...editCustomerData,
-          loanAmount: Number(editCustomerData.loanAmount),
-          emiAmount: Number(editCustomerData.emiAmount),
-          requestedBy: 'data_entry_operator_1'
-        }),
-      });
-
-      console.log('📡 Response status:', response.status);
-
-      const responseText = await response.text();
-      console.log('📄 Raw response:', responseText);
-
-      if (responseText.trim().startsWith('<!') || responseText.trim().startsWith('<html')) {
-        console.error('❌ Server returned HTML instead of JSON. Likely a 404 error.');
-        throw new Error('API endpoint not found. Please check the server.');
-      }
-
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('❌ Failed to parse response as JSON:', parseError);
-        throw new Error('Server returned invalid JSON. Response: ' + responseText.substring(0, 200));
-      }
-
-      console.log('✅ Parsed response data:', data);
-      
-      if (!response.ok) {
-        throw new Error(data.error || `HTTP error! status: ${response.status}`);
-      }
-
-      alert('Edit request submitted successfully! Waiting for admin approval.');
-      setShowEditCustomer(false);
-      setEditCustomerData({
-        name: '',
-        phone: '',
-        businessName: '',
-        area: '',
-        loanNumber: '',
-        loanAmount: '',
-        emiAmount: '',
-        loanType: 'Daily',
-        address: '',
-        customerId: ''
-      });
-      
-      if (activeTab === 'requests') fetchPendingRequests();
-    } catch (error: any) {
-      console.error('💥 Error in handleSaveEditCustomer:', error);
-      alert('Error: ' + error.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleLogout = () => {
-    router.push('/auth');
-  };
-
-  const handleAddCustomer = async () => {
-    setIsLoading(true);
-    try {
-      if (!newCustomer.name || !newCustomer.phone || !newCustomer.area || !newCustomer.loanNumber) {
-        alert('Please fill all required fields');
-        setIsLoading(false);
-        return;
-      }
-
-      const response = await fetch('/api/data-entry/customers', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...newCustomer,
-          loanAmount: Number(newCustomer.loanAmount),
-          emiAmount: Number(newCustomer.emiAmount),
-          createdBy: 'data_entry_operator_1'
-        }),
-      });
-
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to add customer');
-      }
-
-      alert(data.message);
-      setShowAddCustomer(false);
-      setNewCustomer({
-        name: '',
-        phone: '',
-        businessName: '',
-        area: '',
-        loanNumber: '',
-        loanAmount: '',
-        emiAmount: '',
-        loanType: 'Daily',
-        address: '',
-        createdBy: 'data_entry_operator_1'
-      });
-      
-      fetchDashboardData();
-      if (activeTab === 'requests') fetchPendingRequests();
-    } catch (error: any) {
-      alert('Error: ' + error.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleUpdateEMI = async () => {
-    if (!selectedCustomer) {
-      alert('Please select a customer first');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const response = await fetch('/api/data-entry/emi-payments', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(emiUpdate),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to update EMI');
-      }
-
-      const data = await response.json();
-      alert(data.message);
-      setShowUpdateEMI(false);
-      setSelectedCustomer(null);
-      setSearchQuery('');
-      setEmiUpdate({
-        customerId: '',
-        customerName: '',
-        paymentDate: new Date().toISOString().split('T')[0],
-        amount: '',
-        status: 'Paid',
-        collectedBy: 'data_entry_operator_1'
-      });
-      
-      fetchDashboardData();
-    } catch (error: any) {
-      alert('Error: ' + error.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSearchCustomer = (customer: Customer) => {
-    setSelectedCustomer(customer);
-    setEmiUpdate(prev => ({
-      ...prev,
-      customerId: customer._id || customer.id || '',
-      customerName: customer.name,
-      amount: customer.emiAmount ? customer.emiAmount.toString() : ''
-    }));
-  };
-
   const renderAddCustomerForm = () => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-xl font-bold">Add New Customer</h3>
             <button 
-              onClick={() => setShowAddCustomer(false)}
+              onClick={() => {
+                setShowAddCustomer(false);
+                resetCustomerForm();
+              }}
               className="text-gray-500 hover:text-gray-700"
             >
               ✕
             </button>
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Customer Name *</label>
-              <input 
-                type="text" 
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={newCustomer.name}
-                onChange={(e) => setNewCustomer({...newCustomer, name: e.target.value})}
-                placeholder="Enter full name"
-              />
+
+          {/* Progress Steps */}
+          <div className="mb-8">
+            <div className="flex items-center justify-between">
+              {[1, 2, 3].map((step) => (
+                <div key={step} className="flex items-center">
+                  <div className={`flex items-center justify-center w-8 h-8 rounded-full ${
+                    currentStep >= step ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-600'
+                  }`}>
+                    {step}
+                  </div>
+                  {step < 3 && (
+                    <div className={`w-24 h-1 mx-2 ${
+                      currentStep > step ? 'bg-blue-600' : 'bg-gray-300'
+                    }`} />
+                  )}
+                </div>
+              ))}
             </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number *</label>
-              <input 
-                type="text" 
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={newCustomer.phone}
-                onChange={(e) => setNewCustomer({...newCustomer, phone: e.target.value})}
-                placeholder="Enter phone number"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Business Name</label>
-              <input 
-                type="text" 
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={newCustomer.businessName}
-                onChange={(e) => setNewCustomer({...newCustomer, businessName: e.target.value})}
-                placeholder="Enter business name"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Area *</label>
-              <input 
-                type="text" 
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={newCustomer.area}
-                onChange={(e) => setNewCustomer({...newCustomer, area: e.target.value})}
-                placeholder="Enter area"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Loan Number *</label>
-              <input 
-                type="text" 
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={newCustomer.loanNumber}
-                onChange={(e) => setNewCustomer({...newCustomer, loanNumber: e.target.value})}
-                placeholder="e.g., LN001234"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Loan Type *</label>
-              <select 
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={newCustomer.loanType}
-                onChange={(e) => setNewCustomer({...newCustomer, loanType: e.target.value})}
-              >
-                <option value="Daily">Daily EMI</option>
-                <option value="Weekly">Weekly EMI</option>
-                <option value="Monthly">Monthly EMI</option>
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Loan Amount *</label>
-              <input 
-                type="number" 
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={newCustomer.loanAmount}
-                onChange={(e) => setNewCustomer({...newCustomer, loanAmount: e.target.value})}
-                placeholder="Enter loan amount"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">EMI Amount *</label>
-              <input 
-                type="number" 
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={newCustomer.emiAmount}
-                onChange={(e) => setNewCustomer({...newCustomer, emiAmount: e.target.value})}
-                placeholder="Enter EMI amount"
-              />
-            </div>
-            
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
-              <textarea 
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                rows={3}
-                value={newCustomer.address}
-                onChange={(e) => setNewCustomer({...newCustomer, address: e.target.value})}
-                placeholder="Enter complete address"
-              />
+            <div className="flex justify-between mt-2 text-sm text-gray-600">
+              <span>Basic Details</span>
+              <span>Loan Information</span>
+              <span>Login Credentials</span>
             </div>
           </div>
-          
-          <div className="flex justify-end space-x-3 mt-6">
-            <button 
-              onClick={() => setShowAddCustomer(false)}
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-              disabled={isLoading}
-            >
-              Cancel
-            </button>
-            <button 
-              onClick={handleAddCustomer}
-              disabled={isLoading}
-              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400"
-            >
-              {isLoading ? 'Submitting...' : 'Submit for Approval'}
-            </button>
-          </div>
+
+          {/* Step 1: Basic Details */}
+          {currentStep === 1 && (
+            <div className="space-y-6">
+              <h4 className="text-lg font-semibold">Step 1: Customer Basic Details</h4>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Customer Name *</label>
+                  <input 
+                    type="text" 
+                    className={`w-full px-3 py-2 border rounded-md ${
+                      step1Errors.name ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                    value={step1Data.name}
+                    onChange={(e) => setStep1Data({...step1Data, name: e.target.value})}
+                    placeholder="Enter full name"
+                  />
+                  {step1Errors.name && <p className="text-red-500 text-xs mt-1">{step1Errors.name}</p>}
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number *</label>
+                  <input 
+                    type="tel" 
+                    className={`w-full px-3 py-2 border rounded-md ${
+                      step1Errors.phone ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                    value={step1Data.phone}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/\D/g, '');
+                      if (value.length <= 10) {
+                        setStep1Data({...step1Data, phone: value});
+                      }
+                    }}
+                    placeholder="Enter 10-digit phone number"
+                    maxLength={10}
+                  />
+                  {step1Errors.phone && <p className="text-red-500 text-xs mt-1">{step1Errors.phone}</p>}
+                  <p className="text-xs text-gray-500 mt-1">10 digits only, numbers only</p>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Business Name *</label>
+                  <input 
+                    type="text" 
+                    className={`w-full px-3 py-2 border rounded-md ${
+                      step1Errors.businessName ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                    value={step1Data.businessName}
+                    onChange={(e) => setStep1Data({...step1Data, businessName: e.target.value})}
+                    placeholder="Enter business name"
+                  />
+                  {step1Errors.businessName && <p className="text-red-500 text-xs mt-1">{step1Errors.businessName}</p>}
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Area *</label>
+                  <input 
+                    type="text" 
+                    className={`w-full px-3 py-2 border rounded-md ${
+                      step1Errors.area ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                    value={step1Data.area}
+                    onChange={(e) => setStep1Data({...step1Data, area: e.target.value})}
+                    placeholder="Enter area"
+                  />
+                  {step1Errors.area && <p className="text-red-500 text-xs mt-1">{step1Errors.area}</p>}
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Number *</label>
+                  <input 
+                    type="text" 
+                    className={`w-full px-3 py-2 border rounded-md ${
+                      step1Errors.loanNumber ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                    value={step1Data.loanNumber}
+                    onChange={(e) => setStep1Data({...step1Data, loanNumber: e.target.value})}
+                    placeholder="e.g., LN001234"
+                  />
+                  {step1Errors.loanNumber && <p className="text-red-500 text-xs mt-1">{step1Errors.loanNumber}</p>}
+                  <p className="text-xs text-gray-500 mt-1">Must be unique</p>
+                </div>
+                
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Address *</label>
+                  <textarea 
+                    className={`w-full px-3 py-2 border rounded-md ${
+                      step1Errors.address ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                    rows={3}
+                    value={step1Data.address}
+                    onChange={(e) => setStep1Data({...step1Data, address: e.target.value})}
+                    placeholder="Enter complete address"
+                  />
+                  {step1Errors.address && <p className="text-red-500 text-xs mt-1">{step1Errors.address}</p>}
+                </div>
+              </div>
+
+              {/* File Uploads */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Profile Picture</label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-md p-4 text-center">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleFileUpload('profilePicture', e.target.files?.[0] || null)}
+                      className="hidden"
+                      id="profile-picture"
+                    />
+                    <label htmlFor="profile-picture" className="cursor-pointer">
+                      <div className="text-gray-400 mb-2">📷</div>
+                      <p className="text-sm text-gray-600">
+                        {step1Data.profilePicture ? step1Data.profilePicture.name : 'Click to upload profile picture'}
+                      </p>
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">FI Document - Shop</label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-md p-4 text-center">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx"
+                      onChange={(e) => handleFileUpload('fiDocuments', e.target.files?.[0] || null, 'shop')}
+                      className="hidden"
+                      id="fi-doc-shop"
+                    />
+                    <label htmlFor="fi-doc-shop" className="cursor-pointer">
+                      <div className="text-gray-400 mb-2">📄</div>
+                      <p className="text-sm text-gray-600">
+                        {step1Data.fiDocuments.shop ? step1Data.fiDocuments.shop.name : 'Upload Shop FI Document'}
+                      </p>
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">FI Document - Home</label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-md p-4 text-center">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx"
+                      onChange={(e) => handleFileUpload('fiDocuments', e.target.files?.[0] || null, 'home')}
+                      className="hidden"
+                      id="fi-doc-home"
+                    />
+                    <label htmlFor="fi-doc-home" className="cursor-pointer">
+                      <div className="text-gray-400 mb-2">📄</div>
+                      <p className="text-sm text-gray-600">
+                        {step1Data.fiDocuments.home ? step1Data.fiDocuments.home.name : 'Upload Home FI Document'}
+                      </p>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 mt-6">
+                <button 
+                  onClick={() => {
+                    setShowAddCustomer(false);
+                    resetCustomerForm();
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleStep1Next}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  Next Step
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Loan Information */}
+          {currentStep === 2 && (
+            <div className="space-y-6">
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+                <h4 className="text-lg font-semibold text-blue-900 mb-2">Loan Information</h4>
+                <p className="text-blue-700">
+                  <strong>Loan Number:</strong> {step1Data.loanNumber} | 
+                  <strong> Customer:</strong> {step1Data.name} | 
+                  <strong> Business:</strong> {step1Data.businessName}
+                </p>
+              </div>
+
+              <h4 className="text-lg font-semibold">Step 2: Enter Loan Details</h4>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Date *</label>
+                  <input 
+                    type="date" 
+                    className={`w-full px-3 py-2 border rounded-md ${
+                      step2Errors.loanDate ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                    value={step2Data.loanDate}
+                    onChange={(e) => setStep2Data({...step2Data, loanDate: e.target.value})}
+                  />
+                  {step2Errors.loanDate && <p className="text-red-500 text-xs mt-1">{step2Errors.loanDate}</p>}
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Amount *</label>
+                  <input 
+                    type="number" 
+                    className={`w-full px-3 py-2 border rounded-md ${
+                      step2Errors.loanAmount ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                    value={step2Data.loanAmount}
+                    onChange={(e) => setStep2Data({...step2Data, loanAmount: e.target.value})}
+                    placeholder="Amount"
+                    min="0"
+                    step="0.01"
+                  />
+                  {step2Errors.loanAmount && <p className="text-red-500 text-xs mt-1">{step2Errors.loanAmount}</p>}
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">EMI Amount *</label>
+                  <input 
+                    type="number" 
+                    className={`w-full px-3 py-2 border rounded-md ${
+                      step2Errors.emiAmount ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                    value={step2Data.emiAmount}
+                    onChange={(e) => setStep2Data({...step2Data, emiAmount: e.target.value})}
+                    placeholder="EMI Amount"
+                    min="0"
+                    step="0.01"
+                  />
+                  {step2Errors.emiAmount && <p className="text-red-500 text-xs mt-1">{step2Errors.emiAmount}</p>}
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">No. of Days *</label>
+                  <input 
+                    type="number" 
+                    className={`w-full px-3 py-2 border rounded-md ${
+                      step2Errors.loanDays ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                    value={step2Data.loanDays}
+                    onChange={(e) => setStep2Data({...step2Data, loanDays: e.target.value})}
+                    placeholder="Days"
+                    min="1"
+                  />
+                  {step2Errors.loanDays && <p className="text-red-500 text-xs mt-1">{step2Errors.loanDays}</p>}
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Type *</label>
+                  <select 
+                    className={`w-full px-3 py-2 border rounded-md ${
+                      step2Errors.loanType ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                    value={step2Data.loanType}
+                    onChange={(e) => setStep2Data({...step2Data, loanType: e.target.value})}
+                  >
+                    <option value="Daily">Daily EMI</option>
+                    <option value="Weekly">Weekly EMI</option>
+                    <option value="Monthly">Monthly EMI</option>
+                  </select>
+                  {step2Errors.loanType && <p className="text-red-500 text-xs mt-1">{step2Errors.loanType}</p>}
+                </div>
+              </div>
+
+              {/* Loan Summary Preview */}
+              <div className="bg-green-50 border border-green-200 rounded-md p-4 mt-4">
+                <h5 className="font-semibold text-green-900 mb-2">Loan Summary</h5>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <span className="text-green-700">Loan Amount:</span>
+                    <p className="font-semibold">₹{step2Data.loanAmount || '0'}</p>
+                  </div>
+                  <div>
+                    <span className="text-green-700">EMI Amount:</span>
+                    <p className="font-semibold">₹{step2Data.emiAmount || '0'}</p>
+                  </div>
+                  <div>
+                    <span className="text-green-700">Duration:</span>
+                    <p className="font-semibold">{step2Data.loanDays || '0'} days</p>
+                  </div>
+                  <div>
+                    <span className="text-green-700">Type:</span>
+                    <p className="font-semibold">{step2Data.loanType} EMI</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-between space-x-3 mt-6">
+                <button 
+                  onClick={() => setCurrentStep(1)}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  Previous
+                </button>
+                <button 
+                  onClick={handleStep2Next}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  Next Step
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Login Credentials */}
+          {currentStep === 3 && (
+            <div className="space-y-6">
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+                <h4 className="text-lg font-semibold text-blue-900 mb-2">Create Login Credentials</h4>
+                <p className="text-blue-700">
+                  <strong>Customer:</strong> {step1Data.name} | 
+                  <strong> Loan No:</strong> {step1Data.loanNumber}
+                </p>
+              </div>
+
+              <h4 className="text-lg font-semibold">Step 3: Generate Login ID & Password</h4>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Login ID *</label>
+                  <div className="flex space-x-2">
+                    <input 
+                      type="text" 
+                      className={`flex-1 px-3 py-2 border rounded-md ${
+                        step3Errors.loginId ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                      value={step3Data.loginId}
+                      onChange={(e) => setStep3Data({...step3Data, loginId: e.target.value})}
+                      placeholder="Login ID for customer"
+                    />
+                    <button 
+                      onClick={generateLoginId}
+                      className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 text-sm"
+                    >
+                      Generate
+                    </button>
+                  </div>
+                  {step3Errors.loginId && <p className="text-red-500 text-xs mt-1">{step3Errors.loginId}</p>}
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Password *</label>
+                  <div className="flex space-x-2">
+                    <input 
+                      type="password" 
+                      className={`flex-1 px-3 py-2 border rounded-md ${
+                        step3Errors.password ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                      value={step3Data.password}
+                      onChange={(e) => setStep3Data({...step3Data, password: e.target.value})}
+                      placeholder="Password"
+                    />
+                    <button 
+                      onClick={generatePassword}
+                      className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 text-sm"
+                    >
+                      Generate
+                    </button>
+                  </div>
+                  {step3Errors.password && <p className="text-red-500 text-xs mt-1">{step3Errors.password}</p>}
+                </div>
+                
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Confirm Password *</label>
+                  <input 
+                    type="password" 
+                    className={`w-full px-3 py-2 border rounded-md ${
+                      step3Errors.confirmPassword ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                    value={step3Data.confirmPassword}
+                    onChange={(e) => setStep3Data({...step3Data, confirmPassword: e.target.value})}
+                    placeholder="Confirm password"
+                  />
+                  {step3Errors.confirmPassword && <p className="text-red-500 text-xs mt-1">{step3Errors.confirmPassword}</p>}
+                </div>
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+                <h5 className="font-semibold text-yellow-900 mb-2">Credentials Preview</h5>
+                <div className="space-y-2 text-sm">
+                  <div>
+                    <span className="text-yellow-700">Login ID:</span>
+                    <span className="font-mono ml-2">{step3Data.loginId || 'Not generated'}</span>
+                  </div>
+                  <div>
+                    <span className="text-yellow-700">Password:</span>
+                    <span className="font-mono ml-2">{step3Data.password ? '••••••••' : 'Not generated'}</span>
+                  </div>
+                </div>
+                <p className="text-xs text-yellow-600 mt-2">
+                  Please save these credentials securely. They will be provided to the customer for login.
+                </p>
+              </div>
+
+              <div className="flex justify-between space-x-3 mt-6">
+                <button 
+                  onClick={() => setCurrentStep(2)}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  Previous
+                </button>
+                <button 
+                  onClick={handleAddCustomer}
+                  disabled={isLoading}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400"
+                >
+                  {isLoading ? 'Creating Customer...' : 'Create Customer'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -967,7 +1533,7 @@ export default function DataEntryDashboard() {
                   <h3 className="text-sm font-medium text-blue-800">Customer</h3>
                   <div className="mt-1 text-sm text-blue-700">
                     <p>{customerDetails?.name} • {customerDetails?.phone}</p>
-                    <p>Loan Number: {customerDetails?.loanNumber}</p>
+                    <p>Main Loan: {customerDetails?.loanNumber}</p>
                   </div>
                 </div>
               </div>
@@ -981,6 +1547,9 @@ export default function DataEntryDashboard() {
                 value={newLoanData.amount}
                 onChange={(e) => setNewLoanData({...newLoanData, amount: e.target.value})}
                 placeholder="Enter loan amount"
+                min="0"
+                step="0.01"
+                required
               />
             </div>
             
@@ -991,6 +1560,7 @@ export default function DataEntryDashboard() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
                 value={newLoanData.dateApplied}
                 onChange={(e) => setNewLoanData({...newLoanData, dateApplied: e.target.value})}
+                required
               />
             </div>
             
@@ -1002,6 +1572,9 @@ export default function DataEntryDashboard() {
                 value={newLoanData.emiAmount}
                 onChange={(e) => setNewLoanData({...newLoanData, emiAmount: e.target.value})}
                 placeholder="Enter EMI amount"
+                min="0"
+                step="0.01"
+                required
               />
             </div>
             
@@ -1011,6 +1584,7 @@ export default function DataEntryDashboard() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
                 value={newLoanData.loanType}
                 onChange={(e) => setNewLoanData({...newLoanData, loanType: e.target.value})}
+                required
               >
                 <option value="Daily">Daily EMI</option>
                 <option value="Weekly">Weekly EMI</option>
@@ -1026,6 +1600,8 @@ export default function DataEntryDashboard() {
                 value={newLoanData.loanDays}
                 onChange={(e) => setNewLoanData({...newLoanData, loanDays: e.target.value})}
                 placeholder="Enter number of days"
+                min="1"
+                required
               />
             </div>
           </div>
@@ -1144,6 +1720,9 @@ export default function DataEntryDashboard() {
                 value={emiUpdate.amount}
                 onChange={(e) => setEmiUpdate({...emiUpdate, amount: e.target.value})}
                 placeholder="Enter amount paid"
+                min="0"
+                step="0.01"
+                required
               />
             </div>
             
@@ -1275,7 +1854,7 @@ export default function DataEntryDashboard() {
 
                 <div className="space-y-4">
                   <div className="border border-gray-200 rounded-lg p-4 bg-white">
-                    <h5 className="font-medium text-gray-900 mb-2">Original Loan</h5>
+                    <h5 className="font-medium text-gray-900 mb-2">Main Loan</h5>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                       <div>
                         <label className="block text-xs font-medium text-gray-500">Loan Number</label>
@@ -1301,7 +1880,7 @@ export default function DataEntryDashboard() {
                       <div className="flex justify-between items-center mb-2">
                         <h5 className="font-medium text-blue-900">Additional Loan #{index + 1}</h5>
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          New
+                          Active
                         </span>
                       </div>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -1390,16 +1969,20 @@ export default function DataEntryDashboard() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
                 value={editCustomerData.name}
                 onChange={(e) => setEditCustomerData({...editCustomerData, name: e.target.value})}
+                required
               />
             </div>
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number *</label>
               <input 
-                type="text" 
+                type="tel" 
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
                 value={editCustomerData.phone}
                 onChange={(e) => setEditCustomerData({...editCustomerData, phone: e.target.value})}
+                pattern="[0-9]{10}"
+                maxLength={10}
+                required
               />
             </div>
             
@@ -1420,6 +2003,7 @@ export default function DataEntryDashboard() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
                 value={editCustomerData.area}
                 onChange={(e) => setEditCustomerData({...editCustomerData, area: e.target.value})}
+                required
               />
             </div>
             
@@ -1430,6 +2014,7 @@ export default function DataEntryDashboard() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
                 value={editCustomerData.loanNumber}
                 onChange={(e) => setEditCustomerData({...editCustomerData, loanNumber: e.target.value})}
+                required
               />
             </div>
             
@@ -1439,6 +2024,7 @@ export default function DataEntryDashboard() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
                 value={editCustomerData.loanType}
                 onChange={(e) => setEditCustomerData({...editCustomerData, loanType: e.target.value})}
+                required
               >
                 <option value="Daily">Daily EMI</option>
                 <option value="Weekly">Weekly EMI</option>
@@ -1453,6 +2039,9 @@ export default function DataEntryDashboard() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
                 value={editCustomerData.loanAmount}
                 onChange={(e) => setEditCustomerData({...editCustomerData, loanAmount: e.target.value})}
+                min="0"
+                step="0.01"
+                required
               />
             </div>
             
@@ -1463,6 +2052,9 @@ export default function DataEntryDashboard() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
                 value={editCustomerData.emiAmount}
                 onChange={(e) => setEditCustomerData({...editCustomerData, emiAmount: e.target.value})}
+                min="0"
+                step="0.01"
+                required
               />
             </div>
             
@@ -1540,25 +2132,26 @@ export default function DataEntryDashboard() {
   );
 
   const renderRequests = () => (
-    <div className="px-4 py-6 sm:px-0">
-      <div className="bg-white shadow rounded-lg">
-        <div className="px-4 py-5 sm:px-6">
-          <h3 className="text-lg leading-6 font-medium text-gray-900">Pending Requests</h3>
-          <p className="mt-1 max-w-2xl text-sm text-gray-500">Requests waiting for admin approval</p>
-        </div>
-        <div className="border-t border-gray-200">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Request Type</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer Name</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {pendingRequests.map((request) => (
+  <div className="px-4 py-6 sm:px-0">
+    <div className="bg-white shadow rounded-lg">
+      <div className="px-4 py-5 sm:px-6">
+        <h3 className="text-lg leading-6 font-medium text-gray-900">Pending Requests</h3>
+        <p className="mt-1 max-w-2xl text-sm text-gray-500">Requests waiting for admin approval</p>
+      </div>
+      <div className="border-t border-gray-200">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Request Type</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer Name</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {Array.isArray(pendingRequests) && pendingRequests.length > 0 ? (
+                pendingRequests.map((request) => (
                   <tr key={request._id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{request.type}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{request.customerName}</td>
@@ -1571,21 +2164,21 @@ export default function DataEntryDashboard() {
                       </span>
                     </td>
                   </tr>
-                ))}
-                {pendingRequests.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500">
-                      No pending requests
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500">
+                    {Array.isArray(pendingRequests) ? 'No pending requests' : 'Error loading requests'}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 
   const renderDashboard = () => (
     <div className="px-4 py-6 sm:px-0">
@@ -1792,7 +2385,7 @@ export default function DataEntryDashboard() {
       {showUpdateEMI && renderUpdateEMIForm()}
       {showCustomerDetails && renderCustomerDetails()}
       {showEditCustomer && renderEditCustomer()}
-      {showAddLoanModal && renderAddLoanModal()} 
+      {showAddLoanModal && renderAddLoanModal()}
     </div>
   );
 }
