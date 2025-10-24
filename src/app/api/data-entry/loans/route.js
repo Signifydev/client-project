@@ -12,19 +12,24 @@ export async function POST(request) {
     
     console.log('Received loan data:', loanData);
 
+    // Handle both 'amount' and 'loanAmount' fields for backward compatibility
+    const loanAmount = loanData.loanAmount || loanData.amount;
+    const emiAmount = loanData.emiAmount;
+    const loanDays = loanData.loanDays;
+
     // Validate required fields
-    if (!loanData.customerId || !loanData.amount || !loanData.emiAmount || !loanData.loanDays) {
+    if (!loanData.customerId || !loanAmount || !emiAmount || !loanDays) {
       return NextResponse.json({ 
         success: false,
-        error: 'Customer ID, amount, EMI amount, and loan days are required'
+        error: 'Customer ID, loan amount, EMI amount, and loan days are required'
       }, { status: 400 });
     }
 
     // Validate numeric fields
-    if (loanData.amount <= 0 || loanData.emiAmount <= 0 || loanData.loanDays <= 0) {
+    if (loanAmount <= 0 || emiAmount <= 0 || loanDays <= 0) {
       return NextResponse.json({ 
         success: false,
-        error: 'Amount, EMI amount, and loan days must be greater than 0'
+        error: 'Loan amount, EMI amount, and loan days must be greater than 0'
       }, { status: 400 });
     }
 
@@ -37,6 +42,14 @@ export async function POST(request) {
       }, { status: 404 });
     }
 
+    // Check if customer is active
+    if (customer.status !== 'active') {
+      return NextResponse.json({ 
+        success: false,
+        error: 'Customer is not active. Only active customers can have additional loans.'
+      }, { status: 400 });
+    }
+
     // Generate unique loan number
     const loanCount = await Loan.countDocuments({
       customerId: loanData.customerId
@@ -47,39 +60,40 @@ export async function POST(request) {
     // Calculate additional loan fields for backward compatibility
     const dateApplied = new Date(loanData.dateApplied || new Date());
     const endDate = new Date(dateApplied);
-    endDate.setDate(endDate.getDate() + parseInt(loanData.loanDays));
+    endDate.setDate(endDate.getDate() + parseInt(loanDays));
 
     // Calculate daily EMI based on loan type
-    let dailyEMI = loanData.emiAmount;
+    let dailyEMI = emiAmount;
     if (loanData.loanType === 'Weekly') {
-      dailyEMI = loanData.emiAmount / 7;
+      dailyEMI = emiAmount / 7;
     } else if (loanData.loanType === 'Monthly') {
-      dailyEMI = loanData.emiAmount / 30;
+      dailyEMI = emiAmount / 30;
     }
 
-    const totalEMI = parseInt(loanData.loanDays) * dailyEMI;
+    const totalEMI = parseInt(loanDays) * dailyEMI;
 
     // Create new loan
     const loan = new Loan({
       customerId: loanData.customerId,
       customerName: loanData.customerName || customer.name,
       loanNumber: loanNumber,
-      amount: parseFloat(loanData.amount),
-      emiAmount: parseFloat(loanData.emiAmount),
+      amount: parseFloat(loanAmount),
+      loanAmount: parseFloat(loanAmount), // Add loanAmount field for consistency
+      emiAmount: parseFloat(emiAmount),
       loanType: loanData.loanType || 'Monthly',
       dateApplied: dateApplied,
-      loanDays: parseInt(loanData.loanDays),
+      loanDays: parseInt(loanDays),
       
       // Backward compatibility fields
       interestRate: loanData.interestRate || 0,
-      tenure: parseInt(loanData.loanDays),
+      tenure: parseInt(loanDays),
       tenureType: (loanData.loanType || 'Monthly').toLowerCase(),
       startDate: dateApplied,
       endDate: endDate,
       dailyEMI: dailyEMI,
       totalEMI: totalEMI,
       emiPending: totalEMI,
-      totalPending: parseFloat(loanData.amount),
+      totalPending: parseFloat(loanAmount),
       
       status: 'active',
       createdBy: loanData.createdBy || 'data_entry_operator'
@@ -97,19 +111,29 @@ export async function POST(request) {
       currentData: null, // No current data for new loan
       requestedData: {
         loanNumber: loanNumber,
-        amount: parseFloat(loanData.amount),
-        emiAmount: parseFloat(loanData.emiAmount),
+        amount: parseFloat(loanAmount),
+        loanAmount: parseFloat(loanAmount),
+        emiAmount: parseFloat(emiAmount),
         loanType: loanData.loanType || 'Monthly',
-        loanDays: parseInt(loanData.loanDays),
+        loanDays: parseInt(loanDays),
         dateApplied: dateApplied
       },
-      description: `New ${loanData.loanType || 'Monthly'} loan application for ${customer.name}`,
-      priority: parseFloat(loanData.amount) > 50000 ? 'High' : 'Medium',
+      description: `New ${loanData.loanType || 'Monthly'} loan application for ${customer.name} - Amount: ₹${loanAmount}`,
+      priority: parseFloat(loanAmount) > 50000 ? 'High' : 'Medium',
       createdBy: loanData.createdBy || 'data_entry_operator',
       status: 'pending'
     });
     
     await approvalRequest.save();
+
+    // Update customer's loans array
+    if (!customer.loans) {
+      customer.loans = [];
+    }
+    customer.loans.push(loan._id);
+    await customer.save();
+
+    console.log('New loan created successfully:', loanNumber);
 
     return NextResponse.json({ 
       success: true,

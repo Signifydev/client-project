@@ -14,6 +14,61 @@ export async function GET() {
   }
 }
 
+export async function POST(request) {
+  try {
+    await connectDB();
+    const customerData = await request.json();
+
+    // Validate required fields
+    const requiredFields = ['name', 'phone', 'businessName', 'area', 'loanNumber', 'loanAmount', 'emiAmount', 'loanType'];
+    const missingFields = requiredFields.filter(field => !customerData[field]);
+    
+    if (missingFields.length > 0) {
+      return NextResponse.json({ 
+        error: `Missing required fields: ${missingFields.join(', ')}` 
+      }, { status: 400 });
+    }
+
+    // Check if customer with same phone or loan number already exists
+    const existingCustomer = await Customer.findOne({
+      $or: [
+        { phone: customerData.phone },
+        { loanNumber: customerData.loanNumber }
+      ]
+    });
+
+    if (existingCustomer) {
+      return NextResponse.json({ 
+        error: 'Customer with same phone number or loan number already exists' 
+      }, { status: 400 });
+    }
+
+    // Use a default value for createdBy since we're in admin context
+    const createdBy = 'super_admin';
+
+    // Create new customer
+    const newCustomer = new Customer({
+      ...customerData,
+      status: 'active',
+      createdBy: createdBy,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    await newCustomer.save();
+
+    return NextResponse.json({ 
+      success: true, 
+      message: 'Customer created successfully',
+      data: newCustomer 
+    }, { status: 201 });
+
+  } catch (error) {
+    console.error('Error creating customer:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
 export async function DELETE(request) {
   try {
     await connectDB();

@@ -11,8 +11,8 @@ export async function GET(request, { params }) {
 
     console.log('Fetching customer details for ID:', id);
 
-    // Find customer by ID
-    const customer = await Customer.findById(id);
+    // Find customer by ID and explicitly select all fields
+    const customer = await Customer.findById(id).select('+category +officeCategory');
     if (!customer) {
       return NextResponse.json(
         { 
@@ -23,9 +23,20 @@ export async function GET(request, { params }) {
       );
     }
 
+    console.log('🔍 Customer data from DB:', {
+      name: customer.name,
+      category: customer.category,
+      officeCategory: customer.officeCategory,
+      businessName: customer.businessName,
+      area: customer.area,
+      address: customer.address
+    });
+
     // Get all loans for this customer with detailed information
     const loans = await Loan.find({ customerId: id })
       .sort({ createdAt: -1 });
+
+    console.log('🔍 Loans found:', loans.length);
 
     // Get recent EMI payments (last 20 payments)
     const emiPayments = await EMIPayment.find({ customerId: id })
@@ -71,10 +82,36 @@ export async function GET(request, { params }) {
       endDate: { $lt: today }
     });
 
+    // Get the main loan (original loan created with customer)
+    const mainLoan = loans.find(loan => loan.isMainLoan) || loans[0];
+    
+    // Filter out additional loans (excluding the main loan)
+    const additionalLoans = loans.filter(loan => 
+      loan._id.toString() !== mainLoan?._id?.toString()
+    );
+
     // Format customer data with additional calculated fields
     const customerWithDetails = {
-      // Basic customer information
-      ...customer.toObject(),
+      // Basic customer information - ensure all fields are included
+      _id: customer._id,
+      name: customer.name,
+      phone: customer.phone,
+      businessName: customer.businessName,
+      area: customer.area,
+      loanNumber: customer.loanNumber,
+      loanAmount: customer.loanAmount,
+      emiAmount: customer.emiAmount,
+      loanType: customer.loanType,
+      address: customer.address,
+      status: customer.status,
+      email: customer.email,
+      businessType: customer.businessType,
+      category: customer.category || 'A', // Ensure category is included with fallback
+      officeCategory: customer.officeCategory || 'Office 1', // Ensure officeCategory is included with fallback
+      createdAt: customer.createdAt,
+      updatedAt: customer.updatedAt,
+      profilePicture: customer.profilePicture,
+      fiDocuments: customer.fiDocuments,
       
       // Document URLs (if files are uploaded)
       documents: {
@@ -88,9 +125,30 @@ export async function GET(request, { params }) {
         }
       },
 
-      // Loans information
-      loans: loans.map(loan => ({
-        ...loan.toObject(),
+      // Main loan information (single loan)
+      mainLoan: mainLoan ? {
+        _id: mainLoan._id,
+        loanNumber: mainLoan.loanNumber,
+        amount: mainLoan.amount,
+        emiAmount: mainLoan.emiAmount,
+        loanType: mainLoan.loanType,
+        dateApplied: mainLoan.dateApplied,
+        loanDays: mainLoan.loanDays,
+        status: mainLoan.status,
+        isMainLoan: true
+      } : null,
+
+      // Additional loans information (only additional loans, not including main loan)
+      loans: additionalLoans.map(loan => ({
+        _id: loan._id,
+        loanNumber: loan.loanNumber,
+        amount: loan.amount,
+        emiAmount: loan.emiAmount,
+        loanType: loan.loanType,
+        dateApplied: loan.dateApplied,
+        loanDays: loan.loanDays,
+        status: loan.status,
+        isMainLoan: loan.isMainLoan || false,
         isOverdue: loan.endDate < today && loan.status === 'active',
         progressPercentage: loan.totalEMI > 0 ? 
           Math.round((loan.emiPaid / loan.totalEMI) * 100) : 0,
@@ -112,8 +170,7 @@ export async function GET(request, { params }) {
         totalLoanAmount: loanStats[0]?.totalLoanAmount || 0,
         totalEMIAmount: loanStats[0]?.totalEMIAmount || 0,
         activeLoans: loanStats[0]?.activeLoans || 0,
-        overdueLoans: overdueLoans.length,
-        mainLoan: loans[0] || null // First loan is considered main loan
+        overdueLoans: overdueLoans.length
       },
 
       // Summary information for quick view
@@ -125,7 +182,13 @@ export async function GET(request, { params }) {
       }
     };
 
-    console.log('Customer details fetched successfully for:', customer.name);
+    console.log('✅ Customer details fetched successfully for:', customer.name);
+    console.log('📊 Final customer data structure:', {
+      category: customerWithDetails.category,
+      officeCategory: customerWithDetails.officeCategory,
+      mainLoan: customerWithDetails.mainLoan ? 'Present' : 'Absent',
+      additionalLoans: customerWithDetails.loans.length
+    });
 
     return NextResponse.json({
       success: true,
@@ -133,7 +196,7 @@ export async function GET(request, { params }) {
     });
 
   } catch (error) {
-    console.error('Error fetching customer details:', error);
+    console.error('❌ Error fetching customer details:', error);
     return NextResponse.json(
       { 
         success: false,

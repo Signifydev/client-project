@@ -1307,7 +1307,8 @@ function CustomerDetailsView({ customer, onBack, onDelete }: {
   );
 }
 
-// Pending Requests Component - UPDATED VERSION
+// Enhanced Pending Requests Component with proper data extraction
+// Enhanced Pending Requests Component with proper data extraction
 function PendingRequestsView({ 
   requests, 
   onApprove, 
@@ -1351,42 +1352,259 @@ function PendingRequestsView({
     return field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
   };
 
-  // Helper function to compare and highlight changes
-  const renderFieldComparison = (field: string, originalValue: any, newValue: any) => {
-    const isChanged = originalValue !== newValue;
+  // Helper function to display field value
+  const renderFieldValue = (label: string, value: any) => {
+    if (value === null || value === undefined || value === '') {
+      return 'N/A';
+    }
     
+    // Format currency fields
+    if (label.toLowerCase().includes('amount')) {
+      return `₹${Number(value).toLocaleString()}`;
+    }
+    
+    // Format dates
+    if (label.toLowerCase().includes('date') && !isNaN(Date.parse(value))) {
+      return new Date(value).toLocaleDateString();
+    }
+    
+    return String(value);
+  };
+
+  // Get all customer details for display - FIXED VERSION
+  const getCustomerDetails = (request: any) => {
+    console.log('🔍 Full Request data:', request);
+    
+    // For NEW customer requests, data is in request.requestedData
+    if (request.type === 'New Customer' && request.requestedData) {
+      console.log('📊 Requested Data found:', request.requestedData);
+      return request.requestedData;
+    }
+    
+    // For EDIT requests, show both original and changed data
+    if (request.type === 'EDIT' && request.changes) {
+      return {
+        ...request.originalData,
+        ...request.changes
+      };
+    }
+    
+    // Fallback: try to extract from any possible location
+    const extractedData = {
+      ...request.requestedData,
+      ...request.data,
+      ...request
+    };
+    
+    console.log('🔄 Extracted data:', extractedData);
+    return extractedData;
+  };
+
+  // Render detailed customer information - FIXED VERSION
+  const renderCustomerDetails = (request: any) => {
+    const customerData = getCustomerDetails(request);
+    
+    console.log('📊 Final customer data for display:', customerData);
+    
+    // Field mappings based on the actual data structure from data-entry
+    const customerFields = [
+      { 
+        label: 'Customer Name', 
+        value: customerData.name || customerData.customerName || request.customerName
+      },
+      { 
+        label: 'Phone Number', 
+        value: customerData.phone || customerData.customerPhone || request.customerPhone
+      },
+      { 
+        label: 'Business Name', 
+        value: customerData.businessName || request.businessName
+      },
+      { 
+        label: 'Area', 
+        value: customerData.area || request.area
+      },
+      { 
+        label: 'Address', 
+        value: customerData.address || request.address
+      },
+      { 
+        label: 'Login ID', 
+        value: customerData.loginId || 'Will be generated after approval'
+      },
+    ];
+
+    const loanFields = [
+      { 
+        label: 'Loan Number', 
+        value: customerData.loanNumber || request.loanNumber
+      },
+      { 
+        label: 'Loan Amount', 
+        value: customerData.loanAmount || request.loanAmount
+      },
+      { 
+        label: 'EMI Amount', 
+        value: customerData.emiAmount || request.emiAmount
+      },
+      { 
+        label: 'Loan Type', 
+        value: customerData.loanType || request.loanType
+      },
+      { 
+        label: 'Loan Date', 
+        value: customerData.loanDate || 'Not specified'
+      },
+      { 
+        label: 'Loan Duration', 
+        value: customerData.loanDays ? `${customerData.loanDays} days` : 'Not specified'
+      },
+    ];
+
+    // File upload information
+    const fileFields = [
+      {
+        label: 'Profile Picture',
+        value: customerData.profilePicture ? 'Uploaded' : 'Not uploaded'
+      },
+      {
+        label: 'FI Document - Shop',
+        value: customerData.fiDocuments?.shop ? 'Uploaded' : 'Not uploaded'
+      },
+      {
+        label: 'FI Document - Home', 
+        value: customerData.fiDocuments?.home ? 'Uploaded' : 'Not uploaded'
+      }
+    ];
+
+    // For EDIT requests, show comparison view
+    if (request.type === 'EDIT' && request.changes) {
+      return (
+        <div className="space-y-6">
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-yellow-800 mb-2">Edit Request - Changes Summary</h3>
+            <div className="grid grid-cols-1 gap-4">
+              {Object.entries(request.changes).map(([field, newValue]: [string, any]) => (
+                <div key={field} className="p-3 bg-white rounded-lg border border-yellow-200">
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="font-medium text-gray-700">{formatFieldName(field)}</span>
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                      Changed
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">Original Value</p>
+                      <div className="p-2 bg-red-50 border border-red-200 rounded text-red-700">
+                        {renderFieldValue(field, request.originalData?.[field])}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">Requested Change</p>
+                      <div className="p-2 bg-green-50 border border-green-200 rounded text-green-700 font-semibold">
+                        {renderFieldValue(field, newValue)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div key={field} className={`p-3 rounded-lg border ${isChanged ? 'bg-yellow-50 border-yellow-200' : 'bg-gray-50 border-gray-200'}`}>
-        <div className="flex justify-between items-start mb-2">
-          <span className="font-medium text-gray-700">{formatFieldName(field)}</span>
-          {isChanged && (
-            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-              Changed
-            </span>
-          )}
-        </div>
-        
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <p className="text-xs text-gray-500 mb-1">Original Value</p>
-            <div className={`p-2 rounded border ${isChanged ? 'bg-red-50 border-red-200 text-red-700' : 'bg-gray-100 border-gray-300 text-gray-600'}`}>
-              {field.includes('Amount') || field.includes('amount') ? `₹${originalValue}` : String(originalValue || 'N/A')}
-            </div>
+      <div className="space-y-6">
+        {/* Customer Information */}
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+          <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+            <h3 className="text-lg font-semibold text-gray-900">Customer Information</h3>
           </div>
-          <div>
-            <p className="text-xs text-gray-500 mb-1">{isChanged ? 'Requested Change' : 'Current Value'}</p>
-            <div className={`p-2 rounded border ${isChanged ? 'bg-green-50 border-green-200 text-green-700 font-semibold' : 'bg-gray-100 border-gray-300 text-gray-600'}`}>
-              {field.includes('Amount') || field.includes('amount') ? `₹${newValue}` : String(newValue || 'N/A')}
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {customerFields.map((field, index) => (
+                <div key={index} className="space-y-1">
+                  <p className="text-sm font-medium text-gray-600">{field.label}</p>
+                  <p className="text-lg font-semibold text-gray-900">
+                    {renderFieldValue(field.label, field.value)}
+                  </p>
+                </div>
+              ))}
             </div>
           </div>
         </div>
-        
-        {isChanged && (
-          <div className="mt-2 flex items-center text-xs text-yellow-600">
-            <span className="mr-1">🔄</span>
-            <span>Field updated by Data Entry Operator</span>
+
+        {/* Loan Details */}
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+          <div className="px-6 py-4 border-b border-gray-200 bg-blue-50">
+            <h3 className="text-lg font-semibold text-gray-900">Loan Details</h3>
           </div>
-        )}
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {loanFields.map((field, index) => (
+                <div key={index} className="space-y-1">
+                  <p className="text-sm font-medium text-gray-600">{field.label}</p>
+                  <p className={`text-lg font-semibold ${
+                    field.label.includes('Amount') ? 'text-green-600' : 'text-gray-900'
+                  }`}>
+                    {renderFieldValue(field.label, field.value)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* File Uploads */}
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+          <div className="px-6 py-4 border-b border-gray-200 bg-purple-50">
+            <h3 className="text-lg font-semibold text-gray-900">Document Uploads</h3>
+          </div>
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {fileFields.map((field, index) => (
+                <div key={index} className="space-y-1">
+                  <p className="text-sm font-medium text-gray-600">{field.label}</p>
+                  <p className={`text-lg font-semibold ${
+                    field.value === 'Uploaded' ? 'text-green-600' : 'text-orange-600'
+                  }`}>
+                    {field.value}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Additional Information */}
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+          <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+            <h3 className="text-lg font-semibold text-gray-900">Request Information</h3>
+          </div>
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-gray-600">Request ID</p>
+                <p className="text-lg font-semibold text-gray-900 font-mono text-sm">{request._id}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-gray-600">Created Date</p>
+                <p className="text-lg font-semibold text-gray-900">
+                  {request.createdAt ? new Date(request.createdAt).toLocaleString() : 'N/A'}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-gray-600">Created By</p>
+                <p className="text-lg font-semibold text-gray-900">{request.createdBy || 'Data Entry Operator'}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-gray-600">Priority</p>
+                <p className="text-lg font-semibold text-gray-900">{request.priority || 'Medium'}</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   };
@@ -1433,7 +1651,9 @@ function PendingRequestsView({
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center space-x-2 mb-1">
-                        <h4 className="text-sm font-semibold text-gray-900">{request.customerName}</h4>
+                        <h4 className="text-sm font-semibold text-gray-900">
+                          {request.customerName || 'Unknown Customer'}
+                        </h4>
                         <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                           request.type === 'EDIT' 
                             ? 'bg-purple-100 text-purple-800' 
@@ -1447,26 +1667,21 @@ function PendingRequestsView({
                         Created: {new Date(request.createdAt).toLocaleDateString()}
                       </p>
                       
-                      {/* Quick summary of changes for EDIT requests */}
-                      {request.type === 'EDIT' && request.changes && (
-                        <div className="mt-2">
-                          <p className="text-xs text-purple-600 font-medium mb-1">
-                            Changes requested:
-                          </p>
-                          <div className="flex flex-wrap gap-1">
-                            {Object.keys(request.changes).slice(0, 3).map(field => (
-                              <span key={field} className="inline-flex items-center px-2 py-1 rounded text-xs bg-yellow-100 text-yellow-700">
-                                {formatFieldName(field)}
-                              </span>
-                            ))}
-                            {Object.keys(request.changes).length > 3 && (
-                              <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-gray-100 text-gray-600">
-                                +{Object.keys(request.changes).length - 3} more
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      )}
+                      {/* Quick summary */}
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
+                          Phone: {request.customerPhone || request.requestedData?.phone || 'N/A'}
+                        </span>
+                        <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
+                          Loan: ₹{((request.loanAmount || request.requestedData?.loanAmount || 0)).toLocaleString()}
+                        </span>
+                        <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
+                          EMI: ₹{((request.emiAmount || request.requestedData?.emiAmount || 0)).toLocaleString()}
+                        </span>
+                        <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
+                          {request.loanType || request.requestedData?.loanType || 'N/A'}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1481,7 +1696,7 @@ function PendingRequestsView({
                         : 'bg-blue-600 text-white hover:bg-blue-700'
                     }`}
                   >
-                    {request.type === 'EDIT' ? 'Review Changes' : 'View Details'}
+                    View Details
                   </button>
                   
                   <button 
@@ -1514,9 +1729,9 @@ function PendingRequestsView({
       {/* MODAL */}
       {isViewModalOpen && selectedRequest && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
+              <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-gray-900">
                   {selectedRequest.type === 'EDIT' ? 'Edit Request Details' : 'New Customer Request'}
                 </h2>
@@ -1537,144 +1752,13 @@ function PendingRequestsView({
                 }`}>
                   {selectedRequest.type === 'EDIT' ? 'EDIT REQUEST' : 'NEW CUSTOMER REQUEST'}
                 </span>
-                {selectedRequest.type === 'EDIT' && (
-                  <p className="text-sm text-purple-600 mt-2">
-                    📝 Data Entry Operator has requested changes to customer information
-                  </p>
-                )}
               </div>
               
-              {/* For EDIT requests, show comparison view */}
-              {selectedRequest.type === 'EDIT' ? (
-                <div className="space-y-6">
-                  {/* Customer Information Comparison */}
-                  <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-                    <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                      <h3 className="text-lg font-semibold text-gray-900">Customer Information Changes</h3>
-                      <p className="text-sm text-gray-600 mt-1">Compare original values with requested changes</p>
-                    </div>
-                    <div className="p-6 space-y-4">
-                      {/* Display all fields with comparison */}
-                      {selectedRequest.originalData && selectedRequest.data && (
-                        <div className="grid grid-cols-1 gap-4">
-                          {Object.keys(selectedRequest.data).map(field => 
-                            renderFieldComparison(
-                              field,
-                              selectedRequest.originalData[field],
-                              selectedRequest.data[field]
-                            )
-                          )}
-                        </div>
-                      )}
-                      
-                      {/* Fallback if no structured comparison data */}
-                      {(!selectedRequest.originalData || !selectedRequest.data) && selectedRequest.changes && (
-                        <div className="space-y-4">
-                          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                            <h4 className="font-semibold text-yellow-800 mb-2">Changes Summary</h4>
-                            {Object.entries(selectedRequest.changes).map(([field, newValue]: [string, any]) => (
-                              <div key={field} className="mb-3 last:mb-0">
-                                <p className="font-medium text-gray-700 mb-1">{formatFieldName(field)}</p>
-                                <div className="grid grid-cols-2 gap-3">
-                                  <div>
-                                    <p className="text-xs text-gray-500 mb-1">Original Value</p>
-                                    <div className="p-2 bg-red-50 border border-red-200 rounded text-red-700">
-                                      {selectedRequest.originalData?.[field] || 'N/A'}
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <p className="text-xs text-gray-500 mb-1">Requested Change</p>
-                                    <div className="p-2 bg-green-50 border border-green-200 rounded text-green-700 font-semibold">
-                                      {newValue}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                /* For NEW requests, show regular details */
-                <>
-                  {/* Customer Information */}
-                  <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-                    <h3 className="font-semibold text-lg mb-2">Customer Information</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-gray-600">Name</p>
-                        <p className="font-medium">{selectedRequest.customerName || selectedRequest.data?.customerName || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600">Phone</p>
-                        <p className="font-medium">{selectedRequest.phone || selectedRequest.data?.phone || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600">Business</p>
-                        <p className="font-medium">{selectedRequest.businessName || selectedRequest.data?.businessName || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600">Area</p>
-                        <p className="font-medium">{selectedRequest.area || selectedRequest.data?.area || 'N/A'}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Loan Details */}
-                  <div className="mb-6 p-4 bg-blue-50 rounded-lg">
-                    <h3 className="font-semibold text-lg mb-2">Loan Details</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      <div>
-                        <p className="text-sm text-gray-600">Loan Amount</p>
-                        <p className="font-medium text-lg">
-                          ₹{selectedRequest.loanAmount || selectedRequest.data?.loanAmount || 'N/A'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600">EMI Amount</p>
-                        <p className="font-medium text-lg">
-                          ₹{selectedRequest.emiAmount || selectedRequest.data?.emiAmount || 'N/A'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-gray-600">Loan Type</p>
-                        <p className="font-medium">{selectedRequest.loanType || selectedRequest.data?.loanType || 'N/A'}</p>
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {/* Request Metadata */}
-              <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <h3 className="font-semibold text-lg mb-2">Request Information</h3>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-gray-600">Request ID</p>
-                    <p className="font-mono text-gray-900 text-xs">{selectedRequest._id}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-600">Submitted Date</p>
-                    <p className="text-gray-900">
-                      {selectedRequest.createdAt ? new Date(selectedRequest.createdAt).toLocaleString() : 'N/A'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-600">Type</p>
-                    <p className="text-gray-900">{selectedRequest.type || 'Pending'}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-600">Status</p>
-                    <p className="text-gray-900">{selectedRequest.status || 'Pending'}</p>
-                  </div>
-                </div>
-              </div>
+              {/* Customer Details */}
+              {renderCustomerDetails(selectedRequest)}
 
               {/* Action Buttons */}
-              <div className="flex justify-end space-x-3 mt-6 pt-4 border-t border-gray-200">
+              <div className="flex justify-end space-x-3 mt-6 pt-6 border-t border-gray-200">
                 <button 
                   onClick={handleRejectFromModal}
                   className="bg-red-600 text-white px-6 py-2 rounded-md hover:bg-red-700 transition-colors font-medium"
@@ -1775,12 +1859,10 @@ export default function DashboardPage() {
   try {
     console.log('🟡 Super Admin - Fetching pending requests...');
     
-    // Try different API endpoints - Super Admin should use admin endpoints
     const response = await fetch('/api/admin/requests');
     
     if (!response.ok) {
       console.log('❌ Admin requests failed, trying data-entry endpoint...');
-      // Fallback to data-entry endpoint
       const fallbackResponse = await fetch('/api/data-entry/requests');
       
       if (!fallbackResponse.ok) {
@@ -1788,28 +1870,23 @@ export default function DashboardPage() {
       }
       
       const fallbackData = await fallbackResponse.json();
-      console.log('🔵 Data-entry requests response:', fallbackData);
+      console.log('🔵 Data-entry requests response STRUCTURE:', fallbackData);
       
-      // Handle data-entry response structure
+      // Log the first request to see its structure
       if (fallbackData.success && Array.isArray(fallbackData.data?.requests)) {
-        const validRequests = fallbackData.data.requests.filter((req: any) => 
-          req.customerName || req.data?.customerName
-        );
-        console.log(`✅ Setting ${validRequests.length} requests from data-entry`);
-        setPendingRequests(validRequests);
+        console.log('📊 First request object:', JSON.stringify(fallbackData.data.requests[0], null, 2));
+        setPendingRequests(fallbackData.data.requests);
       } else {
-        console.warn('⚠️ No valid requests found in data-entry response');
         setPendingRequests([]);
       }
       return;
     }
 
-    // Handle admin endpoint response
     const data = await response.json();
-    console.log('🔵 Admin requests response:', data);
+    console.log('🔵 Admin requests response STRUCTURE:', data);
     
+    // Log the first request to see its structure
     if (data.success) {
-      // Handle different response structures
       let requestsArray = [];
       
       if (Array.isArray(data.data)) {
@@ -1820,15 +1897,11 @@ export default function DashboardPage() {
         requestsArray = data.requests;
       }
       
-      const validRequests = requestsArray.filter((req: any) => 
-        req.customerName || req.data?.customerName
-      );
+      if (requestsArray.length > 0) {
+        console.log('📊 First request object:', JSON.stringify(requestsArray[0], null, 2));
+      }
       
-      console.log(`✅ Setting ${validRequests.length} requests from admin`);
-      setPendingRequests(validRequests);
-    } else {
-      console.warn('⚠️ No requests array found in admin response');
-      setPendingRequests([]);
+      setPendingRequests(requestsArray);
     }
     
   } catch (error) {
@@ -1850,35 +1923,55 @@ export default function DashboardPage() {
     loadData()
   }, [activeTab])
 
-  // Handle request approval
-  const handleApproveRequest = async (request: any) => {
-    try {
-      const response = await fetch('/api/admin/approve-request', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          requestId: request._id,
-          action: 'approve'
-        }),
-      })
+  // Handle request approval - FIXED VERSION
+  // Handle request approval - UPDATED VERSION to fix "Customer not found" error
+// Handle request approval - UPDATED to use the new POST endpoint
+// REPLACE your current handleApproveRequest with this version
+const handleApproveRequest = async (request: any) => {
+  try {
+    console.log('🟡 Approving request:', request._id);
+    console.log('📊 Request type:', request.type);
+    
+    // For both NEW and EDIT requests, just call the approve endpoint
+    // The backend will handle customer creation/activation automatically
+    console.log('📨 Sending approval request to backend...');
+    
+    const approveResponse = await fetch('/api/admin/approve-request', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        requestId: request._id,
+        action: 'approve'
+      }),
+    });
 
-      if (response.ok) {
-        alert('Request approved successfully!')
-        // Refresh all data
-        fetchDashboardData()
-        fetchCustomers()
+    const approveData = await approveResponse.json();
+    console.log('🔵 Approve request response:', approveData);
+    
+    if (approveResponse.ok && approveData.success) {
+      alert('Request approved successfully!');
+      await Promise.all([
+        fetchDashboardData(),
+        fetchCustomers(),
         fetchPendingRequests()
-      }
-    } catch (error) {
-      alert('Error approving request')
+      ]);
+    } else {
+      alert(`Error approving request: ${approveData.error || 'Unknown error'}`);
+      console.log('❌ Approval failed details:', approveData);
     }
+  } catch (error: any) {
+    console.error('❌ Error approving request:', error);
+    alert('Error approving request: ' + (error.message || 'Check console for details'));
   }
+};
 
-  // Handle request rejection
+  // Handle request rejection - FIXED VERSION
   const handleRejectRequest = async (request: any) => {
     try {
+      console.log('🟡 Rejecting request:', request._id);
+      
       const response = await fetch('/api/admin/approve-request', {
         method: 'POST',
         headers: {
@@ -1886,20 +1979,29 @@ export default function DashboardPage() {
         },
         body: JSON.stringify({
           requestId: request._id,
-          action: 'reject'
+          action: 'reject',
+          reason: 'Rejected by admin'
         }),
-      })
+      });
 
-      if (response.ok) {
-        alert('Request rejected successfully!')
+      const data = await response.json();
+      console.log('🔵 Reject response:', data);
+
+      if (response.ok && data.success) {
+        alert('Request rejected successfully!');
         // Refresh data
-        fetchDashboardData()
-        fetchPendingRequests()
+        await Promise.all([
+          fetchDashboardData(),
+          fetchPendingRequests()
+        ]);
+      } else {
+        alert(`Error rejecting request: ${data.error || data.message || 'Unknown error'}`);
       }
-    } catch (error) {
-      alert('Error rejecting request')
+    } catch (error: any) {
+      console.error('❌ Error rejecting request:', error);
+      alert('Error rejecting request: ' + (error.message || 'Check console for details'));
     }
-  }
+  };
 
   // Handle customer deletion
   const handleDeleteCustomer = async (customerId: string) => {
@@ -2036,9 +2138,10 @@ export default function DashboardPage() {
                   onChange={(e) => handleFilterChange('loanType', e.target.value)}
                 >
                   <option value="">All Loan Types</option>
-                  {loanTypes.map(type => (
-                    <option key={type} value={type}>{type}</option>
-                  ))}
+                  <option value="Daily">Daily</option>
+                  <option value="Weekly">Weekly</option>
+                  <option value="Monthly">Monthly</option>
+                  <option value="Yearly">Yearly</option>
                 </select>
               </div>
 

@@ -9,6 +9,8 @@ export async function POST(request) {
     await connectDB();
     const data = await request.json();
     
+    console.log('🟡 EMI Payment data received:', data);
+    
     const {
       customerId,
       customerName,
@@ -48,30 +50,66 @@ export async function POST(request) {
       }, { status: 404 });
     }
 
-    // If loanId is provided, verify the loan exists
     let loan = null;
+    let finalLoanId = null;
+    let finalLoanNumber = 'N/A';
+
+    // If loanId is provided, verify the loan exists and belongs to customer
     if (loanId) {
-      loan = await Loan.findById(loanId);
+      loan = await Loan.findOne({ 
+        _id: loanId, 
+        customerId: customerId 
+      });
       if (!loan) {
         return NextResponse.json({ 
           success: false,
-          error: 'Loan not found'
+          error: 'Loan not found or does not belong to this customer'
         }, { status: 404 });
       }
+      finalLoanId = loan._id;
+      finalLoanNumber = loan.loanNumber;
     } else {
-      // Find the main loan for this customer
+      // AUTO-FIND: Find the main/active loan for this customer
+      console.log('🔍 Auto-finding loan for customer:', customerId);
+      
+      // First try to find active loan
       loan = await Loan.findOne({ 
         customerId, 
         status: 'active' 
       }).sort({ createdAt: -1 });
+
+      // If no active loan, find any loan for this customer
+      if (!loan) {
+        console.log('⚠️ No active loan found, searching for any loan...');
+        loan = await Loan.findOne({ customerId }).sort({ createdAt: -1 });
+      }
+
+      // If still no loan found, we cannot proceed
+      if (!loan) {
+        return NextResponse.json({ 
+          success: false,
+          error: 'No loan found for this customer. Please ensure the customer has an approved loan before recording EMI payments.'
+        }, { status: 404 });
+      }
+
+      finalLoanId = loan._id;
+      finalLoanNumber = loan.loanNumber;
+      console.log('✅ Found loan:', { 
+        loanId: finalLoanId, 
+        loanNumber: finalLoanNumber,
+        customerName: loan.customerName 
+      });
     }
 
-    // Create EMI payment record
+    // Use provided loanNumber or fallback to found loan's number
+    finalLoanNumber = loanNumber || finalLoanNumber;
+
+    // Create EMI payment record - NOW WITH GUARANTEED loanId
     const paymentData = {
       customerId,
       customerName,
-      loanId: loan ? loan._id : null,
-      loanNumber: loanNumber || (loan ? loan.loanNumber : 'N/A'),
+      loanId: finalLoanId, // This will never be null now
+      loanNumber: finalLoanNumber,
       paymentDate: new Date(paymentDate),
       amount: parseFloat(amount),
       status,
@@ -79,36 +117,51 @@ export async function POST(request) {
       paymentMethod,
       transactionId: transactionId || null,
       notes,
-      isVerified: false // Default to unverified
+      isVerified: false
     };
+
+    console.log('💾 Creating EMI payment:', paymentData);
 
     const payment = new EMIPayment(paymentData);
     await payment.save();
 
     // Update customer's last payment date and total paid
-    await Customer.findByIdAndUpdate(customerId, {
+    const updateCustomer = Customer.findByIdAndUpdate(customerId, {
       lastPaymentDate: new Date(paymentDate),
       totalPaid: (customer.totalPaid || 0) + parseFloat(amount),
       updatedAt: new Date()
     });
 
-    // Update loan EMI paid amount if loan exists
-    if (loan) {
-      await Loan.findByIdAndUpdate(loan._id, {
-        emiPaid: (loan.emiPaid || 0) + parseFloat(amount),
-        totalPaid: (loan.totalPaid || 0) + parseFloat(amount),
-        updatedAt: new Date()
-      });
-    }
+    // Update loan EMI paid amount
+    const updateLoan = Loan.findByIdAndUpdate(finalLoanId, {
+      $inc: {
+        emiPaid: parseFloat(amount),
+        totalPaid: parseFloat(amount)
+      },
+      lastPaymentDate: new Date(paymentDate),
+      updatedAt: new Date()
+    });
+
+    // Execute both updates in parallel
+    await Promise.all([updateCustomer, updateLoan]);
+
+    console.log('✅ EMI payment recorded successfully:', payment._id);
 
     return NextResponse.json({ 
       success: true,
-      message: 'EMI payment recorded successfully!',
-      data: payment
+      message: `EMI payment of ₹${amount} recorded successfully for ${customerName}`,
+      data: {
+        paymentId: payment._id,
+        customerName: customerName,
+        amount: amount,
+        loanNumber: finalLoanNumber,
+        paymentDate: payment.paymentDate,
+        loanId: finalLoanId
+      }
     });
     
   } catch (error) {
-    console.error('Error recording EMI payment:', error);
+    console.error('❌ Error recording EMI payment:', error);
     return NextResponse.json({ 
       success: false, 
       error: error.message 
