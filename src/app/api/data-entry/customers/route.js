@@ -1,45 +1,28 @@
 import { NextResponse } from 'next/server';
-import Request from '@/lib/models/Request';
 import Customer from '@/lib/models/Customer';
-import User from '@/lib/models/User';
+import Loan from '@/lib/models/Loan';
+import Request from '@/lib/models/Request';
+import EMIPayment from '@/lib/models/EMIPayment';
 import { connectDB } from '@/lib/db';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
 
-// GET method to fetch all active customers
-export async function GET() {
-  try {
-    await connectDB();
-    // Get all active customers for data entry operators
-    const customers = await Customer.find({ status: 'active' })
-      .select('name phone businessName area loanNumber loanAmount emiAmount loanType status category officeCategory createdAt')
-      .sort({ createdAt: -1 });
-    
-    return NextResponse.json({ success: true, data: customers });
-  } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
-// POST method to create a new customer REQUEST (not actual customer)
+// POST method to create a new customer request
 export async function POST(request) {
   try {
     await connectDB();
     
-    // Handle form data for file uploads
+    console.log('🟡 Starting customer creation request...');
+
+    // Parse form data
     const formData = await request.formData();
     
-    console.log('Received form data fields:', Array.from(formData.keys()));
-
-    // Extract all form data
+    // Extract all fields from form data
     const name = formData.get('name');
-    const phone = formData.get('phone');
     const businessName = formData.get('businessName');
     const area = formData.get('area');
     const loanNumber = formData.get('loanNumber');
     const address = formData.get('address');
-    const category = formData.get('category') || 'A'; // New field
-    const officeCategory = formData.get('officeCategory') || 'Office 1'; // New field
+    const category = formData.get('category');
+    const officeCategory = formData.get('officeCategory');
     const loanDate = formData.get('loanDate');
     const loanAmount = formData.get('loanAmount');
     const emiAmount = formData.get('emiAmount');
@@ -49,228 +32,353 @@ export async function POST(request) {
     const password = formData.get('password');
     const createdBy = formData.get('createdBy');
 
-    // Get files
+    // Extract phone numbers (multiple)
+    const phone = [];
+    let index = 0;
+    while (formData.get(`phone[${index}]`)) {
+      const phoneNumber = formData.get(`phone[${index}]`);
+      if (phoneNumber && phoneNumber.trim()) {
+        phone.push(phoneNumber.trim());
+      }
+      index++;
+    }
+
+    // Extract WhatsApp number (optional)
+    const whatsappNumber = formData.get('whatsappNumber') || '';
+
+    // Extract files
     const profilePicture = formData.get('profilePicture');
     const fiDocumentShop = formData.get('fiDocumentShop');
     const fiDocumentHome = formData.get('fiDocumentHome');
 
-    // Validate required fields
-    if (!name || !phone || !businessName || !area || !loanNumber || !address) {
-      return NextResponse.json({ 
-        success: false,
-        error: 'All required fields must be filled'
-      }, { status: 400 });
-    }
-
-    // Validate category and office category
-    if (!category || !officeCategory) {
-      return NextResponse.json({ 
-        success: false,
-        error: 'Category and Office Category are required'
-      }, { status: 400 });
-    }
-
-    // Validate phone number format
-    const phoneRegex = /^[0-9]{10}$/;
-    if (!phoneRegex.test(phone)) {
-      return NextResponse.json({ 
-        success: false,
-        error: 'Please enter a valid 10-digit phone number',
-        field: 'phone'
-      }, { status: 400 });
-    }
-
-    // Check for duplicate phone number in ACTIVE customers
-    const existingActivePhone = await Customer.findOne({
-      phone: phone,
-      status: 'active'
-    });
-    
-    if (existingActivePhone) {
-      return NextResponse.json({ 
-        success: false,
-        error: 'Customer with this phone number already exists',
-        field: 'phone'
-      }, { status: 409 });
-    }
-    
-    // Check for duplicate loan number in ACTIVE customers
-    const existingActiveLoan = await Customer.findOne({
-      loanNumber: loanNumber,
-      status: 'active'
-    });
-    
-    if (existingActiveLoan) {
-      return NextResponse.json({ 
-        success: false,
-        error: 'Loan number already exists. Please use a unique loan number',
-        field: 'loanNumber'
-      }, { status: 409 });
-    }
-
-    // Check for pending requests with same phone or loan number
-    const existingPendingRequest = await Request.findOne({
-      $or: [
-        { 'requestedData.phone': phone },
-        { 'requestedData.loanNumber': loanNumber }
-      ],
-      status: 'Pending'
-    });
-
-    if (existingPendingRequest) {
-      return NextResponse.json({ 
-        success: false,
-        error: 'A pending request already exists for this phone number or loan number'
-      }, { status: 409 });
-    }
-
-    // File upload handling - store file paths in the request
-    const uploadDir = path.join(process.cwd(), 'public/uploads');
-    const filePaths = {
-      profilePicture: null,
-      fiDocuments: {
-        shop: null,
-        home: null
-      }
-    };
-
-    // Create uploads directory if it doesn't exist
-    try {
-      await mkdir(uploadDir, { recursive: true });
-    } catch (error) {
-      console.log('Upload directory already exists or cannot be created');
-    }
-
-    // Upload profile picture if provided
-    if (profilePicture && profilePicture.size > 0) {
-      try {
-        const profilePictureBytes = await profilePicture.arrayBuffer();
-        const profilePictureBuffer = Buffer.from(profilePictureBytes);
-        const profilePictureExt = path.extname(profilePicture.name) || '.jpg';
-        const profilePictureFilename = `profile_${Date.now()}${profilePictureExt}`;
-        const profilePicturePath = path.join(uploadDir, profilePictureFilename);
-        
-        await writeFile(profilePicturePath, profilePictureBuffer);
-        filePaths.profilePicture = `/uploads/${profilePictureFilename}`;
-      } catch (error) {
-        console.error('Error uploading profile picture:', error);
-      }
-    }
-
-    // Upload FI Document - Shop if provided
-    if (fiDocumentShop && fiDocumentShop.size > 0) {
-      try {
-        const fiDocumentShopBytes = await fiDocumentShop.arrayBuffer();
-        const fiDocumentShopBuffer = Buffer.from(fiDocumentShopBytes);
-        const fiDocumentShopExt = path.extname(fiDocumentShop.name) || '.pdf';
-        const fiDocumentShopFilename = `fi_shop_${Date.now()}${fiDocumentShopExt}`;
-        const fiDocumentShopPath = path.join(uploadDir, fiDocumentShopFilename);
-        
-        await writeFile(fiDocumentShopPath, fiDocumentShopBuffer);
-        filePaths.fiDocuments.shop = `/uploads/${fiDocumentShopFilename}`;
-      } catch (error) {
-        console.error('Error uploading FI document - shop:', error);
-      }
-    }
-
-    // Upload FI Document - Home if provided
-    if (fiDocumentHome && fiDocumentHome.size > 0) {
-      try {
-        const fiDocumentHomeBytes = await fiDocumentHome.arrayBuffer();
-        const fiDocumentHomeBuffer = Buffer.from(fiDocumentHomeBytes);
-        const fiDocumentHomeExt = path.extname(fiDocumentHome.name) || '.pdf';
-        const fiDocumentHomeFilename = `fi_home_${Date.now()}${fiDocumentHomeExt}`;
-        const fiDocumentHomePath = path.join(uploadDir, fiDocumentHomeFilename);
-        
-        await writeFile(fiDocumentHomePath, fiDocumentHomeBuffer);
-        filePaths.fiDocuments.home = `/uploads/${fiDocumentHomeFilename}`;
-      } catch (error) {
-        console.error('Error uploading FI document - home:', error);
-      }
-    }
-
-    // Prepare customer data for the request
-    const customerData = {
+    console.log('📦 Received customer data:', {
       name,
-      phone,
       businessName,
       area,
       loanNumber,
       address,
-      category, // Added category
-      officeCategory, // Added office category
+      category,
+      officeCategory,
+      phone,
+      whatsappNumber,
+      loanDate,
+      loanAmount,
+      emiAmount,
+      loanDays,
+      loanType,
+      loginId,
+      createdBy
+    });
+
+    // Validate required fields
+    if (!name || !businessName || !area || !loanNumber || !address || 
+        !category || !officeCategory || !loanDate || !loanAmount || 
+        !emiAmount || !loanDays || !loanType || !loginId || !password) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'All required fields must be filled'
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate phone numbers
+    if (phone.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'At least one phone number is required'
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate phone number format
+    for (const phoneNumber of phone) {
+      if (!/^\d{10}$/.test(phoneNumber)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'All phone numbers must be valid 10-digit numbers'
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Validate WhatsApp number format if provided
+    if (whatsappNumber && !/^\d{10}$/.test(whatsappNumber)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'WhatsApp number must be a valid 10-digit number'
+        },
+        { status: 400 }
+      );
+    }
+
+    console.log('🔍 Loan model schema fields:', Object.keys(Loan.schema.paths));
+
+    // Check if customer with same phone number already exists
+    const existingCustomerByPhone = await Customer.findOne({
+      phone: { $in: phone }
+    });
+
+    if (existingCustomerByPhone) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Customer with this phone number already exists',
+          field: 'phone'
+        },
+        { status: 409 }
+      );
+    }
+
+    // Check if customer with same loan number already exists
+    const existingCustomerByLoanNumber = await Customer.findOne({
+      loanNumber
+    });
+
+    if (existingCustomerByLoanNumber) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Loan number already exists. Please use a unique loan number',
+          field: 'loanNumber'
+        },
+        { status: 409 }
+      );
+    }
+
+    // Create new customer with pending status (requires admin approval)
+    const newCustomer = new Customer({
+      name: name.trim(),
+      phone,
+      whatsappNumber: whatsappNumber.trim(),
+      businessName: businessName.trim(),
+      area: area.trim(),
+      loanNumber: loanNumber.trim(),
       loanAmount: parseFloat(loanAmount),
       emiAmount: parseFloat(emiAmount),
       loanType,
-      loanDate: loanDate || new Date().toISOString().split('T')[0],
-      loanDays: parseInt(loanDays) || 30,
-      profilePicture: filePaths.profilePicture,
-      fiDocuments: filePaths.fiDocuments,
-      loginId: loginId,
-      hasPassword: !!password,
-      password: password // Store temporarily for user creation upon approval
-    };
-
-    // Validate numeric fields
-    if (isNaN(customerData.loanAmount) || customerData.loanAmount <= 0) {
-      return NextResponse.json({ 
-        success: false,
-        error: 'Valid loan amount is required'
-      }, { status: 400 });
-    }
-
-    if (isNaN(customerData.emiAmount) || customerData.emiAmount <= 0) {
-      return NextResponse.json({ 
-        success: false,
-        error: 'Valid EMI amount is required'
-      }, { status: 400 });
-    }
-
-    // Create approval request for super admin
-    const approvalRequest = new Request({
-      type: 'New Customer',
-      customerName: customerData.name,
-      customerPhone: customerData.phone,
-      loanNumber: customerData.loanNumber,
-      loanAmount: customerData.loanAmount,
-      emiAmount: customerData.emiAmount,
-      loanType: customerData.loanType,
-      businessName: customerData.businessName,
-      area: customerData.area,
-      address: customerData.address,
-      category: customerData.category, // Added category
-      officeCategory: customerData.officeCategory, // Added office category
-      requestedData: customerData,
-      status: 'Pending',
-      priority: 'Medium',
-      createdBy: createdBy || 'data_entry_operator',
-      createdByRole: 'data_entry',
-      description: `New customer registration for ${customerData.name} - Loan: ${customerData.loanNumber} (Category: ${category}, Office: ${officeCategory})`,
-      requiresCustomerNotification: false,
-      estimatedImpact: 'Medium'
-    });
-
-    await approvalRequest.save();
-    console.log('✅ Request created successfully:', approvalRequest._id);
-    
-    return NextResponse.json({ 
-      success: true,
-      message: 'Customer request submitted successfully! Waiting for admin approval.',
-      data: {
-        requestId: approvalRequest._id,
-        customerName: customerData.name,
-        phone: customerData.phone,
-        loanNumber: customerData.loanNumber,
-        category: customerData.category,
-        officeCategory: customerData.officeCategory
+      address: address.trim(),
+      category,
+      officeCategory,
+      status: 'pending', // Set to pending for admin approval
+      userId: loginId.trim(),
+      password, // In production, this should be hashed
+      createdBy: createdBy || 'data_entry_operator_1',
+      
+      // Loan details for the main loan
+      loanDate: new Date(loanDate),
+      loanDays: parseInt(loanDays),
+      
+      // File uploads (you'll need to handle file storage)
+      profilePicture: profilePicture ? `/uploads/profile/${profilePicture.name}` : null,
+      fiDocuments: {
+        shop: fiDocumentShop ? `/uploads/documents/shop/${fiDocumentShop.name}` : null,
+        home: fiDocumentHome ? `/uploads/documents/home/${fiDocumentHome.name}` : null
       }
     });
-    
+
+    console.log('💾 Saving customer to database...');
+
+    // Save customer to database
+    await newCustomer.save();
+
+    console.log('✅ Customer request created successfully with ID:', newCustomer._id);
+
+    // Create the main loan record
+    const mainLoan = new Loan({
+      customerId: newCustomer._id,
+      customerName: newCustomer.name,
+      loanNumber: newCustomer.loanNumber,
+      amount: newCustomer.loanAmount, // Use 'amount' as per Loan schema
+      emiAmount: newCustomer.emiAmount,
+      loanType: newCustomer.loanType,
+      dateApplied: newCustomer.loanDate,
+      loanDays: newCustomer.loanDays,
+      status: 'pending', // Loan also pending approval
+      isMainLoan: true,
+      createdBy: newCustomer.createdBy
+    });
+
+    await mainLoan.save();
+
+    console.log('✅ Main loan created successfully');
+
+    // Create request record for admin approval
+    const newRequest = new Request({
+      type: 'New Customer',
+      customerId: newCustomer._id,
+      customerName: newCustomer.name,
+      loanNumber: newCustomer.loanNumber,
+      // Store all the customer data for admin review
+      requestedData: {
+        name: newCustomer.name,
+        phone: newCustomer.phone,
+        whatsappNumber: newCustomer.whatsappNumber,
+        businessName: newCustomer.businessName,
+        area: newCustomer.area,
+        loanNumber: newCustomer.loanNumber,
+        address: newCustomer.address,
+        category: newCustomer.category,
+        officeCategory: newCustomer.officeCategory,
+        loanAmount: newCustomer.loanAmount,
+        emiAmount: newCustomer.emiAmount,
+        loanType: newCustomer.loanType,
+        loanDate: newCustomer.loanDate,
+        loanDays: newCustomer.loanDays,
+        loginId: loginId,
+        password: password,
+        profilePicture: newCustomer.profilePicture,
+        fiDocuments: newCustomer.fiDocuments
+      },
+      description: `New customer registration request for ${newCustomer.name} with loan number ${newCustomer.loanNumber}`,
+      priority: 'High',
+      status: 'Pending',
+      createdBy: newCustomer.createdBy,
+      createdByRole: 'data_entry',
+      requiresCustomerNotification: true,
+      estimatedImpact: 'High'
+    });
+
+    await newRequest.save();
+    console.log('✅ Request created for admin approval with ID:', newRequest._id);
+
+    // TODO: Handle file uploads to your storage (S3, local storage, etc.)
+    // For now, we'll just log the file information
+    if (profilePicture) {
+      console.log('📷 Profile picture:', profilePicture.name, profilePicture.type, profilePicture.size);
+    }
+    if (fiDocumentShop) {
+      console.log('📄 Shop FI Document:', fiDocumentShop.name, fiDocumentShop.type, fiDocumentShop.size);
+    }
+    if (fiDocumentHome) {
+      console.log('📄 Home FI Document:', fiDocumentHome.name, fiDocumentHome.type, fiDocumentHome.size);
+    }
+
+    return NextResponse.json(
+      {
+        success: true,
+        message: 'Customer request submitted successfully! Waiting for admin approval.',
+        data: {
+          customerId: newCustomer._id,
+          name: newCustomer.name,
+          loanNumber: newCustomer.loanNumber,
+          status: newCustomer.status,
+          requestId: newRequest._id
+        }
+      },
+      { status: 201 }
+    );
+
   } catch (error) {
-    console.error('Error in API:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: error.message 
-    }, { status: 500 });
+    console.error('❌ Error creating customer request:', error);
+    
+    // Handle duplicate key errors
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      const message = field === 'phone' 
+        ? 'Customer with this phone number already exists'
+        : 'Loan number already exists';
+      
+      return NextResponse.json(
+        {
+          success: false,
+          error: message,
+          field
+        },
+        { status: 409 }
+      );
+    }
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Failed to create customer request: ' + error.message
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// GET method for fetching customers list
+export async function GET(request) {
+  try {
+    await connectDB();
+    
+    const { searchParams } = new URL(request.url);
+    const search = searchParams.get('search') || '';
+    const status = searchParams.get('status') || 'active';
+    const loanType = searchParams.get('loanType') || '';
+    const loanNumber = searchParams.get('loanNumber') || '';
+
+    console.log('🔍 Fetching customers with filters:', { search, status, loanType, loanNumber });
+
+    // Build query - only show active customers for data entry
+    let query = { status: 'active' }; // Data entry can only see active customers
+    
+    // Add search filter
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { loanNumber: { $regex: search, $options: 'i' } },
+        { businessName: { $regex: search, $options: 'i' } },
+        { area: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Add loan type filter
+    if (loanType) {
+      query.loanType = loanType;
+    }
+
+    // Add loan number filter
+    if (loanNumber) {
+      query.loanNumber = { $regex: loanNumber, $options: 'i' };
+    }
+
+    // Fetch customers with the new fields
+    const customers = await Customer.find(query)
+      .select('name phone businessName area loanNumber loanAmount emiAmount loanType status category officeCategory createdAt')
+      .sort({ createdAt: -1 });
+
+    console.log(`✅ Found ${customers.length} customers for data entry`);
+
+    // Format response with all required fields
+    const formattedCustomers = customers.map(customer => ({
+      _id: customer._id,
+      id: customer._id, // Add id for compatibility with frontend
+      name: customer.name,
+      phone: customer.phone,
+      businessName: customer.businessName,
+      area: customer.area,
+      loanNumber: customer.loanNumber,
+      loanAmount: customer.loanAmount,
+      emiAmount: customer.emiAmount,
+      loanType: customer.loanType,
+      status: customer.status,
+      category: customer.category || 'A', // Include category with fallback
+      officeCategory: customer.officeCategory || 'Office 1', // Include officeCategory with fallback
+      createdAt: customer.createdAt
+    }));
+
+    return NextResponse.json({
+      success: true,
+      data: formattedCustomers
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching customers for data entry:', error);
+    return NextResponse.json(
+      { 
+        success: false,
+        error: 'Failed to fetch customers: ' + error.message 
+      },
+      { status: 500 }
+    );
   }
 }

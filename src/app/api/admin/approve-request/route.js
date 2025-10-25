@@ -8,9 +8,9 @@ import { connectDB } from '@/lib/db';
 export async function POST(request) {
   try {
     await connectDB();
-    const { requestId, action, reason } = await request.json();
+    const { requestId, action, reason, processedBy = 'admin' } = await request.json();
 
-    console.log('🟡 Processing request:', { requestId, action });
+    console.log('🟡 Processing request:', { requestId, action, processedBy });
 
     // Find the request
     const requestDoc = await Request.findById(requestId);
@@ -39,7 +39,7 @@ export async function POST(request) {
         // Final duplicate check before creating customer
         const existingCustomer = await Customer.findOne({
           $or: [
-            { phone: requestedData.phone },
+            { phone: { $in: requestedData.phone } },
             { loanNumber: requestedData.loanNumber }
           ],
           status: 'active'
@@ -52,10 +52,11 @@ export async function POST(request) {
           }, { status: 409 });
         }
 
-        // Create new customer
+        // Create new customer with ALL required fields
         const customerData = {
           name: requestedData.name,
           phone: requestedData.phone,
+          whatsappNumber: requestedData.whatsappNumber || '',
           businessName: requestedData.businessName,
           area: requestedData.area,
           loanNumber: requestedData.loanNumber,
@@ -63,12 +64,19 @@ export async function POST(request) {
           loanAmount: requestedData.loanAmount,
           emiAmount: requestedData.emiAmount,
           loanType: requestedData.loanType,
+          category: requestedData.category || 'A',
+          officeCategory: requestedData.officeCategory || 'Office 1',
           profilePicture: requestedData.profilePicture,
-          fiDocuments: requestedData.fiDocuments,
+          fiDocuments: requestedData.fiDocuments || {},
+          // ADD THE MISSING REQUIRED FIELDS
+          loanDate: requestedData.loanDate ? new Date(requestedData.loanDate) : new Date(),
+          loanDays: requestedData.loanDays || 30,
           status: 'active',
           isActive: true,
+          userId: requestedData.loginId,
+          password: requestedData.password,
           createdBy: requestDoc.createdBy,
-          approvedBy: 'admin',
+          approvedBy: processedBy,
           approvedAt: new Date(),
           createdAt: new Date(),
           updatedAt: new Date()
@@ -104,32 +112,73 @@ export async function POST(request) {
           }
         }
 
-        // In the approval section for New Customer requests, update the loan creation part:
+        // Create main loan record
+        const loanData = {
+          customerId: customer._id,
+          customerName: customer.name,
+          loanNumber: customer.loanNumber,
+          amount: customer.loanAmount,
+          emiAmount: customer.emiAmount,
+          loanType: customer.loanType,
+          dateApplied: customer.loanDate,
+          loanDays: customer.loanDays,
+          status: 'active',
+          createdBy: requestDoc.createdBy,
+          isMainLoan: true,
+          emiPaid: 0,
+          totalPaid: 0,
+          remainingAmount: customer.loanAmount
+        };
 
-// Create main loan record
-const loanData = {
-  customerId: customer._id,
-  customerName: customer.name,
-  loanNumber: customer.loanNumber,
-  loanAmount: customer.loanAmount,
-  emiAmount: customer.emiAmount,
-  loanType: customer.loanType,
-  dateApplied: new Date(requestedData.loanDate) || new Date(),
-  loanDays: requestedData.loanDays || 30,
-  status: 'active',
-  createdBy: requestDoc.createdBy,
-  emiPaid: 0,
-  totalPaid: 0,
-  remainingAmount: customer.loanAmount
-};
+        const loan = new Loan(loanData);
+        await loan.save();
+        console.log('✅ Loan created successfully for customer:', loan._id);
 
-const loan = new Loan(loanData);
-await loan.save();
-console.log('✅ Loan created successfully for customer:', loan._id);
+        // Update the existing customer document (created earlier by data entry) to active
+        const existingPendingCustomer = await Customer.findById(requestDoc.customerId);
+        if (existingPendingCustomer) {
+          existingPendingCustomer.status = 'active';
+          existingPendingCustomer.isActive = true;
+          existingPendingCustomer.approvedBy = processedBy;
+          existingPendingCustomer.approvedAt = new Date();
+          // Ensure all required fields are set on the existing record too
+          if (!existingPendingCustomer.loanDate) {
+            existingPendingCustomer.loanDate = customer.loanDate;
+          }
+          if (!existingPendingCustomer.loanDays) {
+            existingPendingCustomer.loanDays = customer.loanDays;
+          }
+          if (!existingPendingCustomer.category) {
+            existingPendingCustomer.category = customer.category;
+          }
+          if (!existingPendingCustomer.officeCategory) {
+            existingPendingCustomer.officeCategory = customer.officeCategory;
+          }
+          await existingPendingCustomer.save();
+          console.log('✅ Updated existing customer to active status');
+        }
 
-        // Update request status to 'Approved' (capital A to match enum)
+        // Update the existing loan document to active
+        const existingPendingLoan = await Loan.findOne({ 
+          customerId: requestDoc.customerId, 
+          isMainLoan: true 
+        });
+        if (existingPendingLoan) {
+          existingPendingLoan.status = 'active';
+          // Ensure loan has all required fields
+          if (!existingPendingLoan.dateApplied) {
+            existingPendingLoan.dateApplied = loan.dateApplied;
+          }
+          if (!existingPendingLoan.loanDays) {
+            existingPendingLoan.loanDays = loan.loanDays;
+          }
+          await existingPendingLoan.save();
+          console.log('✅ Updated existing loan to active status');
+        }
+
+        // Update request status to 'Approved'
         requestDoc.status = 'Approved';
-        requestDoc.reviewedBy = 'admin';
+        requestDoc.reviewedBy = processedBy;
         requestDoc.reviewedByRole = 'admin';
         requestDoc.reviewNotes = reason || 'Customer approved by admin';
         requestDoc.actionTaken = 'Customer account created successfully';
@@ -142,7 +191,7 @@ console.log('✅ Loan created successfully for customer:', loan._id);
 
         return NextResponse.json({ 
           success: true,
-          message: 'Customer approved and created successfully!',
+          message: 'Customer approved and activated successfully!',
           data: {
             customerId: customer._id,
             customerName: customer.name,
@@ -152,11 +201,92 @@ console.log('✅ Loan created successfully for customer:', loan._id);
           }
         });
 
+      } else if (requestDoc.type === 'Loan Addition') {
+        console.log('📝 Approving loan addition request...');
+        
+        const requestedData = requestDoc.requestedData;
+        
+        // Validate required loan data
+        if (!requestedData.amount || !requestedData.emiAmount || !requestedData.loanType) {
+          return NextResponse.json({ 
+            success: false,
+            error: 'Missing required loan data in request' 
+          }, { status: 400 });
+        }
+
+        // Check if customer exists and is active
+        const customer = await Customer.findById(requestedData.customerId);
+        if (!customer) {
+          return NextResponse.json({ 
+            success: false,
+            error: 'Customer not found' 
+          }, { status: 404 });
+        }
+
+        if (customer.status !== 'active') {
+          return NextResponse.json({ 
+            success: false,
+            error: 'Customer is not active' 
+          }, { status: 400 });
+        }
+
+        // Generate unique loan number for additional loan
+        const additionalLoanNumber = `ADD_${customer.loanNumber}_${Date.now()}`;
+
+        // Create the additional loan
+        const loanData = {
+          customerId: customer._id,
+          customerName: customer.name,
+          loanNumber: additionalLoanNumber,
+          amount: Number(requestedData.amount),
+          emiAmount: Number(requestedData.emiAmount),
+          loanType: requestedData.loanType,
+          dateApplied: new Date(requestedData.dateApplied) || new Date(),
+          loanDays: Number(requestedData.loanDays) || 30,
+          status: 'active',
+          createdBy: requestDoc.createdBy,
+          isMainLoan: false, // This is an additional loan
+          emiPaid: 0,
+          totalPaid: 0,
+          remainingAmount: Number(requestedData.amount)
+        };
+
+        const newLoan = new Loan(loanData);
+        await newLoan.save();
+        console.log('✅ Additional loan created successfully:', newLoan._id);
+
+        // Update request status
+        requestDoc.status = 'Approved';
+        requestDoc.reviewedBy = processedBy;
+        requestDoc.reviewedByRole = 'admin';
+        requestDoc.reviewNotes = reason || 'Loan addition approved by admin';
+        requestDoc.actionTaken = `Additional loan created: ${additionalLoanNumber}`;
+        requestDoc.reviewedAt = new Date();
+        requestDoc.completedAt = new Date();
+        requestDoc.updatedAt = new Date();
+        
+        await requestDoc.save();
+        console.log('✅ Loan addition request approved');
+
+        return NextResponse.json({ 
+          success: true,
+          message: 'Additional loan approved and created successfully!',
+          data: {
+            loanId: newLoan._id,
+            loanNumber: newLoan.loanNumber,
+            customerName: customer.name,
+            amount: newLoan.amount,
+            emiAmount: newLoan.emiAmount,
+            loanType: newLoan.loanType,
+            status: newLoan.status
+          }
+        });
+
       } else {
         // Handle other request types (EDIT requests, etc.)
         return NextResponse.json({ 
           success: false,
-          error: 'Only New Customer requests can be approved via this endpoint'
+          error: 'Unsupported request type for this endpoint' 
         }, { status: 400 });
       }
 
@@ -164,12 +294,26 @@ console.log('✅ Loan created successfully for customer:', loan._id);
       // Handle rejection logic
       console.log('❌ Rejecting request:', requestDoc._id);
       
-      // Update request status to 'Rejected' (capital R to match enum)
+      // If it's a new customer request, delete the pending customer and loan
+      if (requestDoc.type === 'New Customer' && requestDoc.customerId) {
+        try {
+          await Customer.findByIdAndDelete(requestDoc.customerId);
+          console.log('✅ Deleted pending customer:', requestDoc.customerId);
+          
+          await Loan.deleteMany({ customerId: requestDoc.customerId });
+          console.log('✅ Deleted pending loans for customer');
+        } catch (deleteError) {
+          console.error('❌ Error deleting pending customer data:', deleteError);
+          // Continue with rejection even if deletion fails
+        }
+      }
+      
+      // Update request status to 'Rejected'
       requestDoc.status = 'Rejected';
-      requestDoc.reviewedBy = 'admin';
+      requestDoc.reviewedBy = processedBy;
       requestDoc.reviewedByRole = 'admin';
       requestDoc.reviewNotes = reason || 'Request rejected by admin';
-      requestDoc.actionTaken = 'Request rejected, no customer created';
+      requestDoc.actionTaken = 'Request rejected';
       requestDoc.reviewedAt = new Date();
       requestDoc.completedAt = new Date();
       requestDoc.updatedAt = new Date();

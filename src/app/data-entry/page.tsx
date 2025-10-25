@@ -91,6 +91,7 @@ interface TodayStats {
 interface NewCustomerStep1 {
   name: string;
   phone: string[];
+  whatsappNumber: string;
   businessName: string;
   area: string;
   loanNumber: string;
@@ -237,12 +238,13 @@ export default function DataEntryDashboard() {
   const [step1Data, setStep1Data] = useState<NewCustomerStep1>({
     name: '',
     phone: [''],
+    whatsappNumber: '',
     businessName: '',
     area: '',
     loanNumber: '',
     address: '',
-    category: 'A',
-    officeCategory: 'Office 1',
+    category: '',
+    officeCategory: '',
     profilePicture: null,
     fiDocuments: {
       shop: null,
@@ -346,6 +348,11 @@ export default function DataEntryDashboard() {
           break;
         }
       }
+    }
+
+    // WhatsApp number validation
+    if (step1Data.whatsappNumber && !/^\d{10}$/.test(step1Data.whatsappNumber)) {
+      errors.whatsappNumber = 'WhatsApp number must be a valid 10-digit number';
     }
     
     if (!step1Data.businessName.trim()) {
@@ -490,12 +497,13 @@ export default function DataEntryDashboard() {
     setStep1Data({
       name: '',
       phone: [''],
+      whatsappNumber: '',
       businessName: '',
       area: '',
       loanNumber: '',
       address: '',
-      category: 'A',
-      officeCategory: 'Office 1',
+      category: '',
+      officeCategory: '',
       profilePicture: null,
       fiDocuments: {
         shop: null,
@@ -861,92 +869,112 @@ export default function DataEntryDashboard() {
   };
 
   const handleAddNewLoan = async () => {
-    if (!customerDetails) return;
+  if (!customerDetails) return;
 
-    setIsLoading(true);
-    try {
-      if (!newLoanData.amount || !newLoanData.emiAmount || !newLoanData.loanDays) {
-        alert('Please fill all required fields');
-        setIsLoading(false);
-        return;
-      }
+  setIsLoading(true);
+  try {
+    if (!newLoanData.amount || !newLoanData.emiAmount || !newLoanData.loanDays) {
+      alert('Please fill all required fields');
+      setIsLoading(false);
+      return;
+    }
 
-      console.log('Sending new loan data:', {
+    console.log('🟡 Creating loan addition request for:', customerDetails.name);
+
+    // Create loan addition request - NO LOAN CREATION until admin approval
+    const requestResponse = await fetch('/api/data-entry/requests', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        type: 'Loan Addition',
         customerId: customerDetails._id,
         customerName: customerDetails.name,
-        loanAmount: Number(newLoanData.amount),
-        dateApplied: newLoanData.dateApplied,
-        emiAmount: Number(newLoanData.emiAmount),
-        loanType: newLoanData.loanType,
-        loanDays: Number(newLoanData.loanDays),
-        createdBy: 'data_entry_operator_1'
-      });
-
-      const response = await fetch('/api/data-entry/loans', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          customerId: customerDetails._id,
-          customerName: customerDetails.name,
-          loanAmount: Number(newLoanData.amount),
-          dateApplied: newLoanData.dateApplied,
+        loanNumber: `ADD_${customerDetails.loanNumber}_${Date.now()}`,
+        requestedData: {
+          // Loan details
+          amount: Number(newLoanData.amount),
           emiAmount: Number(newLoanData.emiAmount),
           loanType: newLoanData.loanType,
           loanDays: Number(newLoanData.loanDays),
-          createdBy: 'data_entry_operator_1'
-        }),
-      });
+          dateApplied: newLoanData.dateApplied,
+          // Customer reference
+          customerId: customerDetails._id,
+          customerName: customerDetails.name,
+          mainLoanNumber: customerDetails.loanNumber,
+          // Additional info
+          createdBy: 'data_entry_operator_1',
+          requestType: 'loan_addition'
+        },
+        description: `Additional loan request for ${customerDetails.name} - Main Loan: ${customerDetails.loanNumber}`,
+        priority: 'Medium',
+        status: 'Pending', // ✅ Ensure capital P
+        createdBy: 'data_entry_operator_1',
+        createdByRole: 'data_entry',
+        requiresCustomerNotification: false,
+        estimatedImpact: 'Medium'
+      }),
+    });
 
-      console.log('Response status:', response.status);
+    console.log('Request response status:', requestResponse.status);
 
-      const responseText = await response.text();
-      console.log('Raw response:', responseText.substring(0, 200));
+    const responseText = await requestResponse.text();
+    console.log('Raw response:', responseText);
 
-      if (responseText.trim().startsWith('<!') || responseText.trim().startsWith('<html')) {
-        console.error('Server returned HTML instead of JSON. Likely a 404 error.');
-        throw new Error('API endpoint not found. Please check if the server route is properly configured.');
-      }
-
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('Failed to parse response as JSON:', parseError);
-        throw new Error('Server returned invalid JSON. Response: ' + responseText.substring(0, 200));
-      }
-
-      console.log('Parsed response data:', data);
-      
-      if (!response.ok) {
-        throw new Error(data.error || `HTTP error! status: ${response.status}`);
-      }
-
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to add new loan');
-      }
-
-      alert(data.message || 'New loan added successfully!');
-      setShowAddLoanModal(false);
-      setNewLoanData({
-        amount: '',
-        dateApplied: new Date().toISOString().split('T')[0],
-        emiAmount: '',
-        loanType: 'Monthly',
-        loanDays: '30'
-      });
-      
-      if (customerDetails._id) {
-        await handleViewDetails(customerDetails);
-      }
-    } catch (error: any) {
-      console.error('Error adding new loan:', error);
-      alert('Error: ' + error.message);
-    } finally {
-      setIsLoading(false);
+    let requestData;
+    try {
+      requestData = JSON.parse(responseText);
+    } catch (parseError: unknown) {
+      console.error('Failed to parse response as JSON:', parseError);
+      throw new Error('Server returned invalid JSON response');
     }
-  };
+
+    if (!requestResponse.ok) {
+      throw new Error(requestData.error || `HTTP error! status: ${requestResponse.status}`);
+    }
+
+    if (!requestData.success) {
+      throw new Error(requestData.error || 'Failed to create loan addition request');
+    }
+
+    console.log('✅ Loan addition request created successfully:', requestData.data);
+
+    alert('Loan addition request submitted successfully! Waiting for admin approval.');
+    
+    // Reset form and close modal
+    setShowAddLoanModal(false);
+    setNewLoanData({
+      amount: '',
+      dateApplied: new Date().toISOString().split('T')[0],
+      emiAmount: '',
+      loanType: 'Monthly',
+      loanDays: '30'
+    });
+    
+    // Refresh pending requests list
+    if (activeTab === 'requests') {
+      fetchPendingRequests();
+    }
+
+    // Close the customer details modal
+    setShowCustomerDetails(false);
+    
+  } catch (error: unknown) {
+    console.error('❌ Error adding new loan:', error);
+    
+    let errorMessage = 'An unknown error occurred';
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    } else if (typeof error === 'string') {
+      errorMessage = error;
+    }
+    
+    alert('Error: ' + errorMessage);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const handleSaveEditCustomer = async () => {
     setIsLoading(true);
@@ -1018,101 +1046,171 @@ export default function DataEntryDashboard() {
       });
       
       if (activeTab === 'requests') fetchPendingRequests();
-    } catch (error: any) {
-      console.error('💥 Error in handleSaveEditCustomer:', error);
-      alert('Error: ' + error.message);
-    } finally {
+    } catch (error: unknown) {
+  console.error('💥 Error in handleSaveEditCustomer:', error);
+  
+  let errorMessage = 'An unknown error occurred';
+  if (error instanceof Error) {
+    errorMessage = error.message;
+  } else if (typeof error === 'string') {
+    errorMessage = error;
+  }
+  
+  alert('Error: ' + errorMessage);
+} finally {
       setIsLoading(false);
     }
   };
 
   const handleAddCustomer = async () => {
-    if (!validateStep3()) return;
+  if (!validateStep3()) return;
 
-    setIsLoading(true);
-    try {
-      // Create FormData to handle file uploads
-      const formData = new FormData();
-      
-      // Append step1 data
-      formData.append('name', step1Data.name);
-      // Append all phone numbers
-      step1Data.phone.forEach((phone, index) => {
-        if (phone.trim()) {
-          formData.append(`phone[${index}]`, phone);
-        }
-      });
-      formData.append('businessName', step1Data.businessName);
-      formData.append('area', step1Data.area);
-      formData.append('loanNumber', step1Data.loanNumber);
-      formData.append('address', step1Data.address);
-      formData.append('category', step1Data.category);
-      formData.append('officeCategory', step1Data.officeCategory);
-      
-      // Append files
-      if (step1Data.profilePicture) {
-        formData.append('profilePicture', step1Data.profilePicture);
-      }
-      if (step1Data.fiDocuments.shop) {
-        formData.append('fiDocumentShop', step1Data.fiDocuments.shop);
-      }
-      if (step1Data.fiDocuments.home) {
-        formData.append('fiDocumentHome', step1Data.fiDocuments.home);
-      }
-      
-      // Append step2 data
-      formData.append('loanDate', step2Data.loanDate);
-      formData.append('loanAmount', step2Data.loanAmount);
-      formData.append('emiAmount', step2Data.emiAmount);
-      formData.append('loanDays', step2Data.loanDays);
-      formData.append('loanType', step2Data.loanType);
-      
-      // Append step3 data
-      formData.append('loginId', step3Data.loginId);
-      formData.append('password', step3Data.password);
-      formData.append('createdBy', 'data_entry_operator_1');
+  // Double-check all required fields before submitting
+  if (!step1Data.name || !step1Data.businessName || !step1Data.area || 
+      !step1Data.loanNumber || !step1Data.address || !step1Data.category || 
+      !step1Data.officeCategory) {
+    alert('Please fill all required fields in Step 1');
+    setCurrentStep(1);
+    return;
+  }
 
-      console.log('📦 Sending customer data with category:', {
-        category: step1Data.category,
-        officeCategory: step1Data.officeCategory,
-        phones: step1Data.phone
-      });
+  // Check if at least one phone number is provided
+  const validPhones = step1Data.phone.filter(p => p.trim() !== '');
+  if (validPhones.length === 0) {
+    alert('Please provide at least one phone number');
+    setCurrentStep(1);
+    return;
+  }
 
-      const response = await fetch('/api/data-entry/customers', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json();
-      
-      if (!response.ok) {
-        if (response.status === 409) {
-          if (data.field === 'phone') {
-            throw new Error('Customer with this phone number already exists');
-          } else if (data.field === 'loanNumber') {
-            throw new Error('Loan number already exists. Please use a unique loan number');
-          } else {
-            throw new Error(data.error || 'A pending request already exists for this customer');
-          }
-        }
-        throw new Error(data.error || 'Failed to submit customer request');
-      }
-
-      // SUCCESS: Show request submission message (not customer creation)
-      alert(data.message || 'Customer request submitted successfully! Waiting for admin approval.');
-      setShowAddCustomer(false);
-      resetCustomerForm();
-      
-      // Refresh dashboard and requests
-      fetchDashboardData();
-      if (activeTab === 'requests') fetchPendingRequests();
-      
-    } catch (error: any) {
-      alert('Error: ' + error.message);
-    } finally {
-      setIsLoading(false);
+  // Validate phone numbers
+  for (const phone of validPhones) {
+    if (!/^\d{10}$/.test(phone)) {
+      alert('Please ensure all phone numbers are valid 10-digit numbers');
+      setCurrentStep(1);
+      return;
     }
-  };
+  }
+
+  // Check loan details
+  if (!step2Data.loanAmount || !step2Data.emiAmount || !step2Data.loanDays) {
+    alert('Please fill all required loan details in Step 2');
+    setCurrentStep(2);
+    return;
+  }
+
+  setIsLoading(true);
+  try {
+    // Create FormData to handle file uploads
+    const formData = new FormData();
+    
+    // Append step1 data
+    formData.append('name', step1Data.name.trim());
+    
+    // Append all phone numbers
+    step1Data.phone.forEach((phone, index) => {
+      if (phone.trim()) {
+        formData.append(`phone[${index}]`, phone.trim());
+      }
+    });
+    
+    // Append WhatsApp number (optional)
+    if (step1Data.whatsappNumber.trim()) {
+      formData.append('whatsappNumber', step1Data.whatsappNumber.trim());
+    } else {
+      formData.append('whatsappNumber', ''); // Send empty string if not provided
+    }
+    
+    formData.append('businessName', step1Data.businessName.trim());
+    formData.append('area', step1Data.area.trim());
+    // Store loan number with LN prefix
+    formData.append('loanNumber', `LN${step1Data.loanNumber}`);
+    formData.append('address', step1Data.address.trim());
+    formData.append('category', step1Data.category);
+    formData.append('officeCategory', step1Data.officeCategory);
+    
+    // Append files
+    if (step1Data.profilePicture) {
+      formData.append('profilePicture', step1Data.profilePicture);
+    }
+    if (step1Data.fiDocuments.shop) {
+      formData.append('fiDocumentShop', step1Data.fiDocuments.shop);
+    }
+    if (step1Data.fiDocuments.home) {
+      formData.append('fiDocumentHome', step1Data.fiDocuments.home);
+    }
+    
+    // Append step2 data
+    formData.append('loanDate', step2Data.loanDate);
+    formData.append('loanAmount', step2Data.loanAmount);
+    formData.append('emiAmount', step2Data.emiAmount);
+    formData.append('loanDays', step2Data.loanDays);
+    formData.append('loanType', step2Data.loanType);
+    
+    // Append step3 data
+    formData.append('loginId', step3Data.loginId.trim());
+    formData.append('password', step3Data.password);
+    formData.append('createdBy', 'data_entry_operator_1');
+
+    console.log('📦 Sending customer data:', {
+      name: step1Data.name,
+      businessName: step1Data.businessName,
+      area: step1Data.area,
+      loanNumber: `LN${step1Data.loanNumber}`,
+      address: step1Data.address,
+      category: step1Data.category,
+      officeCategory: step1Data.officeCategory,
+      phones: step1Data.phone.filter(p => p.trim()),
+      whatsappNumber: step1Data.whatsappNumber,
+      loanAmount: step2Data.loanAmount,
+      emiAmount: step2Data.emiAmount,
+      loanDays: step2Data.loanDays,
+      loanType: step2Data.loanType
+    });
+
+    const response = await fetch('/api/data-entry/customers', {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      if (response.status === 409) {
+        if (data.field === 'phone') {
+          throw new Error('Customer with this phone number already exists');
+        } else if (data.field === 'loanNumber') {
+          throw new Error('Loan number already exists. Please use a unique loan number');
+        } else {
+          throw new Error(data.error || 'A pending request already exists for this customer');
+        }
+      }
+      
+      // Show more specific error message from backend
+      if (data.error) {
+        throw new Error(data.error);
+      } else if (data.message) {
+        throw new Error(data.message);
+      } else {
+        throw new Error(`Failed to submit customer request: ${response.status} ${response.statusText}`);
+      }
+    }
+
+    // SUCCESS: Show request submission message (not customer creation)
+    alert(data.message || 'Customer request submitted successfully! Waiting for admin approval.');
+    setShowAddCustomer(false);
+    resetCustomerForm();
+    
+    // Refresh dashboard and requests
+    fetchDashboardData();
+    if (activeTab === 'requests') fetchPendingRequests();
+    
+  } catch (error: any) {
+    console.error('Error submitting customer:', error);
+    alert('Error: ' + error.message);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const handleUpdateEMI = async () => {
   if (!selectedCustomer || !selectedLoanForPayment) {
@@ -1124,12 +1222,20 @@ export default function DataEntryDashboard() {
   try {
     console.log('🟡 Starting EMI update for customer:', selectedCustomer.name);
     console.log('📦 Selected loan for payment:', selectedLoanForPayment);
+    console.log('📋 EMI update data:', emiUpdate);
     
-    // Prepare EMI payment data according to your API requirements
+    // Validate required fields
+    if (!emiUpdate.amount || !emiUpdate.paymentDate) {
+      alert('Please fill all required fields');
+      setIsLoading(false);
+      return;
+    }
+
+    // Prepare EMI payment data
     const emiPaymentData = {
       customerId: selectedCustomer._id,
       customerName: selectedCustomer.name,
-      loanId: selectedLoanForPayment._id,
+      loanId: selectedLoanForPayment._id, // Use the actual loan ID
       loanNumber: selectedLoanForPayment.loanNumber,
       paymentDate: emiUpdate.paymentDate,
       amount: Number(emiUpdate.amount),
@@ -1231,12 +1337,32 @@ export default function DataEntryDashboard() {
     id: loan._id,
     loanNumber: loan.loanNumber,
     customerId: loan.customerId,
-    isMainLoan: loan.isMainLoan
+    isMainLoan: loan.isMainLoan,
+    amount: loan.amount,
+    emiAmount: loan.emiAmount
   });
   
+  // Validate that we have a proper loan ID
+  if (!loan._id) {
+    console.error('❌ No loan ID found for loan:', loan);
+    alert('Error: Loan ID not found. Please refresh and try again.');
+    return;
+  }
+
+  // Validate that we have a customer ID
+  if (!selectedCustomer?._id) {
+    console.error('❌ No customer selected');
+    alert('Error: No customer selected. Please select a customer first.');
+    return;
+  }
+
   setSelectedLoanForPayment(loan);
   setEmiUpdate(prev => ({
     ...prev,
+    customerId: selectedCustomer._id || '',
+    customerName: selectedCustomer.name || '',
+    loanId: loan._id, // Use the actual loan ID
+    loanNumber: loan.loanNumber || '',
     amount: loan.emiAmount ? loan.emiAmount.toString() : '',
     paymentDate: new Date().toISOString().split('T')[0]
   }));
@@ -1496,7 +1622,7 @@ export default function DataEntryDashboard() {
                         placeholder="Enter 10-digit phone number"
                         maxLength={10}
                       />
-                      {index === step1Data.phone.length - 1 && step1Data.phone.length < 5 && (
+                      {index === step1Data.phone.length - 1 && step1Data.phone.length < 3 && (
                         <button
                           type="button"
                           onClick={() => setStep1Data({
@@ -1524,9 +1650,52 @@ export default function DataEntryDashboard() {
                   ))}
                   {step1Errors.phone && <p className="text-red-500 text-xs mt-1">{step1Errors.phone}</p>}
                   <p className="text-xs text-gray-500 mt-1">
-                    You can add up to 5 phone numbers. Click + to add another.
+                    You can add up to 3 phone numbers. Click + to add another.
                   </p>
                 </div>
+
+                {/* WhatsApp Number Field */}
+                <div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">
+    <span className="flex items-center gap-2">
+      <img 
+        src="/images/whatsapp-logo.png" 
+        alt="WhatsApp" 
+        className="w-5 h-5"
+      />
+      <span className="text-green-600 font-semibold">WhatsApp Number</span>
+    </span>
+  </label>
+  <div className="relative">
+    {/* WhatsApp logo inside input */}
+    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+      <img 
+        src="/images/whatsapp-logo.png" 
+        alt="WhatsApp" 
+        className="w-4 h-4"
+      />
+    </div>
+    <input 
+      type="tel" 
+      className={`w-full px-3 py-2 pl-10 border rounded-md ${
+        step1Errors.whatsappNumber ? 'border-red-500' : 'border-gray-300'
+      } focus:ring-2 focus:ring-green-500 focus:border-green-500`}
+      value={step1Data.whatsappNumber}
+      onChange={(e) => {
+        const value = e.target.value.replace(/\D/g, '');
+        if (value.length <= 10) {
+          setStep1Data({...step1Data, whatsappNumber: value});
+        }
+      }}
+      placeholder="10-digit number"
+      maxLength={10}
+    />
+  </div>
+  {step1Errors.whatsappNumber && <p className="text-red-500 text-xs mt-1">{step1Errors.whatsappNumber}</p>}
+  <p className="text-xs text-gray-500 mt-1">
+    Optional - for WhatsApp communication
+  </p>
+</div>
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Business Name *</label>
@@ -1558,17 +1727,23 @@ export default function DataEntryDashboard() {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Loan Number *</label>
-                  <input 
-                    type="text" 
-                    className={`w-full px-3 py-2 border rounded-md ${
-                      step1Errors.loanNumber ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    value={step1Data.loanNumber}
-                    onChange={(e) => setStep1Data({...step1Data, loanNumber: e.target.value})}
-                    placeholder="e.g., LN001234"
-                  />
+                  <div className="flex">
+                    <span className="inline-flex items-center px-3 py-2 border border-r-0 border-gray-300 bg-gray-50 text-gray-500 rounded-l-md">
+                      LN
+                    </span>
+                    <input 
+                      type="text" 
+                      className={`flex-1 px-3 py-2 border rounded-r-md ${
+                        step1Errors.loanNumber ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                      value={step1Data.loanNumber}
+                      onChange={(e) => setStep1Data({...step1Data, loanNumber: e.target.value.replace(/\D/g, '')})}
+                      placeholder="Enter numbers only"
+                      maxLength={10}
+                    />
+                  </div>
                   {step1Errors.loanNumber && <p className="text-red-500 text-xs mt-1">{step1Errors.loanNumber}</p>}
-                  <p className="text-xs text-gray-500 mt-1">Must be unique</p>
+                  <p className="text-xs text-gray-500 mt-1">Must be unique. Full loan number: LN{step1Data.loanNumber || '___'}</p>
                 </div>
                 
                 <div className="md:col-span-2">
@@ -1596,6 +1771,7 @@ export default function DataEntryDashboard() {
                     onChange={(e) => setStep1Data({...step1Data, category: e.target.value})}
                     required
                   >
+                    <option value="">Select Category</option>
                     <option value="A">Category A</option>
                     <option value="B">Category B</option>
                     <option value="C">Category C</option>
@@ -1614,6 +1790,7 @@ export default function DataEntryDashboard() {
                     onChange={(e) => setStep1Data({...step1Data, officeCategory: e.target.value})}
                     required
                   >
+                    <option value="">Select Office Category</option>
                     <option value="Office 1">Office 1</option>
                     <option value="Office 2">Office 2</option>
                   </select>
@@ -1713,7 +1890,7 @@ export default function DataEntryDashboard() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                   <div>
                     <span className="text-blue-700 font-medium">Loan Number:</span>
-                    <p className="text-blue-900">{step1Data.loanNumber}</p>
+                    <p className="text-blue-900">LN{step1Data.loanNumber}</p>
                   </div>
                   <div>
                     <span className="text-blue-700 font-medium">Customer Name:</span>
@@ -1878,12 +2055,43 @@ export default function DataEntryDashboard() {
             <div className="space-y-6">
               <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
                 <h4 className="text-lg font-semibold text-blue-900 mb-2">Create Login Credentials</h4>
-                <p className="text-blue-700">
-                  <strong>Customer:</strong> {step1Data.name} | 
-                  <strong> Loan No:</strong> {step1Data.loanNumber} |
-                  <strong> Category:</strong> {step1Data.category} |
-                  <strong> Office:</strong> {step1Data.officeCategory}
-                </p>
+                <div className="space-y-2 text-sm">
+                  <div className="flex flex-wrap gap-4">
+                    <div>
+                      <span className="text-blue-700 font-medium">Customer:</span>
+                      <span className="text-blue-900 ml-1">{step1Data.name}</span>
+                    </div>
+                    <div>
+                      <span className="text-blue-700 font-medium">Loan No:</span>
+                      <span className="text-blue-900 ml-1">LN{step1Data.loanNumber}</span>
+                    </div>
+                    <div>
+                      <span className="text-blue-700 font-medium">Category:</span>
+                      <span className="text-blue-900 ml-1">{step1Data.category || 'Not selected'}</span>
+                    </div>
+                    <div>
+                      <span className="text-blue-700 font-medium">Office:</span>
+                      <span className="text-blue-900 ml-1">{step1Data.officeCategory || 'Not selected'}</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-4">
+                    <div>
+                      <span className="text-blue-700 font-medium flex items-center gap-1">
+                        <span>📱</span>
+                        WhatsApp:
+                      </span>
+                      <span className="text-blue-900 ml-1">
+                        {step1Data.whatsappNumber || 'Not provided'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-blue-700 font-medium">Phone Numbers:</span>
+                      <span className="text-blue-900 ml-1">
+                        {step1Data.phone.filter(p => p.trim() !== '').join(', ') || 'Not provided'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <h4 className="text-lg font-semibold">Step 3: Generate Login ID & Password</h4>
@@ -2371,99 +2579,98 @@ export default function DataEntryDashboard() {
                 )}
 
                 {/* Customer Loans Section */}
-                {/* Customer Loans Section */}
-{selectedCustomer && (
-  <div className="mt-6">
-    <h4 className="text-lg font-semibold mb-4">Customer Loans</h4>
-    <div className="space-y-4">
-      {/* Get all loans including main loan and additional loans */}
-      {displayLoans.map((loan, index) => (
-        <div 
-          key={loan._id} 
-          className={`border rounded-lg p-4 ${
-            loan.isMainLoan 
-              ? 'border-gray-200 bg-white' 
-              : 'border-blue-200 bg-blue-50'
-          }`}
-        >
-          <div className="flex justify-between items-center mb-3">
-            <div>
-              <h5 className={`font-medium ${
-                loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'
-              }`}>
-                Loan {loan.isMainLoan ? 'L1 (Main Loan)' : `L${index + 1}`}
-              </h5>
-              {loan.isMainLoan && (
-                <p className="text-xs text-gray-500">Primary loan account</p>
-              )}
-              {/* Debug info - remove in production */}
-              <p className="text-xs text-gray-400 mt-1">
-                ID: {loan._id} | Customer: {loan.customerId}
-              </p>
-            </div>
-            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-              loan.isMainLoan 
-                ? 'bg-blue-100 text-blue-800' 
-                : 'bg-green-100 text-green-800'
-            }`}>
-              {loan.isMainLoan ? 'Main' : 'Additional'}
-            </span>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <div>
-              <label className={`block text-xs font-medium ${
-                loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
-              }`}>
-                Loan Amount
-              </label>
-              <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
-                ₹{loan.amount?.toLocaleString()}
-              </p>
-            </div>
-            <div>
-              <label className={`block text-xs font-medium ${
-                loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
-              }`}>
-                EMI Amount
-              </label>
-              <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
-                ₹{loan.emiAmount}
-              </p>
-            </div>
-            <div>
-              <label className={`block text-xs font-medium ${
-                loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
-              }`}>
-                Loan Type
-              </label>
-              <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
-                {loan.loanType}
-              </p>
-            </div>
-            <div>
-              <label className={`block text-xs font-medium ${
-                loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
-              }`}>
-                Status
-              </label>
-              <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
-                Active
-              </p>
-            </div>
-          </div>
-          <div className="mt-4">
-            <button 
-              onClick={() => handlePayNow(loan)}
-              className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
-            >
-              Pay Now
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-  </div>
-)}
+                {selectedCustomer && (
+                  <div className="mt-6">
+                    <h4 className="text-lg font-semibold mb-4">Customer Loans</h4>
+                    <div className="space-y-4">
+                      {/* Get all loans including main loan and additional loans */}
+                      {displayLoans.map((loan, index) => (
+                        <div 
+                          key={loan._id} 
+                          className={`border rounded-lg p-4 ${
+                            loan.isMainLoan 
+                              ? 'border-gray-200 bg-white' 
+                              : 'border-blue-200 bg-blue-50'
+                          }`}
+                        >
+                          <div className="flex justify-between items-center mb-3">
+                            <div>
+                              <h5 className={`font-medium ${
+                                loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'
+                              }`}>
+                                Loan {loan.isMainLoan ? 'L1 (Main Loan)' : `L${index + 1}`}
+                              </h5>
+                              {loan.isMainLoan && (
+                                <p className="text-xs text-gray-500">Primary loan account</p>
+                              )}
+                              {/* Debug info - remove in production */}
+                              <p className="text-xs text-gray-400 mt-1">
+                                ID: {loan._id} | Customer: {loan.customerId}
+                              </p>
+                            </div>
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              loan.isMainLoan 
+                                ? 'bg-blue-100 text-blue-800' 
+                                : 'bg-green-100 text-green-800'
+                            }`}>
+                              {loan.isMainLoan ? 'Main' : 'Additional'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div>
+                              <label className={`block text-xs font-medium ${
+                                loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
+                              }`}>
+                                Loan Amount
+                              </label>
+                              <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
+                                ₹{loan.amount?.toLocaleString()}
+                              </p>
+                            </div>
+                            <div>
+                              <label className={`block text-xs font-medium ${
+                                loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
+                              }`}>
+                                EMI Amount
+                              </label>
+                              <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
+                                ₹{loan.emiAmount}
+                              </p>
+                            </div>
+                            <div>
+                              <label className={`block text-xs font-medium ${
+                                loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
+                              }`}>
+                                Loan Type
+                              </label>
+                              <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
+                                {loan.loanType}
+                              </p>
+                            </div>
+                            <div>
+                              <label className={`block text-xs font-medium ${
+                                loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
+                              }`}>
+                                Status
+                              </label>
+                              <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
+                                Active
+                              </p>
+                            </div>
+                          </div>
+                          <div className="mt-4">
+                            <button 
+                              onClick={() => handlePayNow(loan)}
+                              className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
+                            >
+                              Pay Now
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Help Text */}
                 {!selectedCustomer && (
