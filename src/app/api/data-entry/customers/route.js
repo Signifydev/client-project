@@ -118,9 +118,7 @@ export async function POST(request) {
       );
     }
 
-    console.log('🔍 Loan model schema fields:', Object.keys(Loan.schema.paths));
-
-    // Check if customer with same phone number already exists
+    // Check if customer with same phone number already exists (including pending)
     const existingCustomerByPhone = await Customer.findOne({
       phone: { $in: phone }
     });
@@ -136,7 +134,7 @@ export async function POST(request) {
       );
     }
 
-    // Check if customer with same loan number already exists
+    // Check if customer with same loan number already exists (including pending)
     const existingCustomerByLoanNumber = await Customer.findOne({
       loanNumber
     });
@@ -152,94 +150,60 @@ export async function POST(request) {
       );
     }
 
-    // Create new customer with pending status (requires admin approval)
-    const newCustomer = new Customer({
-      name: name.trim(),
-      phone,
-      whatsappNumber: whatsappNumber.trim(),
-      businessName: businessName.trim(),
-      area: area.trim(),
-      loanNumber: loanNumber.trim(),
-      loanAmount: parseFloat(loanAmount),
-      emiAmount: parseFloat(emiAmount),
-      loanType,
-      address: address.trim(),
-      category,
-      officeCategory,
-      status: 'pending', // Set to pending for admin approval
-      userId: loginId.trim(),
-      password, // In production, this should be hashed
-      createdBy: createdBy || 'data_entry_operator_1',
-      
-      // Loan details for the main loan
-      loanDate: new Date(loanDate),
-      loanDays: parseInt(loanDays),
-      
-      // File uploads (you'll need to handle file storage)
-      profilePicture: profilePicture ? `/uploads/profile/${profilePicture.name}` : null,
-      fiDocuments: {
-        shop: fiDocumentShop ? `/uploads/documents/shop/${fiDocumentShop.name}` : null,
-        home: fiDocumentHome ? `/uploads/documents/home/${fiDocumentHome.name}` : null
-      }
+    // Check if there's already a pending request for this customer
+    const existingRequest = await Request.findOne({
+      type: 'New Customer',
+      'requestedData.loanNumber': loanNumber,
+      status: 'Pending'
     });
 
-    console.log('💾 Saving customer to database...');
+    if (existingRequest) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'A pending request already exists for this customer'
+        },
+        { status: 409 }
+      );
+    }
 
-    // Save customer to database
-    await newCustomer.save();
-
-    console.log('✅ Customer request created successfully with ID:', newCustomer._id);
-
-    // Create the main loan record
-    const mainLoan = new Loan({
-      customerId: newCustomer._id,
-      customerName: newCustomer.name,
-      loanNumber: newCustomer.loanNumber,
-      amount: newCustomer.loanAmount, // Use 'amount' as per Loan schema
-      emiAmount: newCustomer.emiAmount,
-      loanType: newCustomer.loanType,
-      dateApplied: newCustomer.loanDate,
-      loanDays: newCustomer.loanDays,
-      status: 'pending', // Loan also pending approval
-      isMainLoan: true,
-      createdBy: newCustomer.createdBy
-    });
-
-    await mainLoan.save();
-
-    console.log('✅ Main loan created successfully');
+    // DO NOT CREATE CUSTOMER RECORD - Only create request for admin approval
+    console.log('📋 Creating request only - no customer record will be created until admin approval');
 
     // Create request record for admin approval
     const newRequest = new Request({
       type: 'New Customer',
-      customerId: newCustomer._id,
-      customerName: newCustomer.name,
-      loanNumber: newCustomer.loanNumber,
+      customerName: name.trim(),
+      loanNumber: loanNumber.trim(),
       // Store all the customer data for admin review
       requestedData: {
-        name: newCustomer.name,
-        phone: newCustomer.phone,
-        whatsappNumber: newCustomer.whatsappNumber,
-        businessName: newCustomer.businessName,
-        area: newCustomer.area,
-        loanNumber: newCustomer.loanNumber,
-        address: newCustomer.address,
-        category: newCustomer.category,
-        officeCategory: newCustomer.officeCategory,
-        loanAmount: newCustomer.loanAmount,
-        emiAmount: newCustomer.emiAmount,
-        loanType: newCustomer.loanType,
-        loanDate: newCustomer.loanDate,
-        loanDays: newCustomer.loanDays,
-        loginId: loginId,
-        password: password,
-        profilePicture: newCustomer.profilePicture,
-        fiDocuments: newCustomer.fiDocuments
+        name: name.trim(),
+        phone: phone,
+        whatsappNumber: whatsappNumber.trim(),
+        businessName: businessName.trim(),
+        area: area.trim(),
+        loanNumber: loanNumber.trim(),
+        address: address.trim(),
+        category: category,
+        officeCategory: officeCategory,
+        loanAmount: parseFloat(loanAmount),
+        emiAmount: parseFloat(emiAmount),
+        loanType: loanType,
+        loanDate: new Date(loanDate),
+        loanDays: parseInt(loanDays),
+        loginId: loginId.trim(),
+        password: password, // In production, this should be hashed
+        // File uploads info
+        profilePicture: profilePicture ? `/uploads/profile/${profilePicture.name}` : null,
+        fiDocuments: {
+          shop: fiDocumentShop ? `/uploads/documents/shop/${fiDocumentShop.name}` : null,
+          home: fiDocumentHome ? `/uploads/documents/home/${fiDocumentHome.name}` : null
+        }
       },
-      description: `New customer registration request for ${newCustomer.name} with loan number ${newCustomer.loanNumber}`,
+      description: `New customer registration request for ${name} with loan number ${loanNumber}`,
       priority: 'High',
       status: 'Pending',
-      createdBy: newCustomer.createdBy,
+      createdBy: createdBy || 'data_entry_operator_1',
       createdByRole: 'data_entry',
       requiresCustomerNotification: true,
       estimatedImpact: 'High'
@@ -265,11 +229,10 @@ export async function POST(request) {
         success: true,
         message: 'Customer request submitted successfully! Waiting for admin approval.',
         data: {
-          customerId: newCustomer._id,
-          name: newCustomer.name,
-          loanNumber: newCustomer.loanNumber,
-          status: newCustomer.status,
-          requestId: newRequest._id
+          requestId: newRequest._id,
+          name: name,
+          loanNumber: loanNumber,
+          status: 'pending_approval'
         }
       },
       { status: 201 }
@@ -305,7 +268,7 @@ export async function POST(request) {
   }
 }
 
-// GET method for fetching customers list
+// GET method for fetching customers list - ONLY ACTIVE CUSTOMERS
 export async function GET(request) {
   try {
     await connectDB();
@@ -346,7 +309,7 @@ export async function GET(request) {
       .select('name phone businessName area loanNumber loanAmount emiAmount loanType status category officeCategory createdAt')
       .sort({ createdAt: -1 });
 
-    console.log(`✅ Found ${customers.length} customers for data entry`);
+    console.log(`✅ Found ${customers.length} active customers for data entry`);
 
     // Format response with all required fields
     const formattedCustomers = customers.map(customer => ({

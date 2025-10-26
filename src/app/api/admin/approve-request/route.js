@@ -52,39 +52,78 @@ export async function POST(request) {
           }, { status: 409 });
         }
 
-        // Create new customer with ALL required fields
-        const customerData = {
-          name: requestedData.name,
-          phone: requestedData.phone,
-          whatsappNumber: requestedData.whatsappNumber || '',
-          businessName: requestedData.businessName,
-          area: requestedData.area,
+        // IMPORTANT: Check if there's already a customer record created by Data Entry
+        // If yes, we'll update it instead of creating a new one
+        let customer;
+        const existingPendingCustomer = await Customer.findOne({
           loanNumber: requestedData.loanNumber,
-          address: requestedData.address,
-          loanAmount: requestedData.loanAmount,
-          emiAmount: requestedData.emiAmount,
-          loanType: requestedData.loanType,
-          category: requestedData.category || 'A',
-          officeCategory: requestedData.officeCategory || 'Office 1',
-          profilePicture: requestedData.profilePicture,
-          fiDocuments: requestedData.fiDocuments || {},
-          // ADD THE MISSING REQUIRED FIELDS
-          loanDate: requestedData.loanDate ? new Date(requestedData.loanDate) : new Date(),
-          loanDays: requestedData.loanDays || 30,
-          status: 'active',
-          isActive: true,
-          userId: requestedData.loginId,
-          password: requestedData.password,
-          createdBy: requestDoc.createdBy,
-          approvedBy: processedBy,
-          approvedAt: new Date(),
-          createdAt: new Date(),
-          updatedAt: new Date()
-        };
+          status: 'pending'
+        });
 
-        const customer = new Customer(customerData);
-        await customer.save();
-        console.log('✅ New customer created:', customer._id);
+        if (existingPendingCustomer) {
+          console.log('🔄 Found existing pending customer, updating to active...');
+          // Update the existing pending customer to active
+          existingPendingCustomer.status = 'active';
+          existingPendingCustomer.isActive = true;
+          existingPendingCustomer.approvedBy = processedBy;
+          existingPendingCustomer.approvedAt = new Date();
+          existingPendingCustomer.updatedAt = new Date();
+          
+          // Ensure all required fields are set
+          existingPendingCustomer.name = requestedData.name;
+          existingPendingCustomer.phone = requestedData.phone;
+          existingPendingCustomer.whatsappNumber = requestedData.whatsappNumber || '';
+          existingPendingCustomer.businessName = requestedData.businessName;
+          existingPendingCustomer.area = requestedData.area;
+          existingPendingCustomer.address = requestedData.address;
+          existingPendingCustomer.loanAmount = requestedData.loanAmount;
+          existingPendingCustomer.emiAmount = requestedData.emiAmount;
+          existingPendingCustomer.loanType = requestedData.loanType;
+          existingPendingCustomer.category = requestedData.category || 'A';
+          existingPendingCustomer.officeCategory = requestedData.officeCategory || 'Office 1';
+          existingPendingCustomer.loanDate = requestedData.loanDate ? new Date(requestedData.loanDate) : new Date();
+          existingPendingCustomer.loanDays = requestedData.loanDays || 30;
+          existingPendingCustomer.userId = requestedData.loginId;
+          existingPendingCustomer.password = requestedData.password;
+          
+          await existingPendingCustomer.save();
+          customer = existingPendingCustomer;
+          console.log('✅ Updated existing pending customer to active status');
+        } else {
+          console.log('🆕 Creating new customer record...');
+          // Create new customer with ALL required fields
+          const customerData = {
+            name: requestedData.name,
+            phone: requestedData.phone,
+            whatsappNumber: requestedData.whatsappNumber || '',
+            businessName: requestedData.businessName,
+            area: requestedData.area,
+            loanNumber: requestedData.loanNumber,
+            address: requestedData.address,
+            loanAmount: requestedData.loanAmount,
+            emiAmount: requestedData.emiAmount,
+            loanType: requestedData.loanType,
+            category: requestedData.category || 'A',
+            officeCategory: requestedData.officeCategory || 'Office 1',
+            profilePicture: requestedData.profilePicture,
+            fiDocuments: requestedData.fiDocuments || {},
+            loanDate: requestedData.loanDate ? new Date(requestedData.loanDate) : new Date(),
+            loanDays: requestedData.loanDays || 30,
+            status: 'active',
+            isActive: true,
+            userId: requestedData.loginId,
+            password: requestedData.password,
+            createdBy: requestDoc.createdBy,
+            approvedBy: processedBy,
+            approvedAt: new Date(),
+            createdAt: new Date(),
+            updatedAt: new Date()
+          };
+
+          customer = new Customer(customerData);
+          await customer.save();
+          console.log('✅ New customer created:', customer._id);
+        }
 
         // Create user account for customer login if credentials provided
         if (requestedData.loginId && requestedData.password) {
@@ -112,72 +151,56 @@ export async function POST(request) {
           }
         }
 
-        // Create main loan record
-        const loanData = {
-          customerId: customer._id,
-          customerName: customer.name,
-          loanNumber: customer.loanNumber,
-          amount: customer.loanAmount,
-          emiAmount: customer.emiAmount,
-          loanType: customer.loanType,
-          dateApplied: customer.loanDate,
-          loanDays: customer.loanDays,
-          status: 'active',
-          createdBy: requestDoc.createdBy,
-          isMainLoan: true,
-          emiPaid: 0,
-          totalPaid: 0,
-          remainingAmount: customer.loanAmount
-        };
-
-        const loan = new Loan(loanData);
-        await loan.save();
-        console.log('✅ Loan created successfully for customer:', loan._id);
-
-        // Update the existing customer document (created earlier by data entry) to active
-        const existingPendingCustomer = await Customer.findById(requestDoc.customerId);
-        if (existingPendingCustomer) {
-          existingPendingCustomer.status = 'active';
-          existingPendingCustomer.isActive = true;
-          existingPendingCustomer.approvedBy = processedBy;
-          existingPendingCustomer.approvedAt = new Date();
-          // Ensure all required fields are set on the existing record too
-          if (!existingPendingCustomer.loanDate) {
-            existingPendingCustomer.loanDate = customer.loanDate;
-          }
-          if (!existingPendingCustomer.loanDays) {
-            existingPendingCustomer.loanDays = customer.loanDays;
-          }
-          if (!existingPendingCustomer.category) {
-            existingPendingCustomer.category = customer.category;
-          }
-          if (!existingPendingCustomer.officeCategory) {
-            existingPendingCustomer.officeCategory = customer.officeCategory;
-          }
-          await existingPendingCustomer.save();
-          console.log('✅ Updated existing customer to active status');
-        }
-
-        // Update the existing loan document to active
+        // Check if there's already a pending loan for this customer
+        let mainLoan;
         const existingPendingLoan = await Loan.findOne({ 
-          customerId: requestDoc.customerId, 
+          customerId: customer._id, 
           isMainLoan: true 
         });
+
         if (existingPendingLoan) {
+          console.log('🔄 Found existing pending loan, updating to active...');
+          // Update the existing loan to active
           existingPendingLoan.status = 'active';
-          // Ensure loan has all required fields
-          if (!existingPendingLoan.dateApplied) {
-            existingPendingLoan.dateApplied = loan.dateApplied;
-          }
-          if (!existingPendingLoan.loanDays) {
-            existingPendingLoan.loanDays = loan.loanDays;
-          }
+          existingPendingLoan.amount = customer.loanAmount;
+          existingPendingLoan.emiAmount = customer.emiAmount;
+          existingPendingLoan.loanType = customer.loanType;
+          existingPendingLoan.dateApplied = customer.loanDate;
+          existingPendingLoan.loanDays = customer.loanDays;
+          existingPendingLoan.remainingAmount = customer.loanAmount;
+          existingPendingLoan.updatedAt = new Date();
+          
           await existingPendingLoan.save();
+          mainLoan = existingPendingLoan;
           console.log('✅ Updated existing loan to active status');
+        } else {
+          console.log('🆕 Creating new main loan record...');
+          // Create main loan record
+          const loanData = {
+            customerId: customer._id,
+            customerName: customer.name,
+            loanNumber: customer.loanNumber,
+            amount: customer.loanAmount,
+            emiAmount: customer.emiAmount,
+            loanType: customer.loanType,
+            dateApplied: customer.loanDate,
+            loanDays: customer.loanDays,
+            status: 'active',
+            createdBy: requestDoc.createdBy,
+            isMainLoan: true,
+            emiPaid: 0,
+            totalPaid: 0,
+            remainingAmount: customer.loanAmount
+          };
+
+          mainLoan = new Loan(loanData);
+          await mainLoan.save();
+          console.log('✅ Loan created successfully for customer:', mainLoan._id);
         }
 
         // Update request status to 'Approved'
         requestDoc.status = 'Approved';
+        requestDoc.customerId = customer._id; // Link the request to the customer
         requestDoc.reviewedBy = processedBy;
         requestDoc.reviewedByRole = 'admin';
         requestDoc.reviewNotes = reason || 'Customer approved by admin';
@@ -295,13 +318,20 @@ export async function POST(request) {
       console.log('❌ Rejecting request:', requestDoc._id);
       
       // If it's a new customer request, delete the pending customer and loan
-      if (requestDoc.type === 'New Customer' && requestDoc.customerId) {
+      if (requestDoc.type === 'New Customer') {
         try {
-          await Customer.findByIdAndDelete(requestDoc.customerId);
-          console.log('✅ Deleted pending customer:', requestDoc.customerId);
+          // Delete any pending customer with this loan number
+          await Customer.deleteMany({ 
+            loanNumber: requestDoc.loanNumber,
+            status: 'pending' 
+          });
+          console.log('✅ Deleted pending customers with loan number:', requestDoc.loanNumber);
           
-          await Loan.deleteMany({ customerId: requestDoc.customerId });
-          console.log('✅ Deleted pending loans for customer');
+          // Delete any pending loans for this customer
+          if (requestDoc.customerId) {
+            await Loan.deleteMany({ customerId: requestDoc.customerId });
+            console.log('✅ Deleted pending loans for customer:', requestDoc.customerId);
+          }
         } catch (deleteError) {
           console.error('❌ Error deleting pending customer data:', deleteError);
           // Continue with rejection even if deletion fails

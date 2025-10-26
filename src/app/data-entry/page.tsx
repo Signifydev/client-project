@@ -119,6 +119,19 @@ interface NewCustomerStep3 {
   confirmPassword: string;
 }
 
+interface RenewLoanData {
+  loanId: string;
+  customerId: string;
+  customerName: string;
+  loanNumber: string;
+  renewalDate: string;
+  newLoanAmount: string;
+  newEmiAmount: string;
+  newLoanDays: string;
+  newLoanType: string;
+  remarks: string;
+}
+
 interface EMIUpdate {
   customerId: string;
   customerName: string;
@@ -155,12 +168,20 @@ interface EditLoanData {
   dateApplied: string;
   loanDays: string;
   isMainLoan: boolean;
+  originalData?: {
+    amount: number;
+    emiAmount: number;
+    loanType: string;
+    dateApplied: string;
+    loanDays: number;
+  };
 }
 
 interface Filters {
   loanNumber: string;
   loanType: string;
   status: string;
+  officeCategory: string;
 }
 
 // Extended interface for display purposes
@@ -187,6 +208,7 @@ export default function DataEntryDashboard() {
   const [showCustomerDetails, setShowCustomerDetails] = useState(false);
   const [showEditCustomer, setShowEditCustomer] = useState(false);
   const [showEditLoan, setShowEditLoan] = useState(false);
+  const [showRenewLoan, setShowRenewLoan] = useState(false);
   const [customerDetails, setCustomerDetails] = useState<CustomerDetails | null>(null);
   const [editCustomerData, setEditCustomerData] = useState<EditCustomerData>({
   name: '',
@@ -215,12 +237,26 @@ export default function DataEntryDashboard() {
     loanDays: '',
     isMainLoan: false
   });
+
+  const [renewLoanData, setRenewLoanData] = useState<RenewLoanData>({
+    loanId: '',
+    customerId: '',
+    customerName: '',
+    loanNumber: '',
+    renewalDate: new Date().toISOString().split('T')[0],
+    newLoanAmount: '',
+    newEmiAmount: '',
+    newLoanDays: '',
+    newLoanType: 'Monthly',
+    remarks: ''
+  });
   
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<Filters>({
     loanNumber: '',
     loanType: '',
-    status: ''
+    status: '',
+    officeCategory: ''
   });
   
   const [todayStats, setTodayStats] = useState<TodayStats>({
@@ -268,13 +304,13 @@ export default function DataEntryDashboard() {
   const [step3Errors, setStep3Errors] = useState<{[key: string]: string}>({});
 
   const [emiUpdate, setEmiUpdate] = useState<EMIUpdate>({
-    customerId: '',
-    customerName: '',
-    paymentDate: new Date().toISOString().split('T')[0],
-    amount: '',
-    status: 'Paid',
-    collectedBy: 'Operator 1'
-  });
+  customerId: '',
+  customerName: '',
+  paymentDate: new Date().toISOString().split('T')[0],
+  amount: '',
+  status: 'Paid',
+  collectedBy: 'Operator 1'
+}); 
 
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [selectedLoanForPayment, setSelectedLoanForPayment] = useState<Loan | null>(null);
@@ -293,7 +329,10 @@ export default function DataEntryDashboard() {
     const matchesStatus = filters.status === '' || 
       customer.status === filters.status;
 
-    return matchesSearch && matchesLoanNumber && matchesLoanType && matchesStatus;
+    const matchesOfficeCategory = filters.officeCategory === '' || 
+      customer.officeCategory === filters.officeCategory;
+
+    return matchesSearch && matchesLoanNumber && matchesLoanType && matchesStatus && matchesOfficeCategory;
   });
 
   // Function to get all loans including main loan and additional loans
@@ -721,9 +760,32 @@ export default function DataEntryDashboard() {
       loanType: loan.loanType,
       dateApplied: loan.dateApplied.split('T')[0],
       loanDays: loan.loanDays.toString(),
-      isMainLoan: loan.isMainLoan || false
+      isMainLoan: loan.isMainLoan || false,
+      originalData: {
+        amount: loan.amount,
+        emiAmount: loan.emiAmount,
+        loanType: loan.loanType,
+        dateApplied: loan.dateApplied,
+        loanDays: loan.loanDays
+      }
     });
     setShowEditLoan(true);
+  };
+
+  const handleRenewLoan = (loan: DisplayLoan) => {
+    setRenewLoanData({
+      loanId: loan._id,
+      customerId: loan.customerId,
+      customerName: loan.customerName,
+      loanNumber: loan.loanNumber,
+      renewalDate: new Date().toISOString().split('T')[0],
+      newLoanAmount: loan.amount.toString(),
+      newEmiAmount: loan.emiAmount.toString(),
+      newLoanDays: loan.loanDays.toString(),
+      newLoanType: loan.loanType,
+      remarks: ''
+    });
+    setShowRenewLoan(true);
   };
 
   const handleSaveEditLoan = async () => {
@@ -798,6 +860,84 @@ export default function DataEntryDashboard() {
       if (activeTab === 'requests') fetchPendingRequests();
     } catch (error: any) {
       console.error('💥 Error in handleSaveEditLoan:', error);
+      alert('Error: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSaveRenewLoan = async () => {
+    setIsLoading(true);
+    try {
+      console.log('🔄 Starting renew loan request...');
+      console.log('📦 Renew loan data:', renewLoanData);
+
+      if (!renewLoanData.newLoanAmount || !renewLoanData.newEmiAmount || !renewLoanData.newLoanDays) {
+        alert('Please fill all required fields');
+        setIsLoading(false);
+        return;
+      }
+
+      const apiUrl = '/api/data-entry/renew-loan-request';
+      console.log('🌐 Calling API:', apiUrl);
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...renewLoanData,
+          newLoanAmount: Number(renewLoanData.newLoanAmount),
+          newEmiAmount: Number(renewLoanData.newEmiAmount),
+          newLoanDays: Number(renewLoanData.newLoanDays),
+          requestedBy: 'data_entry_operator_1',
+          requestType: 'renew_loan'
+        }),
+      });
+
+      console.log('📡 Response status:', response.status);
+
+      const responseText = await response.text();
+      console.log('📄 Raw response:', responseText);
+
+      if (responseText.trim().startsWith('<!') || responseText.trim().startsWith('<html')) {
+        console.error('❌ Server returned HTML instead of JSON. Likely a 404 error.');
+        throw new Error('API endpoint not found. Please check the server.');
+      }
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('❌ Failed to parse response as JSON:', parseError);
+        throw new Error('Server returned invalid JSON. Response: ' + responseText.substring(0, 200));
+      }
+
+      console.log('✅ Parsed response data:', data);
+      
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+      }
+
+      alert('Loan renewal request submitted successfully! Waiting for admin approval.');
+      setShowRenewLoan(false);
+      setRenewLoanData({
+        loanId: '',
+        customerId: '',
+        customerName: '',
+        loanNumber: '',
+        renewalDate: new Date().toISOString().split('T')[0],
+        newLoanAmount: '',
+        newEmiAmount: '',
+        newLoanDays: '',
+        newLoanType: 'Monthly',
+        remarks: ''
+      });
+      
+      if (activeTab === 'requests') fetchPendingRequests();
+    } catch (error: any) {
+      console.error('💥 Error in handleSaveRenewLoan:', error);
       alert('Error: ' + error.message);
     } finally {
       setIsLoading(false);
@@ -1294,7 +1434,8 @@ export default function DataEntryDashboard() {
     setFilters({
       loanNumber: '',
       loanType: '',
-      status: ''
+      status: '',
+      officeCategory: ''
     });
     setShowFilters(false);
     setEmiUpdate({
@@ -1382,7 +1523,8 @@ export default function DataEntryDashboard() {
       setFilters({
         loanNumber: '',
         loanType: '',
-        status: ''
+        status: '',
+        officeCategory: ''
       });
       setSearchQuery('');
     };
@@ -1418,7 +1560,7 @@ export default function DataEntryDashboard() {
               </span>
             </button>
             
-            {(filters.loanNumber || filters.loanType || filters.status || searchQuery) && (
+            {(filters.loanNumber || filters.loanType || filters.status || filters.officeCategory || searchQuery) && (
               <button
                 onClick={clearFilters}
                 className="px-4 py-2 text-red-600 border border-red-300 rounded-lg hover:bg-red-50 transition-colors"
@@ -1431,7 +1573,7 @@ export default function DataEntryDashboard() {
 
         {showFilters && (
           <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Loan Number
@@ -1476,9 +1618,24 @@ export default function DataEntryDashboard() {
                   <option value="pending">Pending</option>
                 </select>
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Office Category
+                </label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={filters.officeCategory}
+                  onChange={(e) => handleFilterChange('officeCategory', e.target.value)}
+                >
+                  <option value="">All Offices</option>
+                  <option value="Office 1">Office 1</option>
+                  <option value="Office 2">Office 2</option>
+                </select>
+              </div>
             </div>
 
-            {(filters.loanNumber || filters.loanType || filters.status) && (
+            {(filters.loanNumber || filters.loanType || filters.status || filters.officeCategory) && (
               <div className="mt-4 pt-4 border-t border-gray-200">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm text-gray-600">Active filters:</span>
@@ -1510,6 +1667,17 @@ export default function DataEntryDashboard() {
                       <button 
                         onClick={() => handleFilterChange('status', '')}
                         className="ml-1 text-purple-600 hover:text-purple-800"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                  {filters.officeCategory && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-orange-100 text-orange-800">
+                      Office: {filters.officeCategory}
+                      <button 
+                        onClick={() => handleFilterChange('officeCategory', '')}
+                        className="ml-1 text-orange-600 hover:text-orange-800"
                       >
                         ×
                       </button>
@@ -2388,453 +2556,468 @@ export default function DataEntryDashboard() {
   );
 
   const renderUpdateEMIForm = () => {
-    // Get all loans for display
-    const displayLoans = selectedCustomer ? getAllCustomerLoans(selectedCustomer, customerDetails) : [];
+  // Get all loans for display
+  const displayLoans = selectedCustomer ? getAllCustomerLoans(selectedCustomer, customerDetails) : [];
 
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-          <div className="p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold">Update EMI Payment</h3>
-              <button 
-                onClick={() => {
-                  setShowUpdateEMI(false);
-                  setSelectedCustomer(null);
-                  setSelectedLoanForPayment(null);
-                  setShowPaymentForm(false);
-                  setSearchQuery('');
-                  setFilters({
-                    loanNumber: '',
-                    loanType: '',
-                    status: ''
-                  });
-                  setShowFilters(false);
-                }}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                ✕
-              </button>
-            </div>
-            
-            {!showPaymentForm ? (
-              <div className="space-y-4">
-                {/* Search Section */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Search Customer *
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="Search by customer name or loan number..."
-                      className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                    />
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <span className="text-gray-400">🔍</span>
-                    </div>
+  // Get current operator name from user context or session
+  // For now, we'll use a placeholder - you'll need to replace this with actual user data
+  const currentOperator = "Operator 1"; // This should come from your auth context/session
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold">Update EMI Payment</h3>
+            <button 
+              onClick={() => {
+                setShowUpdateEMI(false);
+                setSelectedCustomer(null);
+                setSelectedLoanForPayment(null);
+                setShowPaymentForm(false);
+                setSearchQuery('');
+                setFilters({
+                  loanNumber: '',
+                  loanType: '',
+                  status: '',
+                  officeCategory: ''
+                });
+                setShowFilters(false);
+              }}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              ✕
+            </button>
+          </div>
+          
+          {!showPaymentForm ? (
+            <div className="space-y-4">
+              {/* Search Section */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Search Customer *
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search by customer name or loan number..."
+                    className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <span className="text-gray-400">🔍</span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Search for active customers to record EMI payments
-                  </p>
                 </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Search for active customers to record EMI payments
+                </p>
+              </div>
 
-                {/* Customer Search Results */}
-                {searchQuery && !selectedCustomer && (
-                  <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-md">
-                    {filteredCustomers.length > 0 ? (
-                      filteredCustomers.map(customer => (
-                        <div 
-                          key={customer._id || customer.id}
-                          className={`p-3 border-b border-gray-200 cursor-pointer transition-colors ${
-                            customer.status === 'active' 
-                              ? 'hover:bg-green-50' 
-                              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                          }`}
-                          onClick={() => {
-                            if (customer.status === 'active') {
-                              handleSearchCustomer(customer);
-                            } else {
-                              alert('This customer is not active. Only active customers can make EMI payments.');
-                            }
-                          }}
-                        >
-                          <div className="flex justify-between items-start">
-                            <div className="flex-1">
-                              <div className="font-medium">{customer.name}</div>
-                              <div className="text-sm text-gray-600">
-                                {customer.loanNumber} • ₹{customer.emiAmount} {customer.loanType} EMI
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                {customer.businessName} • {customer.area}
-                              </div>
-                              <div className="text-xs text-gray-400 mt-1">
-                                Category: {customer.category} • Office: {customer.officeCategory}
-                              </div>
+              {/* Customer Search Results */}
+              {searchQuery && !selectedCustomer && (
+                <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-md">
+                  {filteredCustomers.length > 0 ? (
+                    filteredCustomers.map(customer => (
+                      <div 
+                        key={customer._id || customer.id}
+                        className={`p-3 border-b border-gray-200 cursor-pointer transition-colors ${
+                          customer.status === 'active' 
+                            ? 'hover:bg-green-50' 
+                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        }`}
+                        onClick={() => {
+                          if (customer.status === 'active') {
+                            handleSearchCustomer(customer);
+                          } else {
+                            alert('This customer is not active. Only active customers can make EMI payments.');
+                          }
+                        }}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="font-medium">{customer.name}</div>
+                            <div className="text-sm text-gray-600">
+                              {customer.loanNumber} • ₹{customer.emiAmount} {customer.loanType} EMI
                             </div>
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                              customer.status === 'active' 
-                                ? 'bg-green-100 text-green-800' 
-                                : 'bg-red-100 text-red-800'
-                            }`}>
-                              {customer.status === 'active' ? 'Active' : 'Inactive'}
-                            </span>
+                            <div className="text-xs text-gray-500">
+                              {customer.businessName} • {customer.area}
+                            </div>
+                            <div className="text-xs text-gray-400 mt-1">
+                              Category: {customer.category} • Office: {customer.officeCategory}
+                            </div>
                           </div>
-                          {customer.status !== 'active' && (
-                            <div className="text-xs text-red-600 mt-1">
-                              Cannot accept payments - customer is inactive
-                            </div>
-                          )}
-                        </div>
-                      ))
-                    ) : (
-                      <div className="p-3 text-center text-gray-500">
-                        {customers.length === 0 ? 'No customers found' : 'No customers match your search'}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* No Customers Message */}
-                {customers.length === 0 && !searchQuery && !selectedCustomer && (
-                  <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md">
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0">
-                        <span className="text-yellow-400 text-lg">⚠️</span>
-                      </div>
-                      <div className="ml-3">
-                        <h3 className="text-sm font-medium text-yellow-800">No Active Customers</h3>
-                        <div className="mt-1 text-sm text-yellow-700">
-                          <p>No active customers found. Customers need to be approved by Super Admin first.</p>
-                          <p className="text-xs mt-1">Check the "Requests" tab to see pending approvals.</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Selected Customer Display */}
-                {selectedCustomer && (
-                  <div className="p-4 bg-blue-50 rounded-md border border-blue-200">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center">
-                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-3">
-                          <span className="text-blue-600 font-semibold text-sm">
-                            {selectedCustomer.name.split(' ').map((n: string) => n[0]).join('')}
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                            customer.status === 'active' 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {customer.status === 'active' ? 'Active' : 'Inactive'}
                           </span>
                         </div>
-                        <div>
-                          <div className="font-medium text-blue-900">{selectedCustomer.name}</div>
-                          <div className="text-sm text-blue-700">
-                            {selectedCustomer.loanNumber}
+                        {customer.status !== 'active' && (
+                          <div className="text-xs text-red-600 mt-1">
+                            Cannot accept payments - customer is inactive
                           </div>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-3 text-center text-gray-500">
+                      {customers.length === 0 ? 'No customers found' : 'No customers match your search'}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* No Customers Message */}
+              {customers.length === 0 && !searchQuery && !selectedCustomer && (
+                <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0">
+                      <span className="text-yellow-400 text-lg">⚠️</span>
+                    </div>
+                    <div className="ml-3">
+                      <h3 className="text-sm font-medium text-yellow-800">No Active Customers</h3>
+                      <div className="mt-1 text-sm text-yellow-700">
+                        <p>No active customers found. Customers need to be approved by Super Admin first.</p>
+                        <p className="text-xs mt-1">Check the "Requests" tab to see pending approvals.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Selected Customer Display */}
+              {selectedCustomer && (
+                <div className="p-4 bg-blue-50 rounded-md border border-blue-200">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center">
+                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-3">
+                        <span className="text-blue-600 font-semibold text-sm">
+                          {selectedCustomer.name.split(' ').map((n: string) => n[0]).join('')}
+                        </span>
+                      </div>
+                      <div>
+                        <div className="font-medium text-blue-900">{selectedCustomer.name}</div>
+                        <div className="text-sm text-blue-700">
+                          {selectedCustomer.loanNumber}
                         </div>
                       </div>
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                        selectedCustomer.status === 'active' 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {selectedCustomer.status === 'active' ? 'Active' : 'Inactive'}
-                      </span>
                     </div>
-                    
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div>
-                        <span className="text-blue-600 font-medium">Business:</span>
-                        <p className="text-blue-900">{selectedCustomer.businessName}</p>
-                      </div>
-                      <div>
-                        <span className="text-blue-600 font-medium">Area:</span>
-                        <p className="text-blue-900">{selectedCustomer.area}</p>
-                      </div>
-                      <div>
-                        <span className="text-blue-600 font-medium">Category:</span>
-                        <p className="text-blue-900">{selectedCustomer.category}</p>
-                      </div>
-                      <div>
-                        <span className="text-blue-600 font-medium">Office:</span>
-                        <p className="text-blue-900">{selectedCustomer.officeCategory}</p>
-                      </div>
-                    </div>
-
-                    <button 
-                      onClick={() => {
-                        setSelectedCustomer(null);
-                        setSearchQuery('');
-                        setEmiUpdate(prev => ({
-                          ...prev,
-                          customerId: '',
-                          customerName: '',
-                          amount: ''
-                        }));
-                      }}
-                      className="mt-3 px-3 py-1 bg-gray-600 text-white rounded-md hover:bg-gray-700 text-sm"
-                    >
-                      Change Customer
-                    </button>
+                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                      selectedCustomer.status === 'active' 
+                        ? 'bg-green-100 text-green-800' 
+                        : 'bg-red-100 text-red-800'
+                    }`}>
+                      {selectedCustomer.status === 'active' ? 'Active' : 'Inactive'}
+                    </span>
                   </div>
-                )}
+                  
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-blue-600 font-medium">Business:</span>
+                      <p className="text-blue-900">{selectedCustomer.businessName}</p>
+                    </div>
+                    <div>
+                      <span className="text-blue-600 font-medium">Area:</span>
+                      <p className="text-blue-900">{selectedCustomer.area}</p>
+                    </div>
+                    <div>
+                      <span className="text-blue-600 font-medium">Category:</span>
+                      <p className="text-blue-900">{selectedCustomer.category}</p>
+                    </div>
+                    <div>
+                      <span className="text-blue-600 font-medium">Office:</span>
+                      <p className="text-blue-900">{selectedCustomer.officeCategory}</p>
+                    </div>
+                  </div>
 
-                {/* Customer Loans Section */}
-                {selectedCustomer && (
-                  <div className="mt-6">
-                    <h4 className="text-lg font-semibold mb-4">Customer Loans</h4>
-                    <div className="space-y-4">
-                      {/* Get all loans including main loan and additional loans */}
-                      {displayLoans.map((loan, index) => (
-                        <div 
-                          key={loan._id} 
-                          className={`border rounded-lg p-4 ${
-                            loan.isMainLoan 
-                              ? 'border-gray-200 bg-white' 
-                              : 'border-blue-200 bg-blue-50'
-                          }`}
-                        >
-                          <div className="flex justify-between items-center mb-3">
-                            <div>
-                              <h5 className={`font-medium ${
-                                loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'
-                              }`}>
-                                Loan {loan.isMainLoan ? 'L1 (Main Loan)' : `L${index + 1}`}
-                              </h5>
-                              {loan.isMainLoan && (
-                                <p className="text-xs text-gray-500">Primary loan account</p>
-                              )}
-                              {/* Debug info - remove in production */}
-                              <p className="text-xs text-gray-400 mt-1">
-                                ID: {loan._id} | Customer: {loan.customerId}
-                              </p>
-                            </div>
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                              loan.isMainLoan 
-                                ? 'bg-blue-100 text-blue-800' 
-                                : 'bg-green-100 text-green-800'
+                  <button 
+                    onClick={() => {
+                      setSelectedCustomer(null);
+                      setSearchQuery('');
+                      setEmiUpdate(prev => ({
+                        ...prev,
+                        customerId: '',
+                        customerName: '',
+                        amount: ''
+                      }));
+                    }}
+                    className="mt-3 px-3 py-1 bg-gray-600 text-white rounded-md hover:bg-gray-700 text-sm"
+                  >
+                    Change Customer
+                  </button>
+                </div>
+              )}
+
+              {/* Customer Loans Section */}
+              {selectedCustomer && (
+                <div className="mt-6">
+                  <h4 className="text-lg font-semibold mb-4">Customer Loans</h4>
+                  <div className="space-y-4">
+                    {/* Get all loans including main loan and additional loans */}
+                    {displayLoans.map((loan, index) => (
+                      <div 
+                        key={loan._id} 
+                        className={`border rounded-lg p-4 ${
+                          loan.isMainLoan 
+                            ? 'border-gray-200 bg-white' 
+                            : 'border-blue-200 bg-blue-50'
+                        }`}
+                      >
+                        <div className="flex justify-between items-center mb-3">
+                          <div>
+                            <h5 className={`font-medium ${
+                              loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'
                             }`}>
-                              {loan.isMainLoan ? 'Main' : 'Additional'}
-                            </span>
+                              Loan {loan.isMainLoan ? 'L1 (Main Loan)' : `L${index + 1}`}
+                            </h5>
+                            {loan.isMainLoan && (
+                              <p className="text-xs text-gray-500">Primary loan account</p>
+                            )}
+                            {/* Debug info - remove in production */}
+                            <p className="text-xs text-gray-400 mt-1">
+                              ID: {loan._id} | Customer: {loan.customerId}
+                            </p>
                           </div>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                            <div>
-                              <label className={`block text-xs font-medium ${
-                                loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
-                              }`}>
-                                Loan Amount
-                              </label>
-                              <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
-                                ₹{loan.amount?.toLocaleString()}
-                              </p>
-                            </div>
-                            <div>
-                              <label className={`block text-xs font-medium ${
-                                loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
-                              }`}>
-                                EMI Amount
-                              </label>
-                              <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
-                                ₹{loan.emiAmount}
-                              </p>
-                            </div>
-                            <div>
-                              <label className={`block text-xs font-medium ${
-                                loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
-                              }`}>
-                                Loan Type
-                              </label>
-                              <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
-                                {loan.loanType}
-                              </p>
-                            </div>
-                            <div>
-                              <label className={`block text-xs font-medium ${
-                                loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
-                              }`}>
-                                Status
-                              </label>
-                              <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
-                                Active
-                              </p>
-                            </div>
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                            loan.isMainLoan 
+                              ? 'bg-blue-100 text-blue-800' 
+                              : 'bg-green-100 text-green-800'
+                          }`}>
+                            {loan.isMainLoan ? 'Main' : 'Additional'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                          <div>
+                            <label className={`block text-xs font-medium ${
+                              loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
+                            }`}>
+                              Loan Amount
+                            </label>
+                            <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
+                              ₹{loan.amount?.toLocaleString()}
+                            </p>
                           </div>
-                          <div className="mt-4">
-                            <button 
-                              onClick={() => handlePayNow(loan)}
-                              className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
-                            >
-                              Pay Now
-                            </button>
+                          <div>
+                            <label className={`block text-xs font-medium ${
+                              loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
+                            }`}>
+                              EMI Amount
+                            </label>
+                            <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
+                              ₹{loan.emiAmount}
+                            </p>
+                          </div>
+                          <div>
+                            <label className={`block text-xs font-medium ${
+                              loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
+                            }`}>
+                              Loan Type
+                            </label>
+                            <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
+                              {loan.loanType}
+                            </p>
+                          </div>
+                          <div>
+                            <label className={`block text-xs font-medium ${
+                              loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
+                            }`}>
+                              Duration
+                            </label>
+                            <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
+                              {loan.loanDays} {loan.loanType === 'Daily' ? 'days' : 
+                                             loan.loanType === 'Weekly' ? 'weeks' : 'months'}
+                            </p>
+                          </div>
+                          <div>
+                            <label className={`block text-xs font-medium ${
+                              loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
+                            }`}>
+                              Status
+                            </label>
+                            <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
+                              Active
+                            </p>
                           </div>
                         </div>
-                      ))}
-                    </div>
+                        <div className="mt-4">
+                          <button 
+                            onClick={() => handlePayNow(loan)}
+                            className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
+                          >
+                            Pay Now
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                )}
+                </div>
+              )}
 
-                {/* Help Text */}
-                {!selectedCustomer && (
-                  <div className="mt-4 p-3 bg-blue-50 rounded-md border border-blue-200">
-                    <p className="text-sm text-blue-700">
-                      <strong>How to record EMI payment:</strong>
+              {/* Help Text */}
+              {!selectedCustomer && (
+                <div className="mt-4 p-3 bg-blue-50 rounded-md border border-blue-200">
+                  <p className="text-sm text-blue-700">
+                    <strong>How to record EMI payment:</strong>
+                  </p>
+                  <ol className="text-xs text-blue-600 mt-1 list-decimal list-inside space-y-1">
+                    <li>Search for an active customer using name or loan number</li>
+                    <li>Select the customer from the search results</li>
+                    <li>View the customer's loans and click "Pay Now" for the relevant loan</li>
+                    <li>Fill in the payment details in the next screen</li>
+                    <li>Click "Record EMI Payment" to save</li>
+                  </ol>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Payment Form */
+            <div className="space-y-6">
+              <div className="bg-blue-50 p-4 rounded-md border border-blue-200">
+                <h4 className="text-lg font-semibold text-blue-900 mb-2">EMI Payment</h4>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-blue-600 font-medium">Customer:</span>
+                    <p className="text-blue-900">{selectedCustomer?.name}</p>
+                  </div>
+                  <div>
+                    <span className="text-blue-600 font-medium">Loan:</span>
+                    <p className="text-blue-900">
+                      {selectedLoanForPayment && displayLoans.find(l => l._id === selectedLoanForPayment._id)?.isMainLoan 
+                        ? 'L1 (Main Loan)' 
+                        : `L${displayLoans.findIndex(l => l._id === selectedLoanForPayment?._id) + 1}`}
                     </p>
-                    <ol className="text-xs text-blue-600 mt-1 list-decimal list-inside space-y-1">
-                      <li>Search for an active customer using name or loan number</li>
-                      <li>Select the customer from the search results</li>
-                      <li>View the customer's loans and click "Pay Now" for the relevant loan</li>
-                      <li>Fill in the payment details in the next screen</li>
-                      <li>Click "Record EMI Payment" to save</li>
-                    </ol>
                   </div>
-                )}
-              </div>
-            ) : (
-              /* Payment Form */
-              <div className="space-y-6">
-                <div className="bg-blue-50 p-4 rounded-md border border-blue-200">
-                  <h4 className="text-lg font-semibold text-blue-900 mb-2">EMI Payment</h4>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-blue-600 font-medium">Customer:</span>
-                      <p className="text-blue-900">{selectedCustomer?.name}</p>
-                    </div>
-                    <div>
-                      <span className="text-blue-600 font-medium">Loan:</span>
-                      <p className="text-blue-900">
-                        {selectedLoanForPayment && displayLoans.find(l => l._id === selectedLoanForPayment._id)?.isMainLoan 
-                          ? 'L1 (Main Loan)' 
-                          : `L${displayLoans.findIndex(l => l._id === selectedLoanForPayment?._id) + 1}`}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-blue-600 font-medium">EMI Amount:</span>
-                      <p className="text-blue-900 font-semibold">₹{selectedLoanForPayment?.emiAmount}</p>
-                    </div>
-                    <div>
-                      <span className="text-blue-600 font-medium">Loan Type:</span>
-                      <p className="text-blue-900">{selectedLoanForPayment?.loanType}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Payment Date *
-                    </label>
-                    <input 
-                      type="date" 
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      value={emiUpdate.paymentDate}
-                      onChange={(e) => setEmiUpdate({...emiUpdate, paymentDate: e.target.value})}
-                      required
-                    />
+                    <span className="text-blue-600 font-medium">EMI Amount:</span>
+                    <p className="text-blue-900 font-semibold">₹{selectedLoanForPayment?.emiAmount}</p>
                   </div>
-                  
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Amount Paid (₹) *
-                    </label>
-                    <input 
-                      type="number" 
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      value={emiUpdate.amount}
-                      onChange={(e) => setEmiUpdate({...emiUpdate, amount: e.target.value})}
-                      placeholder="Enter amount paid"
-                      min="0"
-                      step="0.01"
-                      required
-                    />
-                    {selectedLoanForPayment?.emiAmount && emiUpdate.amount && (
-                      <p className={`text-xs mt-1 ${
-                        Number(emiUpdate.amount) === selectedLoanForPayment.emiAmount 
-                          ? 'text-green-600' 
-                          : 'text-orange-600'
-                      }`}>
-                        {Number(emiUpdate.amount) === selectedLoanForPayment.emiAmount 
-                          ? '✓ Full EMI amount matches' 
-                          : `ℹ️ Expected EMI: ₹${selectedLoanForPayment.emiAmount}`}
-                      </p>
-                    )}
+                    <span className="text-blue-600 font-medium">Loan Type:</span>
+                    <p className="text-blue-900">{selectedLoanForPayment?.loanType}</p>
                   </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Payment Status *
-                    </label>
-                    <select 
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      value={emiUpdate.status}
-                      onChange={(e) => setEmiUpdate({...emiUpdate, status: e.target.value})}
-                      required
-                    >
-                      <option value="Paid">Paid</option>
-                      <option value="Partial">Partial Payment</option>
-                      <option value="Due">Due</option>
-                    </select>
-                    {emiUpdate.status === 'Partial' && (
-                      <p className="text-xs text-orange-600 mt-1">
-                        Partial payments will be recorded and remaining amount will be carried forward.
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Collected By *
-                    </label>
-                    <select 
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      value={emiUpdate.collectedBy}
-                      onChange={(e) => setEmiUpdate({...emiUpdate, collectedBy: e.target.value})}
-                      required
-                    >
-                      <option value="Operator 1">Operator 1</option>
-                      <option value="Operator 2">Operator 2</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex justify-between space-x-3 mt-6">
-                  <button 
-                    onClick={() => setShowPaymentForm(false)}
-                    className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
-                    disabled={isLoading}
-                  >
-                    Back
-                  </button>
-                  <button 
-                    onClick={handleUpdateEMI}
-                    disabled={!emiUpdate.amount || isLoading}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
-                  >
-                    {isLoading ? (
-                      <>
-                        <span className="animate-spin mr-2">⏳</span>
-                        Processing...
-                      </>
-                    ) : (
-                      'Record EMI Payment'
-                    )}
-                  </button>
                 </div>
               </div>
-            )}
-          </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Payment Date *
+                  </label>
+                  <input 
+                    type="date" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={emiUpdate.paymentDate}
+                    onChange={(e) => setEmiUpdate({...emiUpdate, paymentDate: e.target.value})}
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Amount Paid (₹) *
+                  </label>
+                  <input 
+                    type="number" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={emiUpdate.amount}
+                    onChange={(e) => setEmiUpdate({...emiUpdate, amount: e.target.value})}
+                    placeholder="Enter amount paid"
+                    min="0"
+                    step="0.01"
+                    required
+                  />
+                  {selectedLoanForPayment?.emiAmount && emiUpdate.amount && (
+                    <p className={`text-xs mt-1 ${
+                      Number(emiUpdate.amount) === selectedLoanForPayment.emiAmount 
+                        ? 'text-green-600' 
+                        : 'text-orange-600'
+                    }`}>
+                      {Number(emiUpdate.amount) === selectedLoanForPayment.emiAmount 
+                        ? '✓ Full EMI amount matches' 
+                        : `ℹ️ Expected EMI: ₹${selectedLoanForPayment.emiAmount}`}
+                    </p>
+                  )}
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Payment Status *
+                  </label>
+                  <select 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={emiUpdate.status}
+                    onChange={(e) => setEmiUpdate({...emiUpdate, status: e.target.value})}
+                    required
+                  >
+                    <option value="Paid">Paid</option>
+                    <option value="Partial">Partial Payment</option>
+                    <option value="Due">Due</option>
+                  </select>
+                  {emiUpdate.status === 'Partial' && (
+                    <p className="text-xs text-orange-600 mt-1">
+                      Partial payments will be recorded and remaining amount will be carried forward.
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Collected By *
+                  </label>
+                  <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                    <p className="text-gray-900 font-medium">{currentOperator}</p>
+                    <p className="text-xs text-gray-500 mt-1">Automatically set to logged-in operator</p>
+                  </div>
+                  {/* Hidden input to maintain the value in state */}
+                  <input 
+                    type="hidden" 
+                    value={currentOperator}
+                    onChange={(e) => setEmiUpdate({...emiUpdate, collectedBy: currentOperator})}
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-between space-x-3 mt-6">
+                <button 
+                  onClick={() => setShowPaymentForm(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
+                  disabled={isLoading}
+                >
+                  Back
+                </button>
+                <button 
+                  onClick={handleUpdateEMI}
+                  disabled={!emiUpdate.amount || isLoading}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+                >
+                  {isLoading ? (
+                    <>
+                      <span className="animate-spin mr-2">⏳</span>
+                      Processing...
+                    </>
+                  ) : (
+                    'Record EMI Payment'
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   const renderEditLoanModal = () => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-bold">
-              {editLoanData.isMainLoan ? 'Edit Main Loan' : 'Edit Additional Loan'}
-            </h3>
+            <h3 className="text-xl font-bold">Edit Loan</h3>
             <button 
               onClick={() => setShowEditLoan(false)}
               className="text-gray-500 hover:text-gray-700"
@@ -2843,20 +3026,21 @@ export default function DataEntryDashboard() {
             </button>
           </div>
           
-          <div className="space-y-4">
+          <div className="space-y-6">
+            {/* Customer Information Section */}
             <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-              <h4 className="text-lg font-semibold text-blue-900 mb-2">Loan Information</h4>
-              <div className="grid grid-cols-2 gap-4 text-sm">
+              <h4 className="text-lg font-semibold text-blue-900 mb-2">Customer Information</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                 <div>
-                  <span className="text-blue-600 font-medium">Customer:</span>
+                  <span className="text-blue-700 font-medium">Customer Name:</span>
                   <p className="text-blue-900">{editLoanData.customerName}</p>
                 </div>
                 <div>
-                  <span className="text-blue-600 font-medium">Loan Number:</span>
+                  <span className="text-blue-700 font-medium">Loan Number:</span>
                   <p className="text-blue-900">{editLoanData.loanNumber}</p>
                 </div>
                 <div>
-                  <span className="text-blue-600 font-medium">Type:</span>
+                  <span className="text-blue-700 font-medium">Type:</span>
                   <p className="text-blue-900">
                     {editLoanData.isMainLoan ? 'Main Loan' : 'Additional Loan'}
                   </p>
@@ -2864,88 +3048,146 @@ export default function DataEntryDashboard() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Loan Date *</label>
-                <input 
-                  type="date" 
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  value={editLoanData.dateApplied}
-                  onChange={(e) => setEditLoanData({...editLoanData, dateApplied: e.target.value})}
-                  required
-                />
-              </div>
+            {/* Edit Loan Details Section */}
+            <div>
+              <h4 className="text-lg font-semibold mb-4">Edit Loan Details</h4>
               
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Loan Type *</label>
-                <select 
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  value={editLoanData.loanType}
-                  onChange={(e) => {
-                    setEditLoanData({
-                      ...editLoanData, 
-                      loanType: e.target.value,
-                      loanDays: e.target.value === 'Monthly' ? '30' : 
-                               e.target.value === 'Weekly' ? '7' : '30'
-                    });
-                  }}
-                  required
-                >
-                  <option value="Daily">Daily EMI</option>
-                  <option value="Weekly">Weekly EMI</option>
-                  <option value="Monthly">Monthly EMI</option>
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Loan Amount *</label>
-                <input 
-                  type="number" 
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  value={editLoanData.amount}
-                  onChange={(e) => setEditLoanData({...editLoanData, amount: e.target.value})}
-                  placeholder="Amount"
-                  min="0"
-                  step="0.01"
-                  required
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">EMI Amount *</label>
-                <input 
-                  type="number" 
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  value={editLoanData.emiAmount}
-                  onChange={(e) => setEditLoanData({...editLoanData, emiAmount: e.target.value})}
-                  placeholder="EMI Amount"
-                  min="0"
-                  step="0.01"
-                  required
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {editLoanData.loanType === 'Daily' ? 'No. of Days *' : 
-                   editLoanData.loanType === 'Weekly' ? 'No. of Weeks *' : 'No. of Months *'}
-                </label>
-                <input 
-                  type="number" 
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  value={editLoanData.loanDays}
-                  onChange={(e) => setEditLoanData({...editLoanData, loanDays: e.target.value})}
-                  placeholder={editLoanData.loanType === 'Daily' ? 'Days' : 
-                             editLoanData.loanType === 'Weekly' ? 'Weeks' : 'Months'}
-                  min="1"
-                  required
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Date *</label>
+                  <input 
+                    type="date" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={editLoanData.dateApplied}
+                    onChange={(e) => setEditLoanData({...editLoanData, dateApplied: e.target.value})}
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Type *</label>
+                  <select 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={editLoanData.loanType}
+                    onChange={(e) => {
+                      setEditLoanData({
+                        ...editLoanData, 
+                        loanType: e.target.value,
+                        loanDays: e.target.value === 'Monthly' ? '30' : 
+                                 e.target.value === 'Weekly' ? '7' : '30'
+                      });
+                    }}
+                    required
+                  >
+                    <option value="Daily">Daily EMI</option>
+                    <option value="Weekly">Weekly EMI</option>
+                    <option value="Monthly">Monthly EMI</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Amount *</label>
+                  <input 
+                    type="number" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={editLoanData.amount}
+                    onChange={(e) => setEditLoanData({...editLoanData, amount: e.target.value})}
+                    placeholder="Amount"
+                    min="0"
+                    step="0.01"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">EMI Amount *</label>
+                  <input 
+                    type="number" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={editLoanData.emiAmount}
+                    onChange={(e) => setEditLoanData({...editLoanData, emiAmount: e.target.value})}
+                    placeholder="EMI Amount"
+                    min="0"
+                    step="0.01"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {editLoanData.loanType === 'Daily' ? 'No. of Days *' : 
+                     editLoanData.loanType === 'Weekly' ? 'No. of Weeks *' : 'No. of Months *'}
+                  </label>
+                  <input 
+                    type="number" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={editLoanData.loanDays}
+                    onChange={(e) => setEditLoanData({...editLoanData, loanDays: e.target.value})}
+                    placeholder={editLoanData.loanType === 'Daily' ? 'Days' : 
+                               editLoanData.loanType === 'Weekly' ? 'Weeks' : 'Months'}
+                    min="1"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {editLoanData.loanType === 'Daily' ? 'Total duration in days' : 
+                     editLoanData.loanType === 'Weekly' ? 'Total duration in weeks' : 'Total duration in months'}
+                  </p>
+                </div>
               </div>
             </div>
 
-            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
-              <h5 className="font-semibold text-yellow-900 mb-2">Note</h5>
-              <p className="text-sm text-yellow-700">
+            {/* Changes Summary */}
+            {editLoanData.originalData && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+                <h5 className="font-semibold text-yellow-900 mb-2">Changes Summary</h5>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 text-sm">
+                  <div>
+                    <span className="text-yellow-700">Loan Amount:</span>
+                    <p className="font-semibold">
+                      <span className="text-red-600 line-through">₹{editLoanData.originalData.amount}</span>
+                      <span className="text-green-600 ml-2">→ ₹{editLoanData.amount || '0'}</span>
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-yellow-700">EMI Amount:</span>
+                    <p className="font-semibold">
+                      <span className="text-red-600 line-through">₹{editLoanData.originalData.emiAmount}</span>
+                      <span className="text-green-600 ml-2">→ ₹{editLoanData.emiAmount || '0'}</span>
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-yellow-700">Loan Type:</span>
+                    <p className="font-semibold">
+                      <span className="text-red-600 line-through">{editLoanData.originalData.loanType}</span>
+                      <span className="text-green-600 ml-2">→ {editLoanData.loanType}</span>
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-yellow-700">Duration:</span>
+                    <p className="font-semibold">
+                      <span className="text-red-600 line-through">{editLoanData.originalData.loanDays}</span>
+                      <span className="text-green-600 ml-2">→ {editLoanData.loanDays || '0'}</span>
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-yellow-700">Loan Date:</span>
+                    <p className="font-semibold">
+                      <span className="text-red-600 line-through">
+                        {new Date(editLoanData.originalData.dateApplied).toLocaleDateString()}
+                      </span>
+                      <span className="text-green-600 ml-2">
+                        → {new Date(editLoanData.dateApplied).toLocaleDateString()}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Note */}
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+              <h5 className="font-semibold text-blue-900 mb-2">Note</h5>
+              <p className="text-sm text-blue-700">
                 This edit request will be sent to the admin for approval. The changes will only be applied after admin approval.
               </p>
             </div>
@@ -2964,7 +3206,198 @@ export default function DataEntryDashboard() {
               disabled={isLoading || !editLoanData.amount || !editLoanData.emiAmount || !editLoanData.loanDays}
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400"
             >
-              {isLoading ? 'Submitting...' : 'Submit for Approval'}
+              {isLoading ? 'Submitting...' : 'Submit Edit Request'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderRenewLoanModal = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold">Renew Loan</h3>
+            <button 
+              onClick={() => setShowRenewLoan(false)}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              ✕
+            </button>
+          </div>
+          
+          <div className="space-y-6">
+            {/* Customer Information Section */}
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+              <h4 className="text-lg font-semibold text-blue-900 mb-2">Customer Information</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div>
+                  <span className="text-blue-700 font-medium">Customer Name:</span>
+                  <p className="text-blue-900">{renewLoanData.customerName}</p>
+                </div>
+                <div>
+                  <span className="text-blue-700 font-medium">Loan Number:</span>
+                  <p className="text-blue-900">{renewLoanData.loanNumber}</p>
+                </div>
+                <div>
+                  <span className="text-blue-700 font-medium">Renewal Date:</span>
+                  <p className="text-blue-900">{renewLoanData.renewalDate}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Renew Loan Details Section */}
+            <div>
+              <h4 className="text-lg font-semibold mb-4">Renew Loan Details</h4>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Renewal Date *</label>
+                  <input 
+                    type="date" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={renewLoanData.renewalDate}
+                    onChange={(e) => setRenewLoanData({...renewLoanData, renewalDate: e.target.value})}
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Type *</label>
+                  <select 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={renewLoanData.newLoanType}
+                    onChange={(e) => {
+                      setRenewLoanData({
+                        ...renewLoanData, 
+                        newLoanType: e.target.value,
+                        newLoanDays: e.target.value === 'Monthly' ? '30' : 
+                                   e.target.value === 'Weekly' ? '7' : '30'
+                      });
+                    }}
+                    required
+                  >
+                    <option value="Daily">Daily EMI</option>
+                    <option value="Weekly">Weekly EMI</option>
+                    <option value="Monthly">Monthly EMI</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">New Loan Amount *</label>
+                  <input 
+                    type="number" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={renewLoanData.newLoanAmount}
+                    onChange={(e) => setRenewLoanData({...renewLoanData, newLoanAmount: e.target.value})}
+                    placeholder="New Amount"
+                    min="0"
+                    step="0.01"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">New EMI Amount *</label>
+                  <input 
+                    type="number" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={renewLoanData.newEmiAmount}
+                    onChange={(e) => setRenewLoanData({...renewLoanData, newEmiAmount: e.target.value})}
+                    placeholder="New EMI Amount"
+                    min="0"
+                    step="0.01"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {renewLoanData.newLoanType === 'Daily' ? 'No. of Days *' : 
+                     renewLoanData.newLoanType === 'Weekly' ? 'No. of Weeks *' : 'No. of Months *'}
+                  </label>
+                  <input 
+                    type="number" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={renewLoanData.newLoanDays}
+                    onChange={(e) => setRenewLoanData({...renewLoanData, newLoanDays: e.target.value})}
+                    placeholder={renewLoanData.newLoanType === 'Daily' ? 'Days' : 
+                               renewLoanData.newLoanType === 'Weekly' ? 'Weeks' : 'Months'}
+                    min="1"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {renewLoanData.newLoanType === 'Daily' ? 'Total duration in days' : 
+                     renewLoanData.newLoanType === 'Weekly' ? 'Total duration in weeks' : 'Total duration in months'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Remarks */}
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Remarks</label>
+                <textarea 
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  rows={3}
+                  value={renewLoanData.remarks}
+                  onChange={(e) => setRenewLoanData({...renewLoanData, remarks: e.target.value})}
+                  placeholder="Enter any remarks or notes for this renewal..."
+                />
+              </div>
+            </div>
+
+            {/* Renewal Summary */}
+            <div className="bg-green-50 border border-green-200 rounded-md p-4">
+              <h5 className="font-semibold text-green-900 mb-2">Renewal Summary</h5>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                  <span className="text-green-700">New Loan Amount:</span>
+                  <p className="font-semibold">₹{renewLoanData.newLoanAmount || '0'}</p>
+                </div>
+                <div>
+                  <span className="text-green-700">New EMI Amount:</span>
+                  <p className="font-semibold">₹{renewLoanData.newEmiAmount || '0'}</p>
+                </div>
+                <div>
+                  <span className="text-green-700">Duration:</span>
+                  <p className="font-semibold">
+                    {renewLoanData.newLoanDays || '0'} 
+                    {renewLoanData.newLoanType === 'Daily' ? ' days' : 
+                     renewLoanData.newLoanType === 'Weekly' ? ' weeks' : ' months'}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-green-700">Type:</span>
+                  <p className="font-semibold">{renewLoanData.newLoanType} EMI</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Note */}
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+              <h5 className="font-semibold text-blue-900 mb-2">Note</h5>
+              <p className="text-sm text-blue-700">
+                This renewal request will be sent to the admin for approval. The renewed loan will only be created after admin approval.
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex justify-end space-x-3 mt-6">
+            <button 
+              onClick={() => setShowRenewLoan(false)}
+              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+              disabled={isLoading}
+            >
+              Cancel
+            </button>
+            <button 
+              onClick={handleSaveRenewLoan}
+              disabled={isLoading || !renewLoanData.newLoanAmount || !renewLoanData.newEmiAmount || !renewLoanData.newLoanDays}
+              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400"
+            >
+              {isLoading ? 'Submitting...' : 'Submit Renewal Request'}
             </button>
           </div>
         </div>
@@ -3091,7 +3524,7 @@ export default function DataEntryDashboard() {
                             {loan.isMainLoan ? 'Main' : 'Additional'}
                           </span>
                         </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
                           <div>
                             <label className={`block text-xs font-medium ${
                               loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
@@ -3126,6 +3559,17 @@ export default function DataEntryDashboard() {
                             <label className={`block text-xs font-medium ${
                               loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
                             }`}>
+                              Duration
+                            </label>
+                            <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
+                              {loan.loanDays} {loan.loanType === 'Daily' ? 'days' : 
+                                             loan.loanType === 'Weekly' ? 'weeks' : 'months'}
+                            </p>
+                          </div>
+                          <div>
+                            <label className={`block text-xs font-medium ${
+                              loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
+                            }`}>
                               Status
                             </label>
                             <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
@@ -3133,13 +3577,19 @@ export default function DataEntryDashboard() {
                             </p>
                           </div>
                         </div>
-                        {/* Edit and Delete Buttons */}
+                        {/* Edit, Renew and Delete Buttons */}
                         <div className="flex justify-end space-x-2 mt-4">
                           <button 
                             onClick={() => handleEditLoan(loan)}
                             className="bg-yellow-600 text-white px-3 py-1 rounded-md hover:bg-yellow-700 text-sm"
                           >
                             Edit
+                          </button>
+                          <button 
+                            onClick={() => handleRenewLoan(loan)}
+                            className="bg-green-600 text-white px-3 py-1 rounded-md hover:bg-green-700 text-sm"
+                          >
+                            Renew
                           </button>
                           <button 
                             onClick={() => handleDeleteLoan(loan)}
@@ -3187,10 +3637,10 @@ export default function DataEntryDashboard() {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-bold">Edit Customer</h3>
+            <h3 className="text-xl font-bold">Edit Customer Profile</h3>
             <button 
               onClick={() => setShowEditCustomer(false)}
               className="text-gray-500 hover:text-gray-700"
@@ -3199,176 +3649,141 @@ export default function DataEntryDashboard() {
             </button>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Customer Name *</label>
-              <input 
-                type="text" 
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={editCustomerData.name}
-                onChange={(e) => setEditCustomerData({...editCustomerData, name: e.target.value})}
-                required
-              />
+          <div className="space-y-6">
+            {/* Customer Information Section */}
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+              <h4 className="text-lg font-semibold text-blue-900 mb-2">Customer Information</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div>
+                  <span className="text-blue-700 font-medium">Customer ID:</span>
+                  <p className="text-blue-900">{editCustomerData.customerId}</p>
+                </div>
+                <div>
+                  <span className="text-blue-700 font-medium">Current Loan Number:</span>
+                  <p className="text-blue-900">{editCustomerData.loanNumber}</p>
+                </div>
+              </div>
             </div>
-            
+
+            {/* Edit Customer Details Section */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Phone Numbers *</label>
-              {phoneNumbers.map((phoneNumber, index) => (
-                <div key={index} className="flex gap-2 mb-2">
+              <h4 className="text-lg font-semibold mb-4">Edit Customer Details</h4>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Customer Name *</label>
                   <input 
-                    type="tel" 
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                    value={phoneNumber}
-                    onChange={(e) => {
-                      const value = e.target.value.replace(/\D/g, '');
-                      if (value.length <= 10) {
-                        const newPhones = [...phoneNumbers];
-                        newPhones[index] = value;
-                        setEditCustomerData({...editCustomerData, phone: newPhones});
-                      }
-                    }}
-                    placeholder="Enter 10-digit phone number"
-                    maxLength={10}
+                    type="text" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={editCustomerData.name}
+                    onChange={(e) => setEditCustomerData({...editCustomerData, name: e.target.value})}
                     required
                   />
-                  {index === phoneNumbers.length - 1 && phoneNumbers.length < 5 && (
-                    <button
-                      type="button"
-                      onClick={() => setEditCustomerData({
-                        ...editCustomerData, 
-                        phone: [...phoneNumbers, '']
-                      })}
-                      className="px-3 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 text-sm"
-                    >
-                      +
-                    </button>
-                  )}
-                  {phoneNumbers.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const newPhones = phoneNumbers.filter((_, i) => i !== index);
-                        setEditCustomerData({...editCustomerData, phone: newPhones});
-                      }}
-                      className="px-3 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 text-sm"
-                    >
-                      ×
-                    </button>
-                  )}
                 </div>
-              ))}
-              <p className="text-xs text-gray-500 mt-1">
-                You can add up to 5 phone numbers. Click + to add another.
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Business Name *</label>
+                  <input 
+                    type="text" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={editCustomerData.businessName}
+                    onChange={(e) => setEditCustomerData({...editCustomerData, businessName: e.target.value})}
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Area *</label>
+                  <input 
+                    type="text" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={editCustomerData.area}
+                    onChange={(e) => setEditCustomerData({...editCustomerData, area: e.target.value})}
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Number *</label>
+                  <div className="flex">
+                    <span className="inline-flex items-center px-3 py-2 border border-r-0 border-gray-300 bg-gray-50 text-gray-500 rounded-l-md">
+                      LN
+                    </span>
+                    <input 
+                      type="text" 
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-r-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      value={editCustomerData.loanNumber.replace('LN', '')}
+                      onChange={(e) => setEditCustomerData({
+                        ...editCustomerData, 
+                        loanNumber: `LN${e.target.value.replace(/\D/g, '')}`
+                      })}
+                      placeholder="Enter numbers only"
+                      maxLength={10}
+                      required
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Full loan number: {editCustomerData.loanNumber}</p>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Type *</label>
+                  <select 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={editCustomerData.loanType}
+                    onChange={(e) => setEditCustomerData({...editCustomerData, loanType: e.target.value})}
+                    required
+                  >
+                    <option value="Daily">Daily EMI</option>
+                    <option value="Weekly">Weekly EMI</option>
+                    <option value="Monthly">Monthly EMI</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Category *</label>
+                  <select 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={editCustomerData.category}
+                    onChange={(e) => setEditCustomerData({...editCustomerData, category: e.target.value})}
+                    required
+                  >
+                    <option value="A">Category A</option>
+                    <option value="B">Category B</option>
+                    <option value="C">Category C</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Office Category *</label>
+                  <select 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={editCustomerData.officeCategory}
+                    onChange={(e) => setEditCustomerData({...editCustomerData, officeCategory: e.target.value})}
+                    required
+                  >
+                    <option value="Office 1">Office 1</option>
+                    <option value="Office 2">Office 2</option>
+                  </select>
+                </div>
+                
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
+                  <textarea 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    rows={3}
+                    value={editCustomerData.address}
+                    onChange={(e) => setEditCustomerData({...editCustomerData, address: e.target.value})}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Note */}
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+              <h5 className="font-semibold text-blue-900 mb-2">Note</h5>
+              <p className="text-sm text-blue-700">
+                This edit request will be sent to the admin for approval. The changes will only be applied after admin approval.
               </p>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Business Name</label>
-              <input 
-                type="text" 
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={editCustomerData.businessName}
-                onChange={(e) => setEditCustomerData({...editCustomerData, businessName: e.target.value})}
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Area *</label>
-              <input 
-                type="text" 
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={editCustomerData.area}
-                onChange={(e) => setEditCustomerData({...editCustomerData, area: e.target.value})}
-                required
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Loan Number *</label>
-              <input 
-                type="text" 
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={editCustomerData.loanNumber}
-                onChange={(e) => setEditCustomerData({...editCustomerData, loanNumber: e.target.value})}
-                required
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Loan Type *</label>
-              <select 
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={editCustomerData.loanType}
-                onChange={(e) => setEditCustomerData({...editCustomerData, loanType: e.target.value})}
-                required
-              >
-                <option value="Daily">Daily EMI</option>
-                <option value="Weekly">Weekly EMI</option>
-                <option value="Monthly">Monthly EMI</option>
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Loan Amount *</label>
-              <input 
-                type="number" 
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={editCustomerData.loanAmount}
-                onChange={(e) => setEditCustomerData({...editCustomerData, loanAmount: e.target.value})}
-                min="0"
-                step="0.01"
-                required
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">EMI Amount *</label>
-              <input 
-                type="number" 
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={editCustomerData.emiAmount}
-                onChange={(e) => setEditCustomerData({...editCustomerData, emiAmount: e.target.value})}
-                min="0"
-                step="0.01"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Category *</label>
-              <select 
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={editCustomerData.category}
-                onChange={(e) => setEditCustomerData({...editCustomerData, category: e.target.value})}
-                required
-              >
-                <option value="A">Category A</option>
-                <option value="B">Category B</option>
-                <option value="C">Category C</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Office Category *</label>
-              <select 
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={editCustomerData.officeCategory}
-                onChange={(e) => setEditCustomerData({...editCustomerData, officeCategory: e.target.value})}
-                required
-              >
-                <option value="Office 1">Office 1</option>
-                <option value="Office 2">Office 2</option>
-              </select>
-            </div>
-            
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
-              <textarea 
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                rows={3}
-                value={editCustomerData.address}
-                onChange={(e) => setEditCustomerData({...editCustomerData, address: e.target.value})}
-              />
             </div>
           </div>
           
@@ -3385,7 +3800,7 @@ export default function DataEntryDashboard() {
               disabled={isLoading}
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400"
             >
-              {isLoading ? 'Submitting...' : 'Submit for Approval'}
+              {isLoading ? 'Submitting...' : 'Submit Profile Edit'}
             </button>
           </div>
         </div>
@@ -3723,25 +4138,21 @@ export default function DataEntryDashboard() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Loan Number</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Business</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Area</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Office</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Loan Details</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredCustomers.map((customer) => (
                   <tr key={customer._id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{customer.name}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{customer.loanNumber}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.name}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{customer.businessName}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{customer.area}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {customer.officeCategory || 'N/A'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {customer.loanNumber} • ₹{customer.emiAmount} {customer.loanType}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <button 
@@ -3764,7 +4175,7 @@ export default function DataEntryDashboard() {
                 ))}
                 {filteredCustomers.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
+                    <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
                       No customers found
                     </td>
                   </tr>
@@ -3835,6 +4246,7 @@ export default function DataEntryDashboard() {
       {showCustomerDetails && renderCustomerDetails()}
       {showEditCustomer && renderEditCustomer()}
       {showEditLoan && renderEditLoanModal()}
+      {showRenewLoan && renderRenewLoanModal()}
       {showAddLoanModal && renderAddLoanModal()}
     </div>
   );
