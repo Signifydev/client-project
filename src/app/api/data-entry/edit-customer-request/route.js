@@ -164,19 +164,19 @@ export async function POST(request) {
 
     // Create edit request using the enhanced Request model
     const editRequest = new Request({
-      type: 'Customer Edit',
-      customerId: existingCustomer._id,
-      customerName: existingCustomer.name,
-      currentData: currentData,
-      requestedData: requestedData,
-      description: autoDescription,
-      priority: calculatedPriority,
-      status: 'Pending',
-      createdBy: requestedBy,
-      createdByRole: 'data_entry',
-      estimatedImpact: calculateImpact(currentData, requestedData),
-      requiresCustomerNotification: checkIfNotificationRequired(currentData, requestedData)
-    });
+  type: 'EDIT', // Use 'EDIT' instead of 'Customer Edit'
+  customerId: existingCustomer._id,
+  customerName: existingCustomer.name,
+  changes: requestedData, // Send changes in 'changes' field for consistency
+  originalData: currentData, // Include original data for reference
+  description: autoDescription,
+  priority: calculatedPriority,
+  status: 'Pending',
+  createdBy: requestedBy,
+  createdByRole: 'data_entry',
+  estimatedImpact: calculateImpact(currentData, requestedData),
+  requiresCustomerNotification: checkIfNotificationRequired(currentData, requestedData)
+});
 
     await editRequest.save();
 

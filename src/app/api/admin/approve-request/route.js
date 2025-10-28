@@ -25,7 +25,9 @@ export async function POST(request) {
       type: requestDoc.type,
       customerName: requestDoc.customerName,
       loanNumber: requestDoc.loanNumber,
-      status: requestDoc.status
+      status: requestDoc.status,
+      hasChanges: !!requestDoc.changes,
+      hasRequestedData: !!requestDoc.requestedData
     });
 
     if (action === 'approve') {
@@ -305,11 +307,112 @@ export async function POST(request) {
           }
         });
 
+      } else if (requestDoc.type === 'EDIT' || requestDoc.type === 'Customer Edit') {
+        // UPDATED: Handle both 'EDIT' and 'Customer Edit' types
+        console.log('📝 Processing EDIT/Customer Edit request...');
+        
+        const customerId = requestDoc.customerId;
+        
+        if (!customerId) {
+          return NextResponse.json({ 
+            success: false,
+            error: 'Customer ID not found in EDIT request' 
+          }, { status: 400 });
+        }
+
+        // Find the existing customer
+        const existingCustomer = await Customer.findById(customerId);
+        if (!existingCustomer) {
+          return NextResponse.json({ 
+            success: false,
+            error: 'Customer not found for editing' 
+          }, { status: 404 });
+        }
+
+        console.log('🔍 Found customer to edit:', {
+          customerId: existingCustomer._id,
+          name: existingCustomer.name,
+          currentStatus: existingCustomer.status
+        });
+
+        // Apply the changes from the request
+        // Use requestedData for Customer Edit type, changes for EDIT type
+        const changes = requestDoc.changes || requestDoc.requestedData || {};
+        console.log('📋 Changes to apply:', changes);
+
+        // Update customer fields with the changes
+        const updatableFields = [
+          'name', 'phone', 'whatsappNumber', 'businessName', 'area', 'address',
+          'loanAmount', 'emiAmount', 'loanType', 'category', 'officeCategory',
+          'profilePicture', 'fiDocuments', 'loanDate', 'loanDays'
+        ];
+
+        let updatedFields = [];
+        updatableFields.forEach(field => {
+          if (changes[field] !== undefined && changes[field] !== null) {
+            existingCustomer[field] = changes[field];
+            updatedFields.push(field);
+          }
+        });
+
+        // Update timestamps
+        existingCustomer.updatedAt = new Date();
+        existingCustomer.lastEditedBy = processedBy;
+        existingCustomer.lastEditDate = new Date();
+
+        // Save the updated customer
+        await existingCustomer.save();
+        console.log('✅ Customer updated successfully. Fields changed:', updatedFields);
+
+        // If loan details were changed, update the main loan as well
+        if (changes.loanAmount || changes.emiAmount || changes.loanType) {
+          const mainLoan = await Loan.findOne({ 
+            customerId: customerId, 
+            isMainLoan: true 
+          });
+
+          if (mainLoan) {
+            if (changes.loanAmount) {
+              mainLoan.amount = changes.loanAmount;
+              mainLoan.remainingAmount = changes.loanAmount - mainLoan.totalPaid;
+            }
+            if (changes.emiAmount) mainLoan.emiAmount = changes.emiAmount;
+            if (changes.loanType) mainLoan.loanType = changes.loanType;
+            
+            mainLoan.updatedAt = new Date();
+            await mainLoan.save();
+            console.log('✅ Main loan updated successfully');
+          }
+        }
+
+        // Update request status to 'Approved'
+        requestDoc.status = 'Approved';
+        requestDoc.reviewedBy = processedBy;
+        requestDoc.reviewedByRole = 'admin';
+        requestDoc.reviewNotes = reason || 'Customer edit approved by admin';
+        requestDoc.actionTaken = `Customer details updated. Fields modified: ${updatedFields.join(', ')}`;
+        requestDoc.reviewedAt = new Date();
+        requestDoc.completedAt = new Date();
+        requestDoc.updatedAt = new Date();
+        
+        await requestDoc.save();
+        console.log('✅ EDIT request approved and completed');
+
+        return NextResponse.json({ 
+          success: true,
+          message: 'Customer edit approved successfully!',
+          data: {
+            customerId: existingCustomer._id,
+            customerName: existingCustomer.name,
+            updatedFields: updatedFields,
+            status: existingCustomer.status
+          }
+        });
+
       } else {
-        // Handle other request types (EDIT requests, etc.)
         return NextResponse.json({ 
           success: false,
-          error: 'Unsupported request type for this endpoint' 
+          error: 'Unsupported request type: ' + requestDoc.type
         }, { status: 400 });
       }
 
@@ -336,6 +439,9 @@ export async function POST(request) {
           console.error('❌ Error deleting pending customer data:', deleteError);
           // Continue with rejection even if deletion fails
         }
+      } else if (requestDoc.type === 'EDIT' || requestDoc.type === 'Customer Edit') {
+        // For EDIT requests, just reject without deleting customer data
+        console.log('❌ Rejecting EDIT request - keeping original customer data');
       }
       
       // Update request status to 'Rejected'
