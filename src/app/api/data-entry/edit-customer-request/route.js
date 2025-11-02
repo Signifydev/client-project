@@ -1,42 +1,37 @@
 import { NextResponse } from 'next/server';
 import Request from '@/lib/models/Request';
-import Customer from '@/lib/models/Customer';
 import { connectDB } from '@/lib/db';
 
 export async function POST(request) {
   try {
     await connectDB();
-    const body = await request.json();
     
-    console.log('📨 Received edit request:', body);
+    const body = await request.json();
+    console.log('📥 Received edit customer request:', body);
 
     const {
       customerId,
       name,
       phone,
+      whatsappNumber,
       businessName,
       area,
-      loanNumber,
+      customerNumber,
       loanAmount,
       emiAmount,
       loanType,
       address,
-      requestedBy,
-      description = '',
-      priority = 'Medium'
+      category,
+      officeCategory,
+      requestedBy
     } = body;
 
-    // Validate required fields
-    if (!customerId || !name || !phone || !area || !loanNumber || !requestedBy) {
+    if (!customerId || !name || !customerNumber) {
       return NextResponse.json(
-        { 
-          success: false, 
-          error: 'Customer ID, name, phone, area, loan number, and requested by are required fields' 
-        },
+        { success: false, error: 'Missing required fields' },
         { status: 400 }
       );
     }
-
     // Validate phone number format
     const phoneRegex = /^[0-9]{10}$/;
     if (!phoneRegex.test(phone)) {
@@ -164,42 +159,52 @@ export async function POST(request) {
 
     // Create edit request using the enhanced Request model
     const editRequest = new Request({
-  type: 'EDIT', // Use 'EDIT' instead of 'Customer Edit'
-  customerId: existingCustomer._id,
-  customerName: existingCustomer.name,
-  changes: requestedData, // Send changes in 'changes' field for consistency
-  originalData: currentData, // Include original data for reference
-  description: autoDescription,
-  priority: calculatedPriority,
-  status: 'Pending',
-  createdBy: requestedBy,
-  createdByRole: 'data_entry',
-  estimatedImpact: calculateImpact(currentData, requestedData),
-  requiresCustomerNotification: checkIfNotificationRequired(currentData, requestedData)
-});
+      type: 'Customer Edit',
+      customerId: customerId,
+      customerName: name,
+      customerNumber: customerNumber,
+      requestedData: {
+        name: name,
+        phone: phone,
+        whatsappNumber: whatsappNumber,
+        businessName: businessName,
+        area: area,
+        customerNumber: customerNumber,
+        loanAmount: parseFloat(loanAmount),
+        emiAmount: parseFloat(emiAmount),
+        loanType: loanType,
+        address: address,
+        category: category,
+        officeCategory: officeCategory
+      },
+      description: `Customer profile edit request for ${name} - Customer: ${customerNumber}`,
+      priority: 'Medium',
+      status: 'Pending',
+      createdBy: requestedBy || 'data_entry_operator_1',
+      createdByRole: 'data_entry'
+    });
 
     await editRequest.save();
 
-    console.log('✅ Edit request saved successfully with ID:', editRequest._id);
-
-    // Populate the request for response
-    const populatedRequest = await Request.findById(editRequest._id)
-      .populate('customerId', 'name phone businessName area loanNumber');
+    console.log('✅ Edit customer request saved to database:', editRequest._id);
 
     return NextResponse.json({
       success: true,
-      message: 'Edit request submitted successfully. Waiting for admin approval.',
-      data: populatedRequest,
-      changes: identifyChanges(currentData, requestedData)
+      message: 'Customer edit request submitted successfully! Waiting for admin approval.',
+      data: {
+        requestId: editRequest._id,
+        type: 'Customer Edit',
+        customerName: name,
+        customerNumber: customerNumber,
+        status: 'Pending',
+        createdAt: new Date().toISOString()
+      }
     });
 
   } catch (error) {
-    console.error('❌ Error creating edit request:', error);
+    console.error('❌ Error processing edit customer request:', error);
     return NextResponse.json(
-      { 
-        success: false, 
-        error: 'Failed to submit edit request: ' + error.message 
-      },
+      { success: false, error: 'Failed to submit edit request: ' + error.message },
       { status: 500 }
     );
   }

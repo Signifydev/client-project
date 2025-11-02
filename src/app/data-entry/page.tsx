@@ -29,7 +29,7 @@ interface Customer {
   };
   category?: string;
   officeCategory?: string;
-  whatsappNumber?: string; // Add this optional property
+  whatsappNumber?: string;
 }
 
 interface Loan {
@@ -90,7 +90,7 @@ interface CustomerDetails {
   category?: string;
   officeCategory?: string;
   loans?: Loan[];
-  whatsappNumber?: string; // Add this optional property
+  whatsappNumber?: string;
 }
 
 interface Request {
@@ -100,9 +100,9 @@ interface Request {
   status: string;
   createdAt: string;
   data?: any;
-  description?: string; // Add this line
-  customerNumber?: string; // Optional: add this for better display
-  loanNumber?: string; // Optional: add this for loan-related requests
+  description?: string;
+  customerNumber?: string;
+  loanNumber?: string;
 }
 
 interface TodayStats {
@@ -180,8 +180,8 @@ interface EditCustomerData {
   businessName: string;
   area: string;
   customerNumber: string;
-  loanAmount: string; // Changed from number to string for form handling
-  emiAmount: string;  // Changed from number to string for form handling
+  loanAmount: string;
+  emiAmount: string;
   loanType: string;
   address: string;
   customerId: string;
@@ -216,7 +216,6 @@ interface Filters {
   officeCategory: string;
 }
 
-
 interface CalendarDay {
   date: Date;
   isCurrentMonth: boolean;
@@ -230,7 +229,7 @@ interface CalendarDay {
 interface EMICalendarData {
   customerId: string;
   customerName: string;
-  loans: DisplayLoan[];
+  loans: Loan[];
   paymentHistory: EMIHistory[];
 }
 
@@ -282,7 +281,7 @@ export default function DataEntryDashboard() {
   const [editCustomerData, setEditCustomerData] = useState<EditCustomerData>({
     name: '',
     phone: [''],
-    whatsappNumber: '', // Add this line
+    whatsappNumber: '',
     businessName: '',
     area: '',
     customerNumber: '',
@@ -425,7 +424,7 @@ export default function DataEntryDashboard() {
     };
   };
 
-  const calculateTotalLoanAmount = (loan: DisplayLoan): number => {
+  const calculateTotalLoanAmount = (loan: Loan): number => {
     return loan.emiAmount * loan.totalEmiCount;
   };
 
@@ -474,7 +473,7 @@ export default function DataEntryDashboard() {
     };
   };
 
-  const generateCalendar = (month: Date, loans: DisplayLoan[], paymentHistory: EMIHistory[], loanFilter: string = 'all'): CalendarDay[] => {
+  const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory[], loanFilter: string = 'all'): CalendarDay[] => {
     const days: CalendarDay[] = [];
     const year = month.getFullYear();
     const monthIndex = month.getMonth();
@@ -733,8 +732,8 @@ export default function DataEntryDashboard() {
     return matchesSearch && matchesCustomerNumber && matchesLoanType && matchesStatus && matchesOfficeCategory;
   });
 
-  const getAllCustomerLoans = (customer: Customer, customerDetails: CustomerDetails | null): DisplayLoan[] => {
-    const loans: DisplayLoan[] = [];
+  const getAllCustomerLoans = (customer: Customer, customerDetails: CustomerDetails | null): Loan[] => {
+    const loans: Loan[] = [];
     
     console.log('🔄 getAllCustomerLoans called with:', {
       customer: {
@@ -753,7 +752,7 @@ export default function DataEntryDashboard() {
     // Check if customer has loan data directly
     if (customer.loanAmount && customer.emiAmount && customer.loanType) {
       console.log('✅ Creating loan from customer direct data');
-      const initialLoan: DisplayLoan = {
+      const initialLoan: Loan = {
         _id: customer._id,
         customerId: customer._id,
         customerName: customer.name,
@@ -781,7 +780,7 @@ export default function DataEntryDashboard() {
     if (customerDetails?.loans && Array.isArray(customerDetails.loans)) {
       console.log(`📊 Processing ${customerDetails.loans.length} loans from customerDetails`);
       customerDetails.loans.forEach((loan, index) => {
-        const enhancedLoan: DisplayLoan = {
+        const enhancedLoan: Loan = {
           ...loan,
           loanNumber: loan.loanNumber || `L${index + 1}`,
           totalEmiCount: (loan as any).totalEmiCount || loan.loanDays || 30,
@@ -801,7 +800,7 @@ export default function DataEntryDashboard() {
     // If no loans found but customer has loan data, create one
     if (loans.length === 0 && customer.loanAmount) {
       console.log('⚠️ No loans found, creating default loan from customer data');
-      const defaultLoan: DisplayLoan = {
+      const defaultLoan: Loan = {
         _id: customer._id,
         customerId: customer._id,
         customerName: customer.name,
@@ -1146,7 +1145,7 @@ export default function DataEntryDashboard() {
             officeCategory: customer.officeCategory || 'Office 1',
             createdAt: customer.createdAt,
             whatsappNumber: customer.whatsappNumber || '',
-            loans: [] // Ensure loans array is always present
+            loans: []
           };
           
           setCustomerDetails(customerDetailsData);
@@ -1205,7 +1204,7 @@ export default function DataEntryDashboard() {
         category: customer.category || 'A',
         officeCategory: customer.officeCategory || 'Office 1',
         createdAt: customer.createdAt,
-        loans: [] // Ensure loans array is always present
+        loans: []
       };
       
       setCustomerDetails(customerDetailsData);
@@ -1237,7 +1236,7 @@ export default function DataEntryDashboard() {
   setShowCustomerDetails(false);
 };
 
-  const handleEditLoan = (loan: DisplayLoan) => {
+  const handleEditLoan = (loan: Loan) => {
     setEditLoanData({
       loanId: loan._id,
       customerId: loan.customerId,
@@ -1260,7 +1259,7 @@ export default function DataEntryDashboard() {
     setShowEditLoan(true);
   };
 
-  const handleRenewLoan = (loan: DisplayLoan) => {
+  const handleRenewLoan = (loan: Loan) => {
     setRenewLoanData({
       loanId: loan._id,
       customerId: loan.customerId,
@@ -1433,7 +1432,7 @@ export default function DataEntryDashboard() {
     }
   };
 
-  const handleDeleteLoan = async (loan: DisplayLoan) => {
+  const handleDeleteLoan = async (loan: Loan) => {
     if (!confirm(`Are you sure you want to request deletion of Loan ${loan.loanNumber}? This action requires admin approval.`)) {
       return;
     }
@@ -1924,7 +1923,7 @@ export default function DataEntryDashboard() {
     setSearchQuery('');
   };
 
-  const handlePayNow = (loan: DisplayLoan) => {
+  const handlePayNow = (loan: Loan) => {
     console.log('💰 Pay Now clicked for loan:', loan);
     console.log('📋 Loan details:', {
       id: loan._id,
@@ -4087,7 +4086,7 @@ export default function DataEntryDashboard() {
                       }`}
                     >
                       {editingFields.primaryPhone ? 'Save' : 'Edit'}
-                    </button>
+                  </button>
                   </div>
 
                   {/* Secondary Phone */}
@@ -5060,10 +5059,6 @@ export default function DataEntryDashboard() {
 
   const renderUpdateEMIForm = () => {
     const displayLoans = selectedCustomer ? getAllCustomerLoans(selectedCustomer, customerDetails) : [];
-    const calculateTotalLoanAmount = (loan: DisplayLoan): number => {
-  return loan.emiAmount * loan.totalEmiCount;
-};
-
     const currentOperator = "Operator 1";
 
     return (
@@ -5265,12 +5260,12 @@ export default function DataEntryDashboard() {
     <div className="space-y-4">
       {displayLoans.map((loan, index) => {
   const completion = calculateEMICompletion(loan);
-  const behavior = calculatePaymentBehavior(loan); // ✅ Define behavior here
+  const behavior = calculatePaymentBehavior(loan);
   const totalLoanAmount = calculateTotalLoanAmount(loan);
   
   return (
     <div key={loan._id} className="border border-gray-200 rounded-lg p-4 bg-white">
-      {/* Loan Header - UPDATED */}
+      {/* Loan Header */}
       <div className="flex justify-between items-start mb-3">
         <div>
           <div className="flex items-center gap-4">
@@ -5299,7 +5294,7 @@ export default function DataEntryDashboard() {
       </div>
       
 
-            {/* Completion Progress - UPDATED */}
+            {/* Completion Progress */}
             <div className="mb-4">
               <div className="flex justify-between text-sm mb-1">
                 <span>Completion: {completion.completionPercentage.toFixed(1)}%</span>
@@ -5317,7 +5312,7 @@ export default function DataEntryDashboard() {
               </div>
             </div>
 
-            {/* Loan Details Grid - UPDATED */}
+            {/* Loan Details Grid */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
               <div>
                 <label className="block text-xs font-medium text-gray-500">
@@ -5560,7 +5555,7 @@ export default function DataEntryDashboard() {
           
           {customerDetails ? (
             <div className="space-y-6">
-              {/* Personal Information Section - Keep as is */}
+              {/* Personal Information Section */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h4 className="text-lg font-semibold text-gray-900 mb-4">Personal Information</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -5601,7 +5596,7 @@ export default function DataEntryDashboard() {
                 </div>
               </div>
 
-              {/* Business Information Section - Keep as is */}
+              {/* Business Information Section */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h4 className="text-lg font-semibold text-gray-900 mb-4">Business Information</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -5620,7 +5615,7 @@ export default function DataEntryDashboard() {
                 </div>
               </div>
 
-              {/* Loan Information Section - UPDATED */}
+              {/* Loan Information Section */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <div className="flex justify-between items-center mb-4">
                   <h4 className="text-lg font-semibold text-gray-900">Loan Information</h4>
@@ -5643,7 +5638,7 @@ export default function DataEntryDashboard() {
                         key={loan._id} 
                         className="border border-gray-200 rounded-lg p-4 bg-white"
                       >
-                        {/* Loan Header - UPDATED */}
+                        {/* Loan Header */}
                         <div className="flex justify-between items-start mb-3">
                           <div>
                             <div className="flex items-center gap-4">
@@ -5670,7 +5665,7 @@ export default function DataEntryDashboard() {
                           </div>
                         </div>
                         
-                        {/* Completion Progress - UPDATED */}
+                        {/* Completion Progress */}
                         <div className="mb-4">
                           <div className="flex justify-between text-sm mb-1">
                             <span>Completion: {completion.completionPercentage.toFixed(1)}%</span>
@@ -5688,7 +5683,7 @@ export default function DataEntryDashboard() {
                           </div>
                         </div>
 
-                        {/* Loan Details Grid - UPDATED */}
+                        {/* Loan Details Grid */}
                         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
                           <div>
                             <label className="block text-xs font-medium text-gray-500">

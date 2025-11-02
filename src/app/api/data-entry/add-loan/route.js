@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-
-// Mock database - in real app, you'd use a proper database
-let loans = [];
+import { MongoClient } from 'mongodb';
 
 export async function POST(request) {
+  let client;
+  
   try {
     const body = await request.json();
     const {
@@ -26,6 +26,11 @@ export async function POST(request) {
       );
     }
 
+    // Connect to MongoDB
+    client = new MongoClient(process.env.MONGODB_URI);
+    await client.connect();
+    const db = client.db('loan_management_system');
+
     // Generate unique loan ID
     const loanId = `loan_${Date.now()}`;
     
@@ -33,7 +38,7 @@ export async function POST(request) {
       _id: loanId,
       customerId,
       customerName,
-      loanNumber: `${loanNumber}_${loans.filter(loan => loan.customerId === customerId).length + 1}`,
+      loanNumber: loanNumber,
       amount: Number(amount),
       dateApplied,
       emiAmount: Number(emiAmount),
@@ -41,14 +46,20 @@ export async function POST(request) {
       loanDays: Number(loanDays),
       createdBy,
       status: 'active',
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      totalEmiCount: Number(loanDays),
+      emiPaidCount: 0,
+      lastEmiDate: dateApplied,
+      nextEmiDate: calculateNextEmiDate(dateApplied, loanType),
+      totalPaidAmount: 0,
+      remainingAmount: Number(amount),
+      emiHistory: []
     };
 
-    // Add to our mock database
-    loans.push(newLoan);
+    // Insert into MongoDB
+    const result = await db.collection('loans').insertOne(newLoan);
 
     console.log('New loan created:', newLoan);
-    console.log('Total loans for customer:', loans.filter(loan => loan.customerId === customerId).length);
 
     return NextResponse.json({
       success: true,
@@ -62,11 +73,17 @@ export async function POST(request) {
       { error: 'Failed to add new loan: ' + error.message },
       { status: 500 }
     );
+  } finally {
+    if (client) {
+      await client.close();
+    }
   }
 }
 
 // GET endpoint to fetch all loans for a customer
 export async function GET(request) {
+  let client;
+  
   try {
     const { searchParams } = new URL(request.url);
     const customerId = searchParams.get('customerId');
@@ -78,7 +95,15 @@ export async function GET(request) {
       );
     }
 
-    const customerLoans = loans.filter(loan => loan.customerId === customerId);
+    // Connect to MongoDB
+    client = new MongoClient(process.env.MONGODB_URI);
+    await client.connect();
+    const db = client.db('loan_management_system');
+
+    // Fetch from MongoDB
+    const customerLoans = await db.collection('loans')
+      .find({ customerId: customerId })
+      .toArray();
     
     return NextResponse.json({
       success: true,
@@ -91,5 +116,30 @@ export async function GET(request) {
       { error: 'Failed to fetch loans: ' + error.message },
       { status: 500 }
     );
+  } finally {
+    if (client) {
+      await client.close();
+    }
   }
+}
+
+// Helper function to calculate next EMI date
+function calculateNextEmiDate(currentDate, loanType) {
+  const date = new Date(currentDate);
+  
+  switch(loanType) {
+    case 'Daily':
+      date.setDate(date.getDate() + 1);
+      break;
+    case 'Weekly':
+      date.setDate(date.getDate() + 7);
+      break;
+    case 'Monthly':
+      date.setMonth(date.getMonth() + 1);
+      break;
+    default:
+      date.setDate(date.getDate() + 1);
+  }
+  
+  return date.toISOString().split('T')[0];
 }
