@@ -4,143 +4,64 @@ import Loan from '@/lib/models/Loan';
 import EMIPayment from '@/lib/models/EMIPayment';
 import { connectDB } from '@/lib/db';
 
+// GET method for fetching single customer details by ID
 export async function GET(request, { params }) {
   try {
     await connectDB();
+    
     const { id } = params;
+    console.log('🔍 Fetching single customer details for ID:', id);
 
-    console.log('Fetching customer details for ID:', id);
-
-    // Find customer by ID and explicitly select all fields
-    const customer = await Customer.findById(id).select('+category +officeCategory');
-    if (!customer) {
+    if (!id) {
       return NextResponse.json(
-        { 
-          success: false,
-          error: 'Customer not found' 
-        },
+        { success: false, error: 'Customer ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Find customer by ID
+    const customer = await Customer.findById(id);
+    
+    if (!customer) {
+      console.log('❌ Customer not found for ID:', id);
+      return NextResponse.json(
+        { success: false, error: 'Customer not found' },
         { status: 404 }
       );
     }
 
-    console.log('🔍 Customer data from DB:', {
-      name: customer.name,
-      category: customer.category,
-      officeCategory: customer.officeCategory,
-      businessName: customer.businessName,
-      area: customer.area,
-      address: customer.address
-    });
+    console.log('✅ Customer found:', customer.name);
 
-    // Get all loans for this customer with detailed information
-    const loans = await Loan.find({ customerId: id })
-      .sort({ createdAt: -1 });
+    // Fetch all loans for this customer
+    const loans = await Loan.find({ customerId: id }).sort({ createdAt: 1 });
+    console.log(`📊 Found ${loans.length} loans for customer ${customer.name}`);
 
-    console.log('🔍 Loans found:', loans.length);
-
-    // Get recent EMI payments (last 20 payments)
-    const emiPayments = await EMIPayment.find({ customerId: id })
-      .populate('loanId', 'loanNumber loanType')
-      .sort({ paymentDate: -1 })
-      .limit(20);
-
-    // Calculate customer statistics
-    const paymentStats = await EMIPayment.aggregate([
-      {
-        $match: { customerId: id }
-      },
-      {
-        $group: {
-          _id: null,
-          totalPaid: { $sum: '$amount' },
-          paymentCount: { $sum: 1 },
-          lastPaymentDate: { $max: '$paymentDate' }
-        }
-      }
-    ]);
-
-    // Calculate loan statistics
-    const loanStats = await Loan.aggregate([
-      {
-        $match: { customerId: id, status: 'active' }
-      },
-      {
-        $group: {
-          _id: null,
-          totalLoanAmount: { $sum: '$amount' },
-          totalEMIAmount: { $sum: '$emiAmount' },
-          activeLoans: { $sum: 1 }
-        }
-      }
-    ]);
-
-    // Get overdue loans
-    const today = new Date();
-    const overdueLoans = await Loan.find({
-      customerId: id,
-      status: 'active',
-      endDate: { $lt: today }
-    });
-
-    // Get the main loan (original loan created with customer)
-    const mainLoan = loans.find(loan => loan.isMainLoan) || loans[0];
-    
-    // Filter out additional loans (excluding the main loan)
-    const additionalLoans = loans.filter(loan => 
-      loan._id.toString() !== mainLoan?._id?.toString()
-    );
-
-    // Format customer data with additional calculated fields
-    const customerWithDetails = {
-      // Basic customer information - ensure all fields are included
+    // Format customer data with loans
+    const customerWithLoans = {
       _id: customer._id,
+      id: customer._id,
       name: customer.name,
       phone: customer.phone,
       businessName: customer.businessName,
       area: customer.area,
-      loanNumber: customer.loanNumber,
+      customerNumber: customer.customerNumber,
       loanAmount: customer.loanAmount,
       emiAmount: customer.emiAmount,
       loanType: customer.loanType,
-      address: customer.address,
+      address: customer.address || '',
       status: customer.status,
       email: customer.email,
       businessType: customer.businessType,
-      category: customer.category || 'A', // Ensure category is included with fallback
-      officeCategory: customer.officeCategory || 'Office 1', // Ensure officeCategory is included with fallback
+      category: customer.category || 'A',
+      officeCategory: customer.officeCategory || 'Office 1',
       createdAt: customer.createdAt,
-      updatedAt: customer.updatedAt,
       profilePicture: customer.profilePicture,
       fiDocuments: customer.fiDocuments,
-      
-      // Document URLs (if files are uploaded)
-      documents: {
-        profilePicture: customer.profilePicture ? 
-          `${process.env.NEXTAUTH_URL || ''}${customer.profilePicture}` : null,
-        fiDocuments: {
-          shop: customer.fiDocuments?.shop ? 
-            `${process.env.NEXTAUTH_URL || ''}${customer.fiDocuments.shop}` : null,
-          home: customer.fiDocuments?.home ? 
-            `${process.env.NEXTAUTH_URL || ''}${customer.fiDocuments.home}` : null
-        }
-      },
-
-      // Main loan information (single loan)
-      mainLoan: mainLoan ? {
-        _id: mainLoan._id,
-        loanNumber: mainLoan.loanNumber,
-        amount: mainLoan.amount,
-        emiAmount: mainLoan.emiAmount,
-        loanType: mainLoan.loanType,
-        dateApplied: mainLoan.dateApplied,
-        loanDays: mainLoan.loanDays,
-        status: mainLoan.status,
-        isMainLoan: true
-      } : null,
-
-      // Additional loans information (only additional loans, not including main loan)
-      loans: additionalLoans.map(loan => ({
+      loans: loans.map(loan => ({
         _id: loan._id,
+        customerId: loan.customerId,
+        customerName: loan.customerName,
+        customerNumber: loan.customerNumber,
         loanNumber: loan.loanNumber,
         amount: loan.amount,
         emiAmount: loan.emiAmount,
@@ -148,51 +69,23 @@ export async function GET(request, { params }) {
         dateApplied: loan.dateApplied,
         loanDays: loan.loanDays,
         status: loan.status,
-        isMainLoan: loan.isMainLoan || false,
-        isOverdue: loan.endDate < today && loan.status === 'active',
-        progressPercentage: loan.totalEMI > 0 ? 
-          Math.round((loan.emiPaid / loan.totalEMI) * 100) : 0,
-        daysRemaining: Math.max(0, Math.ceil((loan.endDate - today) / (1000 * 60 * 60 * 24)))
-      })),
-
-      // Payment history
-      paymentHistory: emiPayments.map(payment => ({
-        ...payment.toObject(),
-        formattedPaymentDate: payment.paymentDate.toLocaleDateString('en-IN'),
-        formattedAmount: `₹${payment.amount.toLocaleString('en-IN')}`
-      })),
-
-      // Statistics
-      statistics: {
-        totalPaid: paymentStats[0]?.totalPaid || 0,
-        totalPayments: paymentStats[0]?.paymentCount || 0,
-        lastPaymentDate: paymentStats[0]?.lastPaymentDate || null,
-        totalLoanAmount: loanStats[0]?.totalLoanAmount || 0,
-        totalEMIAmount: loanStats[0]?.totalEMIAmount || 0,
-        activeLoans: loanStats[0]?.activeLoans || 0,
-        overdueLoans: overdueLoans.length
-      },
-
-      // Summary information for quick view
-      summary: {
-        totalOutstanding: (loanStats[0]?.totalLoanAmount || 0) - (paymentStats[0]?.totalPaid || 0),
-        nextDueDate: calculateNextDueDate(loans, paymentStats[0]?.lastPaymentDate),
-        customerSince: customer.createdAt.toLocaleDateString('en-IN'),
-        status: customer.status
-      }
+        totalEmiCount: loan.totalEmiCount || loan.loanDays || 30,
+        emiPaidCount: loan.emiPaidCount || 0,
+        lastEmiDate: loan.lastEmiDate || loan.dateApplied,
+        nextEmiDate: loan.nextEmiDate,
+        totalPaidAmount: loan.totalPaidAmount || 0,
+        remainingAmount: loan.remainingAmount || loan.amount,
+        emiHistory: loan.emiHistory || [],
+        createdAt: loan.createdAt,
+        updatedAt: loan.updatedAt
+      }))
     };
 
-    console.log('✅ Customer details fetched successfully for:', customer.name);
-    console.log('📊 Final customer data structure:', {
-      category: customerWithDetails.category,
-      officeCategory: customerWithDetails.officeCategory,
-      mainLoan: customerWithDetails.mainLoan ? 'Present' : 'Absent',
-      additionalLoans: customerWithDetails.loans.length
-    });
+    console.log('✅ Customer details with loans prepared successfully');
 
     return NextResponse.json({
       success: true,
-      data: customerWithDetails
+      data: customerWithLoans
     });
 
   } catch (error) {
@@ -207,75 +100,100 @@ export async function GET(request, { params }) {
   }
 }
 
-// Helper function to calculate next due date
-function calculateNextDueDate(loans, lastPaymentDate) {
-  if (!loans || loans.length === 0) return null;
-
-  const activeLoans = loans.filter(loan => loan.status === 'active');
-  if (activeLoans.length === 0) return null;
-
-  // For simplicity, use the main loan (first loan) for due date calculation
-  const mainLoan = activeLoans[0];
-  const lastPayment = lastPaymentDate || mainLoan.dateApplied;
-  
-  let nextDue = new Date(lastPayment);
-  
-  switch (mainLoan.loanType) {
-    case 'Daily':
-      nextDue.setDate(nextDue.getDate() + 1);
-      break;
-    case 'Weekly':
-      nextDue.setDate(nextDue.getDate() + 7);
-      break;
-    case 'Monthly':
-      nextDue.setMonth(nextDue.getMonth() + 1);
-      break;
-  }
-  
-  return nextDue;
-}
-
-// Optional: PUT method to update customer basic info (for admin/edit requests)
+// PUT method to update customer details (for admin approval or edits)
 export async function PUT(request, { params }) {
   try {
     await connectDB();
+    
     const { id } = params;
     const updateData = await request.json();
 
-    console.log('Updating customer:', id, 'with data:', updateData);
+    console.log('🔄 Updating customer with ID:', id);
+    console.log('📦 Update data:', updateData);
 
-    // Find and update customer
-    const updatedCustomer = await Customer.findByIdAndUpdate(
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: 'Customer ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const customer = await Customer.findByIdAndUpdate(
       id,
-      { 
-        ...updateData,
-        updatedAt: new Date()
-      },
+      { $set: updateData },
       { new: true, runValidators: true }
     );
 
-    if (!updatedCustomer) {
+    if (!customer) {
       return NextResponse.json(
-        { 
-          success: false,
-          error: 'Customer not found' 
-        },
+        { success: false, error: 'Customer not found' },
         { status: 404 }
       );
     }
 
+    console.log('✅ Customer updated successfully:', customer.name);
+
     return NextResponse.json({
       success: true,
       message: 'Customer updated successfully',
-      data: updatedCustomer
+      data: customer
     });
 
   } catch (error) {
-    console.error('Error updating customer:', error);
+    console.error('❌ Error updating customer:', error);
     return NextResponse.json(
       { 
         success: false,
         error: 'Failed to update customer: ' + error.message 
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE method to delete customer (soft delete)
+export async function DELETE(request, { params }) {
+  try {
+    await connectDB();
+    
+    const { id } = params;
+    console.log('🗑️ Deleting customer with ID:', id);
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: 'Customer ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Soft delete by setting status to inactive
+    const customer = await Customer.findByIdAndUpdate(
+      id,
+      { $set: { status: 'inactive' } },
+      { new: true }
+    );
+
+    if (!customer) {
+      return NextResponse.json(
+        { success: false, error: 'Customer not found' },
+        { status: 404 }
+      );
+    }
+
+    console.log('✅ Customer soft deleted successfully:', customer.name);
+
+    return NextResponse.json({
+      success: true,
+      message: 'Customer deleted successfully',
+      data: customer
+    });
+
+  } catch (error) {
+    console.error('❌ Error deleting customer:', error);
+    return NextResponse.json(
+      { 
+        success: false,
+        error: 'Failed to delete customer: ' + error.message 
       },
       { status: 500 }
     );

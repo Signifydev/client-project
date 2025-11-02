@@ -24,7 +24,7 @@ export async function POST(request) {
     console.log('🔍 Found request:', {
       type: requestDoc.type,
       customerName: requestDoc.customerName,
-      loanNumber: requestDoc.loanNumber,
+      customerNumber: requestDoc.customerNumber,
       status: requestDoc.status,
       hasChanges: !!requestDoc.changes,
       hasRequestedData: !!requestDoc.requestedData
@@ -38,11 +38,11 @@ export async function POST(request) {
         
         const requestedData = requestDoc.requestedData;
         
-        // Final duplicate check before creating customer
+        // FIXED: Use customerNumber instead of loanNumber for duplicate check
         const existingCustomer = await Customer.findOne({
           $or: [
             { phone: { $in: requestedData.phone } },
-            { loanNumber: requestedData.loanNumber }
+            { customerNumber: requestedData.customerNumber }
           ],
           status: 'active'
         });
@@ -50,17 +50,18 @@ export async function POST(request) {
         if (existingCustomer) {
           return NextResponse.json({ 
             success: false,
-            error: 'Customer with this phone number or loan number already exists'
+            error: 'Customer with this phone number or customer number already exists'
           }, { status: 409 });
         }
 
-        // IMPORTANT: Check if there's already a customer record created by Data Entry
-        // If yes, we'll update it instead of creating a new one
-        let customer;
+        // FIXED: Check for existing customer using customerNumber
         const existingPendingCustomer = await Customer.findOne({
-          loanNumber: requestedData.loanNumber,
+          customerNumber: requestedData.customerNumber,
           status: 'pending'
         });
+
+        // FIXED: Declare customer variable at the start
+        let customer;
 
         if (existingPendingCustomer) {
           console.log('🔄 Found existing pending customer, updating to active...');
@@ -71,21 +72,17 @@ export async function POST(request) {
           existingPendingCustomer.approvedAt = new Date();
           existingPendingCustomer.updatedAt = new Date();
           
-          // Ensure all required fields are set
+          // FIXED: Use new required fields
           existingPendingCustomer.name = requestedData.name;
           existingPendingCustomer.phone = requestedData.phone;
           existingPendingCustomer.whatsappNumber = requestedData.whatsappNumber || '';
           existingPendingCustomer.businessName = requestedData.businessName;
           existingPendingCustomer.area = requestedData.area;
           existingPendingCustomer.address = requestedData.address;
-          existingPendingCustomer.loanAmount = requestedData.loanAmount;
-          existingPendingCustomer.emiAmount = requestedData.emiAmount;
-          existingPendingCustomer.loanType = requestedData.loanType;
+          existingPendingCustomer.customerNumber = requestedData.customerNumber;
           existingPendingCustomer.category = requestedData.category || 'A';
           existingPendingCustomer.officeCategory = requestedData.officeCategory || 'Office 1';
-          existingPendingCustomer.loanDate = requestedData.loanDate ? new Date(requestedData.loanDate) : new Date();
-          existingPendingCustomer.loanDays = requestedData.loanDays || 30;
-          existingPendingCustomer.userId = requestedData.loginId;
+          existingPendingCustomer.loginId = requestedData.loginId;
           existingPendingCustomer.password = requestedData.password;
           
           await existingPendingCustomer.save();
@@ -93,27 +90,22 @@ export async function POST(request) {
           console.log('✅ Updated existing pending customer to active status');
         } else {
           console.log('🆕 Creating new customer record...');
-          // Create new customer with ALL required fields
+          // FIXED: Create customer with new schema (without loan fields)
           const customerData = {
             name: requestedData.name,
             phone: requestedData.phone,
             whatsappNumber: requestedData.whatsappNumber || '',
             businessName: requestedData.businessName,
             area: requestedData.area,
-            loanNumber: requestedData.loanNumber,
+            customerNumber: requestedData.customerNumber,
             address: requestedData.address,
-            loanAmount: requestedData.loanAmount,
-            emiAmount: requestedData.emiAmount,
-            loanType: requestedData.loanType,
             category: requestedData.category || 'A',
             officeCategory: requestedData.officeCategory || 'Office 1',
             profilePicture: requestedData.profilePicture,
             fiDocuments: requestedData.fiDocuments || {},
-            loanDate: requestedData.loanDate ? new Date(requestedData.loanDate) : new Date(),
-            loanDays: requestedData.loanDays || 30,
             status: 'active',
             isActive: true,
-            userId: requestedData.loginId,
+            loginId: requestedData.loginId,
             password: requestedData.password,
             createdBy: requestDoc.createdBy,
             approvedBy: processedBy,
@@ -153,60 +145,57 @@ export async function POST(request) {
           }
         }
 
-        // Check if there's already a pending loan for this customer
-        let mainLoan;
-        const existingPendingLoan = await Loan.findOne({ 
-          customerId: customer._id, 
-          isMainLoan: true 
-        });
+        // FIXED: Create the main loan (L1) with loan details from requestedData
+        console.log('🆕 Creating main loan record (L1)...');
+        
+        // Calculate next EMI date
+        const calculateNextEmiDate = (loanDate, loanType) => {
+          const date = new Date(loanDate || new Date());
+          switch(loanType) {
+            case 'Daily':
+              date.setDate(date.getDate() + 1);
+              break;
+            case 'Weekly':
+              date.setDate(date.getDate() + 7);
+              break;
+            case 'Monthly':
+              date.setMonth(date.getMonth() + 1);
+              break;
+          }
+          return date;
+        };
 
-        if (existingPendingLoan) {
-          console.log('🔄 Found existing pending loan, updating to active...');
-          // Update the existing loan to active
-          existingPendingLoan.status = 'active';
-          existingPendingLoan.amount = customer.loanAmount;
-          existingPendingLoan.emiAmount = customer.emiAmount;
-          existingPendingLoan.loanType = customer.loanType;
-          existingPendingLoan.dateApplied = customer.loanDate;
-          existingPendingLoan.loanDays = customer.loanDays;
-          existingPendingLoan.remainingAmount = customer.loanAmount;
-          existingPendingLoan.updatedAt = new Date();
-          
-          await existingPendingLoan.save();
-          mainLoan = existingPendingLoan;
-          console.log('✅ Updated existing loan to active status');
-        } else {
-          console.log('🆕 Creating new main loan record...');
-          // Create main loan record
-          const loanData = {
-            customerId: customer._id,
-            customerName: customer.name,
-            loanNumber: customer.loanNumber,
-            amount: customer.loanAmount,
-            emiAmount: customer.emiAmount,
-            loanType: customer.loanType,
-            dateApplied: customer.loanDate,
-            loanDays: customer.loanDays,
-            status: 'active',
-            createdBy: requestDoc.createdBy,
-            isMainLoan: true,
-            emiPaid: 0,
-            totalPaid: 0,
-            remainingAmount: customer.loanAmount
-          };
+        const loanData = {
+          customerId: customer._id,
+          customerName: customer.name,
+          customerNumber: customer.customerNumber,
+          loanNumber: 'L1',
+          amount: requestedData.loanAmount,
+          emiAmount: requestedData.emiAmount,
+          loanType: requestedData.loanType,
+          dateApplied: requestedData.loanDate ? new Date(requestedData.loanDate) : new Date(),
+          loanDays: requestedData.loanDays || 30,
+          status: 'active',
+          createdBy: requestDoc.createdBy,
+          totalEmiCount: requestedData.loanDays || 30,
+          emiPaidCount: 0,
+          lastEmiDate: null,
+          nextEmiDate: calculateNextEmiDate(requestedData.loanDate, requestedData.loanType),
+          totalPaidAmount: 0,
+          remainingAmount: requestedData.loanAmount
+        };
 
-          mainLoan = new Loan(loanData);
-          await mainLoan.save();
-          console.log('✅ Loan created successfully for customer:', mainLoan._id);
-        }
+        const mainLoan = new Loan(loanData);
+        await mainLoan.save();
+        console.log('✅ Main loan (L1) created successfully:', mainLoan._id);
 
         // Update request status to 'Approved'
         requestDoc.status = 'Approved';
-        requestDoc.customerId = customer._id; // Link the request to the customer
+        requestDoc.customerId = customer._id;
         requestDoc.reviewedBy = processedBy;
         requestDoc.reviewedByRole = 'admin';
         requestDoc.reviewNotes = reason || 'Customer approved by admin';
-        requestDoc.actionTaken = 'Customer account created successfully';
+        requestDoc.actionTaken = 'Customer account created successfully with loan L1';
         requestDoc.reviewedAt = new Date();
         requestDoc.completedAt = new Date();
         requestDoc.updatedAt = new Date();
@@ -221,7 +210,8 @@ export async function POST(request) {
             customerId: customer._id,
             customerName: customer.name,
             phone: customer.phone,
-            loanNumber: customer.loanNumber,
+            customerNumber: customer.customerNumber,
+            loanNumber: 'L1',
             status: customer.status
           }
         });
@@ -255,14 +245,33 @@ export async function POST(request) {
           }, { status: 400 });
         }
 
-        // Generate unique loan number for additional loan
-        const additionalLoanNumber = `ADD_${customer.loanNumber}_${Date.now()}`;
+        // FIXED: Generate sequential loan number (L2, L3, etc.)
+        const existingLoans = await Loan.find({ customerId: customer._id });
+        const nextLoanNumber = `L${existingLoans.length + 1}`;
+
+        // Calculate next EMI date
+        const calculateNextEmiDate = (loanDate, loanType) => {
+          const date = new Date(loanDate || new Date());
+          switch(loanType) {
+            case 'Daily':
+              date.setDate(date.getDate() + 1);
+              break;
+            case 'Weekly':
+              date.setDate(date.getDate() + 7);
+              break;
+            case 'Monthly':
+              date.setMonth(date.getMonth() + 1);
+              break;
+          }
+          return date;
+        };
 
         // Create the additional loan
         const loanData = {
           customerId: customer._id,
           customerName: customer.name,
-          loanNumber: additionalLoanNumber,
+          customerNumber: customer.customerNumber,
+          loanNumber: nextLoanNumber,
           amount: Number(requestedData.amount),
           emiAmount: Number(requestedData.emiAmount),
           loanType: requestedData.loanType,
@@ -270,9 +279,11 @@ export async function POST(request) {
           loanDays: Number(requestedData.loanDays) || 30,
           status: 'active',
           createdBy: requestDoc.createdBy,
-          isMainLoan: false, // This is an additional loan
-          emiPaid: 0,
-          totalPaid: 0,
+          totalEmiCount: Number(requestedData.loanDays) || 30,
+          emiPaidCount: 0,
+          lastEmiDate: null,
+          nextEmiDate: calculateNextEmiDate(requestedData.dateApplied, requestedData.loanType),
+          totalPaidAmount: 0,
           remainingAmount: Number(requestedData.amount)
         };
 
@@ -285,7 +296,7 @@ export async function POST(request) {
         requestDoc.reviewedBy = processedBy;
         requestDoc.reviewedByRole = 'admin';
         requestDoc.reviewNotes = reason || 'Loan addition approved by admin';
-        requestDoc.actionTaken = `Additional loan created: ${additionalLoanNumber}`;
+        requestDoc.actionTaken = `Additional loan created: ${nextLoanNumber}`;
         requestDoc.reviewedAt = new Date();
         requestDoc.completedAt = new Date();
         requestDoc.updatedAt = new Date();
@@ -300,6 +311,7 @@ export async function POST(request) {
             loanId: newLoan._id,
             loanNumber: newLoan.loanNumber,
             customerName: customer.name,
+            customerNumber: customer.customerNumber,
             amount: newLoan.amount,
             emiAmount: newLoan.emiAmount,
             loanType: newLoan.loanType,
@@ -308,7 +320,6 @@ export async function POST(request) {
         });
 
       } else if (requestDoc.type === 'EDIT' || requestDoc.type === 'Customer Edit') {
-        // UPDATED: Handle both 'EDIT' and 'Customer Edit' types
         console.log('📝 Processing EDIT/Customer Edit request...');
         
         const customerId = requestDoc.customerId;
@@ -336,15 +347,14 @@ export async function POST(request) {
         });
 
         // Apply the changes from the request
-        // Use requestedData for Customer Edit type, changes for EDIT type
         const changes = requestDoc.changes || requestDoc.requestedData || {};
         console.log('📋 Changes to apply:', changes);
 
-        // Update customer fields with the changes
+        // FIXED: Update customer fields with new schema
         const updatableFields = [
           'name', 'phone', 'whatsappNumber', 'businessName', 'area', 'address',
-          'loanAmount', 'emiAmount', 'loanType', 'category', 'officeCategory',
-          'profilePicture', 'fiDocuments', 'loanDate', 'loanDays'
+          'customerNumber', 'category', 'officeCategory', 'loginId', 'password',
+          'profilePicture', 'fiDocuments'
         ];
 
         let updatedFields = [];
@@ -364,24 +374,44 @@ export async function POST(request) {
         await existingCustomer.save();
         console.log('✅ Customer updated successfully. Fields changed:', updatedFields);
 
-        // If loan details were changed, update the main loan as well
+        // If loan details were changed in EDIT, update the corresponding loan
         if (changes.loanAmount || changes.emiAmount || changes.loanType) {
+          // Find the main loan (L1) for this customer
           const mainLoan = await Loan.findOne({ 
-            customerId: customerId, 
-            isMainLoan: true 
+            customerId: customerId,
+            loanNumber: 'L1'
           });
 
           if (mainLoan) {
             if (changes.loanAmount) {
               mainLoan.amount = changes.loanAmount;
-              mainLoan.remainingAmount = changes.loanAmount - mainLoan.totalPaid;
+              mainLoan.remainingAmount = changes.loanAmount - mainLoan.totalPaidAmount;
             }
             if (changes.emiAmount) mainLoan.emiAmount = changes.emiAmount;
-            if (changes.loanType) mainLoan.loanType = changes.loanType;
+            if (changes.loanType) {
+              mainLoan.loanType = changes.loanType;
+              // Recalculate next EMI date based on new loan type
+              const calculateNextEmiDate = (lastEmiDate, loanType) => {
+                const date = new Date(lastEmiDate || mainLoan.dateApplied);
+                switch(loanType) {
+                  case 'Daily':
+                    date.setDate(date.getDate() + 1);
+                    break;
+                  case 'Weekly':
+                    date.setDate(date.getDate() + 7);
+                    break;
+                  case 'Monthly':
+                    date.setMonth(date.getMonth() + 1);
+                    break;
+                }
+                return date;
+              };
+              mainLoan.nextEmiDate = calculateNextEmiDate(mainLoan.lastEmiDate, changes.loanType);
+            }
             
             mainLoan.updatedAt = new Date();
             await mainLoan.save();
-            console.log('✅ Main loan updated successfully');
+            console.log('✅ Main loan (L1) updated successfully');
           }
         }
 
@@ -404,6 +434,7 @@ export async function POST(request) {
           data: {
             customerId: existingCustomer._id,
             customerName: existingCustomer.name,
+            customerNumber: existingCustomer.customerNumber,
             updatedFields: updatedFields,
             status: existingCustomer.status
           }
@@ -420,28 +451,22 @@ export async function POST(request) {
       // Handle rejection logic
       console.log('❌ Rejecting request:', requestDoc._id);
       
-      // If it's a new customer request, delete the pending customer and loan
       if (requestDoc.type === 'New Customer') {
         try {
-          // Delete any pending customer with this loan number
+          // FIXED: Delete using customerNumber instead of loanNumber
           await Customer.deleteMany({ 
-            loanNumber: requestDoc.loanNumber,
+            customerNumber: requestDoc.customerNumber,
             status: 'pending' 
           });
-          console.log('✅ Deleted pending customers with loan number:', requestDoc.loanNumber);
+          console.log('✅ Deleted pending customers with customer number:', requestDoc.customerNumber);
           
-          // Delete any pending loans for this customer
           if (requestDoc.customerId) {
             await Loan.deleteMany({ customerId: requestDoc.customerId });
             console.log('✅ Deleted pending loans for customer:', requestDoc.customerId);
           }
         } catch (deleteError) {
           console.error('❌ Error deleting pending customer data:', deleteError);
-          // Continue with rejection even if deletion fails
         }
-      } else if (requestDoc.type === 'EDIT' || requestDoc.type === 'Customer Edit') {
-        // For EDIT requests, just reject without deleting customer data
-        console.log('❌ Rejecting EDIT request - keeping original customer data');
       }
       
       // Update request status to 'Rejected'

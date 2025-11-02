@@ -11,7 +11,7 @@ interface Customer {
   phone: string[];
   businessName: string;
   area: string;
-  loanNumber?: string;
+  customerNumber?: string;
   loanAmount?: number;
   emiAmount?: number;
   loanType?: string;
@@ -29,12 +29,14 @@ interface Customer {
   };
   category?: string;
   officeCategory?: string;
+  whatsappNumber?: string; // Add this optional property
 }
 
 interface Loan {
   _id: string;
   customerId: string;
   customerName: string;
+  customerNumber: string;
   loanNumber: string;
   amount: number;
   emiAmount: number;
@@ -44,8 +46,6 @@ interface Loan {
   status?: string;
   createdBy?: string;
   createdAt?: string;
-  isMainLoan?: boolean;
-  // Enhanced fields for EMI tracking
   totalEmiCount: number;
   emiPaidCount: number;
   lastEmiDate: string;
@@ -62,8 +62,9 @@ interface EMIHistory {
   collectedBy: string;
   notes?: string;
   createdAt?: string;
-  loanNumber?: string; // ADDED THIS MISSING PROPERTY
-  loanId?: string; // ADDED THIS FOR BETTER TRACKING
+  customerNumber?: string;
+  loanNumber?: string;
+  loanId?: string;
 }
 
 interface CustomerDetails {
@@ -72,7 +73,7 @@ interface CustomerDetails {
   phone: string[];
   businessName: string;
   area: string;
-  loanNumber: string;
+  customerNumber: string;
   loanAmount: number;
   emiAmount: number;
   loanType: string;
@@ -89,6 +90,7 @@ interface CustomerDetails {
   category?: string;
   officeCategory?: string;
   loans?: Loan[];
+  whatsappNumber?: string; // Add this optional property
 }
 
 interface Request {
@@ -98,6 +100,9 @@ interface Request {
   status: string;
   createdAt: string;
   data?: any;
+  description?: string; // Add this line
+  customerNumber?: string; // Optional: add this for better display
+  loanNumber?: string; // Optional: add this for loan-related requests
 }
 
 interface TodayStats {
@@ -113,7 +118,7 @@ interface NewCustomerStep1 {
   whatsappNumber: string;
   businessName: string;
   area: string;
-  loanNumber: string;
+  customerNumber: string;
   address: string;
   category: string;
   officeCategory: string;
@@ -126,10 +131,13 @@ interface NewCustomerStep1 {
 
 interface NewCustomerStep2 {
   loanDate: string;
+  emiStartDate: string;
   loanAmount: string;
   emiAmount: string;
   loanDays: string;
   loanType: string;
+  emiType: 'fixed' | 'custom';
+  customEmiAmount?: string;
 }
 
 interface NewCustomerStep3 {
@@ -142,6 +150,7 @@ interface RenewLoanData {
   loanId: string;
   customerId: string;
   customerName: string;
+  customerNumber: string;
   loanNumber: string;
   renewalDate: string;
   newLoanAmount: string;
@@ -159,6 +168,7 @@ interface EMIUpdate {
   status: string;
   collectedBy: string;
   loanId?: string;
+  customerNumber?: string;
   loanNumber?: string;
   notes?: string;
 }
@@ -166,11 +176,12 @@ interface EMIUpdate {
 interface EditCustomerData {
   name: string;
   phone: string[];
+  whatsappNumber: string;
   businessName: string;
   area: string;
-  loanNumber: string;
-  loanAmount: string;
-  emiAmount: string;
+  customerNumber: string;
+  loanAmount: string; // Changed from number to string for form handling
+  emiAmount: string;  // Changed from number to string for form handling
   loanType: string;
   address: string;
   customerId: string;
@@ -182,13 +193,13 @@ interface EditLoanData {
   loanId: string;
   customerId: string;
   customerName: string;
+  customerNumber: string;
   loanNumber: string;
   amount: string;
   emiAmount: string;
   loanType: string;
   dateApplied: string;
   loanDays: string;
-  isMainLoan: boolean;
   originalData?: {
     amount: number;
     emiAmount: number;
@@ -199,18 +210,16 @@ interface EditLoanData {
 }
 
 interface Filters {
-  loanNumber: string;
+  customerNumber: string;
   loanType: string;
   status: string;
   officeCategory: string;
 }
 
-// Extended interface for display purposes
 interface DisplayLoan extends Loan {
-  isMainLoan: boolean;
+  // Removed isMainLoan property to make all loans equal
 }
 
-// Calendar interfaces
 interface CalendarDay {
   date: Date;
   isCurrentMonth: boolean;
@@ -227,7 +236,7 @@ interface EMICalendarData {
   loans: DisplayLoan[];
   paymentHistory: EMIHistory[];
 }
-// Date format utility functions - ADD THESE FUNCTIONS HERE
+
 const formatDateToDDMMYYYY = (dateString: string): string => {
   if (!dateString) return '';
   const date = new Date(dateString);
@@ -276,9 +285,10 @@ export default function DataEntryDashboard() {
   const [editCustomerData, setEditCustomerData] = useState<EditCustomerData>({
     name: '',
     phone: [''],
+    whatsappNumber: '', // Add this line
     businessName: '',
     area: '',
-    loanNumber: '',
+    customerNumber: '',
     loanAmount: '',
     emiAmount: '',
     loanType: 'Daily',
@@ -292,19 +302,26 @@ export default function DataEntryDashboard() {
     loanId: '',
     customerId: '',
     customerName: '',
+    customerNumber: '',
     loanNumber: '',
     amount: '',
     emiAmount: '',
     loanType: 'Daily',
     dateApplied: new Date().toISOString().split('T')[0],
     loanDays: '',
-    isMainLoan: false
+  });
+
+  const [requestFilters, setRequestFilters] = useState({
+    type: 'all',
+    dateSort: 'latest',
+    status: 'all'
   });
 
   const [renewLoanData, setRenewLoanData] = useState<RenewLoanData>({
     loanId: '',
     customerId: '',
     customerName: '',
+    customerNumber: '',
     loanNumber: '',
     renewalDate: new Date().toISOString().split('T')[0],
     newLoanAmount: '',
@@ -316,7 +333,7 @@ export default function DataEntryDashboard() {
   
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<Filters>({
-    loanNumber: '',
+    customerNumber: '',
     loanType: '',
     status: '',
     officeCategory: ''
@@ -332,15 +349,14 @@ export default function DataEntryDashboard() {
   const [pendingRequests, setPendingRequests] = useState<Request[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Step-by-step customer addition states
   const [currentStep, setCurrentStep] = useState(1);
   const [step1Data, setStep1Data] = useState<NewCustomerStep1>({
     name: '',
-    phone: [''],
+    phone: ['', ''],
     whatsappNumber: '',
     businessName: '',
     area: '',
-    loanNumber: '',
+    customerNumber: '',
     address: '',
     category: '',
     officeCategory: '',
@@ -352,10 +368,13 @@ export default function DataEntryDashboard() {
   });
   const [step2Data, setStep2Data] = useState<NewCustomerStep2>({
     loanDate: new Date().toISOString().split('T')[0],
+    emiStartDate: new Date().toISOString().split('T')[0],
     loanAmount: '',
     emiAmount: '',
     loanDays: '',
-    loanType: 'Daily'
+    loanType: 'Daily',
+    emiType: 'fixed',
+    customEmiAmount: '',
   });
   const [step3Data, setStep3Data] = useState<NewCustomerStep3>({
     loginId: '',
@@ -378,7 +397,6 @@ export default function DataEntryDashboard() {
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [selectedLoanForPayment, setSelectedLoanForPayment] = useState<Loan | null>(null);
 
-  // Calendar states
   const [showEMICalendar, setShowEMICalendar] = useState(false);
   const [calendarData, setCalendarData] = useState<EMICalendarData | null>(null);
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -386,34 +404,33 @@ export default function DataEntryDashboard() {
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date | null>(null);
   const [showDatePaymentHistory, setShowDatePaymentHistory] = useState(false);
   const [calendarFilter, setCalendarFilter] = useState<{
-  emiStatus: 'all' | 'paid' | 'due' | 'overdue' | 'partial' | 'upcoming';
-  loanFilter: 'all' | string;
-}>({
-  emiStatus: 'all',
-  loanFilter: 'all'
-});
+    emiStatus: 'all' | 'paid' | 'due' | 'overdue' | 'partial' | 'upcoming';
+    loanFilter: 'all' | string;
+  }>({
+    emiStatus: 'all',
+    loanFilter: 'all'
+  });
 
-  // Enhanced EMI Calculation Functions
   const calculateEMICompletion = (loan: Loan) => {
-  const totalLoanAmount = loan.emiAmount * loan.totalEmiCount; // Calculate total loan
-  const completionPercentage = (loan.emiPaidCount / loan.totalEmiCount) * 100;
-  const isCompleted = loan.emiPaidCount >= loan.totalEmiCount;
-  const remainingEmis = loan.totalEmiCount - loan.emiPaidCount;
-  const totalPaid = loan.totalPaidAmount;
-  const remainingAmount = totalLoanAmount - totalPaid; // Use total loan instead of loan amount
-  
-  return {
-    completionPercentage,
-    isCompleted,
-    remainingEmis,
-    totalPaid,
-    remainingAmount
+    const totalLoanAmount = loan.emiAmount * loan.totalEmiCount;
+    const completionPercentage = (loan.emiPaidCount / loan.totalEmiCount) * 100;
+    const isCompleted = loan.emiPaidCount >= loan.totalEmiCount;
+    const remainingEmis = loan.totalEmiCount - loan.emiPaidCount;
+    const totalPaid = loan.totalPaidAmount;
+    const remainingAmount = totalLoanAmount - totalPaid;
+    
+    return {
+      completionPercentage,
+      isCompleted,
+      remainingEmis,
+      totalPaid,
+      remainingAmount
+    };
   };
-};
 
   const calculateTotalLoanAmount = (loan: DisplayLoan): number => {
-  return loan.emiAmount * loan.totalEmiCount;
-};
+    return loan.emiAmount * loan.totalEmiCount;
+  };
 
   const calculateNextEmiDate = (currentDate: string, loanType: string): string => {
     const date = new Date(currentDate);
@@ -460,119 +477,108 @@ export default function DataEntryDashboard() {
     };
   };
 
-  // Calendar Functions
   const generateCalendar = (month: Date, loans: DisplayLoan[], paymentHistory: EMIHistory[], loanFilter: string = 'all'): CalendarDay[] => {
-  const days: CalendarDay[] = [];
-  const year = month.getFullYear();
-  const monthIndex = month.getMonth();
-  
-  // First day of the month
-  const firstDay = new Date(year, monthIndex, 1);
-  // Last day of the month
-  const lastDay = new Date(year, monthIndex + 1, 0);
-  
-  // Filter loans if specific loan is selected
-  const filteredLoans = loanFilter === 'all' 
-    ? loans 
-    : loans.filter(loan => loan._id === loanFilter || loan.loanNumber === loanFilter);
-  
-  // Filter payment history if specific loan is selected
-  const filteredPaymentHistory = loanFilter === 'all'
-    ? paymentHistory
-    : paymentHistory.filter(payment => 
-        payment.loanId === loanFilter || payment.loanNumber === loanFilter
-      );
+    const days: CalendarDay[] = [];
+    const year = month.getFullYear();
+    const monthIndex = month.getMonth();
+    
+    const firstDay = new Date(year, monthIndex, 1);
+    const lastDay = new Date(year, monthIndex + 1, 0);
+    
+    const filteredLoans = loanFilter === 'all' 
+      ? loans 
+      : loans.filter(loan => loan._id === loanFilter || loan.loanNumber === loanFilter);
+    
+    const filteredPaymentHistory = loanFilter === 'all'
+      ? paymentHistory
+      : paymentHistory.filter(payment => 
+          payment.loanId === loanFilter || payment.loanNumber === loanFilter
+        );
 
-  // Days from previous month
-  const startingDayOfWeek = firstDay.getDay();
-  for (let i = startingDayOfWeek - 1; i >= 0; i--) {
-    const date = new Date(year, monthIndex, -i);
-    days.push({
-      date,
-      isCurrentMonth: false,
-      isToday: false,
-      emiStatus: 'none'
-    });
-  }
-  
-  // Current month days
-  for (let day = 1; day <= lastDay.getDate(); day++) {
-    const date = new Date(year, monthIndex, day);
-    const isToday = date.toDateString() === new Date().toDateString();
-    
-    // Find payments for this date
-    const dateStr = date.toISOString().split('T')[0];
-    const datePayments = filteredPaymentHistory.filter(payment => 
-      payment.paymentDate === dateStr
-    );
-    
-    // Find due dates for this date
-    const dueLoans = filteredLoans.filter(loan => 
-      loan.nextEmiDate === dateStr && loan.emiPaidCount < loan.totalEmiCount
-    );
-    
-    let emiStatus: CalendarDay['emiStatus'] = 'none';
-    let emiAmount = 0;
-    const loanNumbers: string[] = [];
-    
-    if (datePayments.length > 0) {
-      emiStatus = datePayments.every(p => p.status === 'Paid') ? 'paid' : 'partial';
-      emiAmount = datePayments.reduce((sum, p) => sum + p.amount, 0);
-      datePayments.forEach(p => {
-        if (p.loanNumber && !loanNumbers.includes(p.loanNumber)) {
-          loanNumbers.push(p.loanNumber);
-        }
+    const startingDayOfWeek = firstDay.getDay();
+    for (let i = startingDayOfWeek - 1; i >= 0; i--) {
+      const date = new Date(year, monthIndex, -i);
+      days.push({
+        date,
+        isCurrentMonth: false,
+        isToday: false,
+        emiStatus: 'none'
       });
-    } else if (dueLoans.length > 0) {
-      const today = new Date();
-      if (date < today) {
-        emiStatus = 'overdue';
-      } else {
-        emiStatus = 'due';
-      }
-      emiAmount = dueLoans.reduce((sum, loan) => sum + loan.emiAmount, 0);
-      dueLoans.forEach(loan => loanNumbers.push(loan.loanNumber));
-    } else if (date > new Date()) {
-      // Check if any upcoming EMI in next 3 days
-      const upcomingLoans = filteredLoans.filter(loan => {
-        const emiDate = new Date(loan.nextEmiDate);
-        const diffTime = emiDate.getTime() - date.getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        return diffDays >= 0 && diffDays <= 3;
-      });
-      
-      if (upcomingLoans.length > 0) {
-        emiStatus = 'upcoming';
-        emiAmount = upcomingLoans.reduce((sum, loan) => sum + loan.emiAmount, 0);
-        upcomingLoans.forEach(loan => loanNumbers.push(loan.loanNumber));
-      }
     }
     
-    days.push({
-      date,
-      isCurrentMonth: true,
-      isToday,
-      emiStatus,
-      emiAmount,
-      loanNumbers,
-      paymentHistory: datePayments
-    });
-  }
-  
-  // Days from next month
-  const endingDayOfWeek = lastDay.getDay();
-  for (let i = 1; i < 7 - endingDayOfWeek; i++) {
-    const date = new Date(year, monthIndex + 1, i);
-    days.push({
-      date,
-      isCurrentMonth: false,
-      isToday: false,
-      emiStatus: 'none'
-    });
-  }
-  
-  return days;
-};
+    for (let day = 1; day <= lastDay.getDate(); day++) {
+      const date = new Date(year, monthIndex, day);
+      const isToday = date.toDateString() === new Date().toDateString();
+      
+      const dateStr = date.toISOString().split('T')[0];
+      const datePayments = filteredPaymentHistory.filter(payment => 
+        payment.paymentDate === dateStr
+      );
+      
+      const dueLoans = filteredLoans.filter(loan => 
+        loan.nextEmiDate === dateStr && loan.emiPaidCount < loan.totalEmiCount
+      );
+      
+      let emiStatus: CalendarDay['emiStatus'] = 'none';
+      let emiAmount = 0;
+      const loanNumbers: string[] = [];
+      
+      if (datePayments.length > 0) {
+        emiStatus = datePayments.every(p => p.status === 'Paid') ? 'paid' : 'partial';
+        emiAmount = datePayments.reduce((sum, p) => sum + p.amount, 0);
+        datePayments.forEach(p => {
+          if (p.loanNumber && !loanNumbers.includes(p.loanNumber)) {
+            loanNumbers.push(p.loanNumber);
+          }
+        });
+      } else if (dueLoans.length > 0) {
+        const today = new Date();
+        if (date < today) {
+          emiStatus = 'overdue';
+        } else {
+          emiStatus = 'due';
+        }
+        emiAmount = dueLoans.reduce((sum, loan) => sum + loan.emiAmount, 0);
+        dueLoans.forEach(loan => loanNumbers.push(loan.loanNumber));
+      } else if (date > new Date()) {
+        const upcomingLoans = filteredLoans.filter(loan => {
+          const emiDate = new Date(loan.nextEmiDate);
+          const diffTime = emiDate.getTime() - date.getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          return diffDays >= 0 && diffDays <= 3;
+        });
+        
+        if (upcomingLoans.length > 0) {
+          emiStatus = 'upcoming';
+          emiAmount = upcomingLoans.reduce((sum, loan) => sum + loan.emiAmount, 0);
+          upcomingLoans.forEach(loan => loanNumbers.push(loan.loanNumber));
+        }
+      }
+      
+      days.push({
+        date,
+        isCurrentMonth: true,
+        isToday,
+        emiStatus,
+        emiAmount,
+        loanNumbers,
+        paymentHistory: datePayments
+      });
+    }
+    
+    const endingDayOfWeek = lastDay.getDay();
+    for (let i = 1; i < 7 - endingDayOfWeek; i++) {
+      const date = new Date(year, monthIndex + 1, i);
+      days.push({
+        date,
+        isCurrentMonth: false,
+        isToday: false,
+        emiStatus: 'none'
+      });
+    }
+    
+    return days;
+  };
 
   const getStatusColor = (status: CalendarDay['emiStatus']) => {
     switch (status) {
@@ -599,7 +605,6 @@ export default function DataEntryDashboard() {
   const handleViewEMICalendar = async (customer: Customer) => {
     setIsLoading(true);
     try {
-      // Fetch customer details with enhanced loan data
       const response = await fetch(`/api/data-entry/customers/${customer._id}`);
       if (response.ok) {
         const data = await response.json();
@@ -615,16 +620,15 @@ export default function DataEntryDashboard() {
           });
 
           setCalendarFilter({
-        emiStatus: 'all',
-        loanFilter: 'all'
-      });
+            emiStatus: 'all',
+            loanFilter: 'all'
+          });
           
           setShowEMICalendar(true);
         }
       }
     } catch (error) {
       console.error('Error loading calendar data:', error);
-      // Create mock data for demo
       const displayLoans = getAllCustomerLoans(customer, null);
       setCalendarData({
         customerId: customer._id,
@@ -632,10 +636,10 @@ export default function DataEntryDashboard() {
         loans: displayLoans,
         paymentHistory: []
       });
-       setCalendarFilter({
-      emiStatus: 'all',
-      loanFilter: 'all'
-    });
+      setCalendarFilter({
+        emiStatus: 'all',
+        loanFilter: 'all'
+      });
       setShowEMICalendar(true);
     } finally {
       setIsLoading(false);
@@ -647,7 +651,6 @@ export default function DataEntryDashboard() {
       setSelectedCalendarDate(day.date);
       setShowDatePaymentHistory(true);
     } else if (day.emiStatus === 'due' || day.emiStatus === 'overdue') {
-      // Auto-fill EMI payment for due dates
       const dueLoans = calendarData?.loans.filter(loan => 
         loan.nextEmiDate === day.date.toISOString().split('T')[0]
       );
@@ -659,6 +662,7 @@ export default function DataEntryDashboard() {
           customerId: selectedCustomer._id || '',
           customerName: selectedCustomer.name || '',
           loanId: dueLoans[0]._id,
+          customerNumber: dueLoans[0].customerNumber,
           loanNumber: dueLoans[0].loanNumber,
           amount: dueLoans[0].emiAmount.toString(),
           paymentDate: day.date.toISOString().split('T')[0]
@@ -668,16 +672,15 @@ export default function DataEntryDashboard() {
       }
     }
   };
+  const [editingFields, setEditingFields] = useState<{[key: string]: boolean}>({});
 
   const handleEditPastEMI = (payment: EMIHistory) => {
-    // Create edit request for admin approval
     const editRequest = {
       type: 'EMI Correction',
       customerId: calendarData?.customerId,
       customerName: calendarData?.customerName,
       originalPayment: payment,
       requestedChanges: {
-        // This would be filled from a form
         amount: payment.amount,
         paymentDate: payment.paymentDate,
         status: payment.status
@@ -685,7 +688,6 @@ export default function DataEntryDashboard() {
       reason: 'Data correction required'
     };
     
-    // Submit request to admin
     submitEditRequest(editRequest);
     alert('EMI correction request submitted for admin approval');
     setShowDatePaymentHistory(false);
@@ -714,14 +716,13 @@ export default function DataEntryDashboard() {
     }
   };
 
-  // Filter customers based on search and filters
   const filteredCustomers = customers.filter(customer => {
     const matchesSearch = searchQuery === '' || 
       customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (customer.loanNumber && customer.loanNumber.toLowerCase().includes(searchQuery.toLowerCase()));
+      (customer.customerNumber && customer.customerNumber.toLowerCase().includes(searchQuery.toLowerCase()));
 
-    const matchesLoanNumber = filters.loanNumber === '' || 
-      (customer.loanNumber && customer.loanNumber.toLowerCase().includes(filters.loanNumber.toLowerCase()));
+    const matchesCustomerNumber = filters.customerNumber === '' || 
+      (customer.customerNumber && customer.customerNumber.toLowerCase().includes(filters.customerNumber.toLowerCase()));
     
     const matchesLoanType = filters.loanType === '' || 
       customer.loanType === filters.loanType;
@@ -732,61 +733,105 @@ export default function DataEntryDashboard() {
     const matchesOfficeCategory = filters.officeCategory === '' || 
       customer.officeCategory === filters.officeCategory;
 
-    return matchesSearch && matchesLoanNumber && matchesLoanType && matchesStatus && matchesOfficeCategory;
+    return matchesSearch && matchesCustomerNumber && matchesLoanType && matchesStatus && matchesOfficeCategory;
   });
 
-  // Function to get all loans including main loan and additional loans
   const getAllCustomerLoans = (customer: Customer, customerDetails: CustomerDetails | null): DisplayLoan[] => {
     const loans: DisplayLoan[] = [];
     
-    // Add main loan with enhanced fields
-    if (customer.loanNumber) {
-      const mainLoan: DisplayLoan = {
+    console.log('🔄 getAllCustomerLoans called with:', {
+      customer: {
+        id: customer._id,
+        name: customer.name,
+        loanAmount: customer.loanAmount,
+        emiAmount: customer.emiAmount,
+        loanType: customer.loanType
+      },
+      customerDetails: customerDetails ? {
+        loans: customerDetails.loans,
+        loansCount: customerDetails.loans?.length
+      } : 'null'
+    });
+
+    // Check if customer has loan data directly
+    if (customer.loanAmount && customer.emiAmount && customer.loanType) {
+      console.log('✅ Creating loan from customer direct data');
+      const initialLoan: DisplayLoan = {
         _id: customer._id,
         customerId: customer._id,
         customerName: customer.name,
-        loanNumber: customer.loanNumber,
-        amount: customer.loanAmount || 0,
-        emiAmount: customer.emiAmount || 0,
-        loanType: customer.loanType || 'Daily',
+        customerNumber: customer.customerNumber || `CN${customer._id}`,
+        loanNumber: 'L1',
+        amount: customer.loanAmount,
+        emiAmount: customer.emiAmount,
+        loanType: customer.loanType,
         dateApplied: customer.createdAt || new Date().toISOString(),
         loanDays: 30,
-        isMainLoan: true,
-        // Enhanced fields with default values
-        totalEmiCount: 30, // Default 30 days
+        totalEmiCount: 30,
         emiPaidCount: 0,
         lastEmiDate: customer.createdAt || new Date().toISOString(),
-        nextEmiDate: calculateNextEmiDate(customer.createdAt || new Date().toISOString(), customer.loanType || 'Daily'),
+        nextEmiDate: calculateNextEmiDate(customer.createdAt || new Date().toISOString(), customer.loanType),
         totalPaidAmount: 0,
-        remainingAmount: customer.loanAmount || 0,
-        emiHistory: []
+        remainingAmount: customer.loanAmount,
+        emiHistory: [],
+        status: customer.status || 'active'
       };
-      loans.push(mainLoan);
+      loans.push(initialLoan);
+      console.log('📝 Created initial loan:', initialLoan);
     }
     
-    // Add additional loans with enhanced fields
-    if (customerDetails?.loans && customerDetails.loans.length > 0) {
-      customerDetails.loans.forEach(loan => {
+    // Add loans from customer details if available
+    if (customerDetails?.loans && Array.isArray(customerDetails.loans)) {
+      console.log(`📊 Processing ${customerDetails.loans.length} loans from customerDetails`);
+      customerDetails.loans.forEach((loan, index) => {
         const enhancedLoan: DisplayLoan = {
           ...loan,
-          isMainLoan: false,
-          // Ensure enhanced fields exist
-          totalEmiCount: (loan as any).totalEmiCount || loan.loanDays,
+          loanNumber: loan.loanNumber || `L${index + 1}`,
+          totalEmiCount: (loan as any).totalEmiCount || loan.loanDays || 30,
           emiPaidCount: (loan as any).emiPaidCount || 0,
           lastEmiDate: (loan as any).lastEmiDate || loan.dateApplied,
           nextEmiDate: (loan as any).nextEmiDate || calculateNextEmiDate(loan.dateApplied, loan.loanType),
           totalPaidAmount: (loan as any).totalPaidAmount || 0,
           remainingAmount: (loan as any).remainingAmount || loan.amount,
-          emiHistory: (loan as any).emiHistory || []
+          emiHistory: (loan as any).emiHistory || [],
+          status: (loan as any).status || 'active'
         };
         loans.push(enhancedLoan);
+        console.log(`📋 Added loan ${index + 1}:`, enhancedLoan);
       });
     }
     
+    // If no loans found but customer has loan data, create one
+    if (loans.length === 0 && customer.loanAmount) {
+      console.log('⚠️ No loans found, creating default loan from customer data');
+      const defaultLoan: DisplayLoan = {
+        _id: customer._id,
+        customerId: customer._id,
+        customerName: customer.name,
+        customerNumber: customer.customerNumber || `CN${customer._id}`,
+        loanNumber: 'L1',
+        amount: customer.loanAmount || 0,
+        emiAmount: customer.emiAmount || 0,
+        loanType: customer.loanType || 'Daily',
+        dateApplied: customer.createdAt || new Date().toISOString(),
+        loanDays: 30,
+        totalEmiCount: 30,
+        emiPaidCount: 0,
+        lastEmiDate: customer.createdAt || new Date().toISOString(),
+        nextEmiDate: calculateNextEmiDate(customer.createdAt || new Date().toISOString(), customer.loanType || 'Daily'),
+        totalPaidAmount: 0,
+        remainingAmount: customer.loanAmount || 0,
+        emiHistory: [],
+        status: customer.status || 'active'
+      };
+      loans.push(defaultLoan);
+      console.log('📝 Created default loan:', defaultLoan);
+    }
+    
+    console.log(`🎯 Final loans count: ${loans.length}`, loans);
     return loans;
   };
 
-  // Validation functions
   const validateStep1 = () => {
     const errors: {[key: string]: string} = {};
     
@@ -794,20 +839,16 @@ export default function DataEntryDashboard() {
       errors.name = 'Customer name is required';
     }
     
-    // Phone validation for multiple numbers
-    const validPhones = step1Data.phone.filter(p => p.trim() !== '');
-    if (validPhones.length === 0) {
-      errors.phone = 'At least one phone number is required';
-    } else {
-      for (const phone of validPhones) {
-        if (!/^\d{10}$/.test(phone)) {
-          errors.phone = 'All phone numbers must be valid 10-digit numbers';
-          break;
-        }
-      }
+    // Only validate primary phone (index 0)
+    if (!step1Data.phone[0] || !/^\d{10}$/.test(step1Data.phone[0])) {
+      errors.phone = 'Valid primary phone number is required (10 digits)';
     }
 
-    // WhatsApp number validation
+    // Validate secondary phone if provided
+    if (step1Data.phone[1] && !/^\d{10}$/.test(step1Data.phone[1])) {
+      errors.phone = 'Secondary phone number must be a valid 10-digit number';
+    }
+
     if (step1Data.whatsappNumber && !/^\d{10}$/.test(step1Data.whatsappNumber)) {
       errors.whatsappNumber = 'WhatsApp number must be a valid 10-digit number';
     }
@@ -820,8 +861,8 @@ export default function DataEntryDashboard() {
       errors.area = 'Area is required';
     }
     
-    if (!step1Data.loanNumber.trim()) {
-      errors.loanNumber = 'Loan number is required';
+    if (!step1Data.customerNumber.trim()) {
+      errors.customerNumber = 'Customer number is required';
     }
     
     if (!step1Data.address.trim()) {
@@ -845,6 +886,12 @@ export default function DataEntryDashboard() {
     
     if (!step2Data.loanDate) {
       errors.loanDate = 'Loan date is required';
+    }
+    
+    if (!step2Data.emiStartDate) {
+      errors.emiStartDate = 'EMI starting date is required';
+    } else if (new Date(step2Data.emiStartDate) < new Date(step2Data.loanDate)) {
+      errors.emiStartDate = 'EMI start date cannot be before loan date';
     }
     
     const loanAmount = Number(step2Data.loanAmount);
@@ -953,11 +1000,11 @@ export default function DataEntryDashboard() {
     setCurrentStep(1);
     setStep1Data({
       name: '',
-      phone: [''],
+      phone: ['', ''],
       whatsappNumber: '',
       businessName: '',
       area: '',
-      loanNumber: '',
+      customerNumber: '',
       address: '',
       category: '',
       officeCategory: '',
@@ -969,10 +1016,13 @@ export default function DataEntryDashboard() {
     });
     setStep2Data({
       loanDate: new Date().toISOString().split('T')[0],
+      emiStartDate: new Date().toISOString().split('T')[0],
       loanAmount: '',
       emiAmount: '',
       loanDays: '',
-      loanType: 'Daily'
+      loanType: 'Daily',
+      emiType: 'fixed',
+      customEmiAmount: ''
     });
     setStep3Data({
       loginId: '',
@@ -1074,13 +1124,20 @@ export default function DataEntryDashboard() {
       if (!response.ok) {
         if (response.status === 404) {
           console.log('⚠️ Customer not found in API, using basic data');
+          console.log('📊 Customer loan data from props:', {
+            loanAmount: customer.loanAmount,
+            emiAmount: customer.emiAmount,
+            loanType: customer.loanType,
+            status: customer.status
+          });
+          
           const customerDetailsData: CustomerDetails = {
             _id: customer._id,
             name: customer.name,
             phone: customer.phone,
             businessName: customer.businessName,
             area: customer.area,
-            loanNumber: customer.loanNumber || 'N/A',
+            customerNumber: customer.customerNumber || 'N/A',
             loanAmount: customer.loanAmount || 0,
             emiAmount: customer.emiAmount || 0,
             loanType: customer.loanType || 'Daily',
@@ -1091,7 +1148,8 @@ export default function DataEntryDashboard() {
             category: customer.category || 'A',
             officeCategory: customer.officeCategory || 'Office 1',
             createdAt: customer.createdAt,
-            loans: []
+            whatsappNumber: customer.whatsappNumber || '',
+            loans: [] // Ensure loans array is always present
           };
           
           setCustomerDetails(customerDetailsData);
@@ -1107,10 +1165,19 @@ export default function DataEntryDashboard() {
       
       if (data.success) {
         console.log('✅ Customer details fetched successfully:', data.data);
-        console.log('🔍 Category:', data.data.category);
-        console.log('🔍 Office Category:', data.data.officeCategory);
+        console.log('📊 Loans array from API:', data.data.loans);
+        console.log('🔍 Customer loan properties:', {
+          loanAmount: data.data.loanAmount,
+          emiAmount: data.data.emiAmount,
+          loanType: data.data.loanType
+        });
         
-        setCustomerDetails(data.data);
+        // Ensure loans array exists
+        const customerData = {
+          ...data.data,
+          loans: data.data.loans || []
+        };
+        setCustomerDetails(customerData);
         setShowCustomerDetails(true);
       } else {
         console.error('❌ API returned success:false', data.error);
@@ -1118,13 +1185,19 @@ export default function DataEntryDashboard() {
       }
     } catch (error: any) {
       console.error('💥 Error in handleViewDetails:', error);
+      console.log('📊 Customer loan data from props (error case):', {
+        loanAmount: customer.loanAmount,
+        emiAmount: customer.emiAmount,
+        loanType: customer.loanType
+      });
+      
       const customerDetailsData: CustomerDetails = {
         _id: customer._id,
         name: customer.name,
         phone: customer.phone,
         businessName: customer.businessName,
         area: customer.area,
-        loanNumber: customer.loanNumber || 'N/A',
+        customerNumber: customer.customerNumber || 'N/A',
         loanAmount: customer.loanAmount || 0,
         emiAmount: customer.emiAmount || 0,
         loanType: customer.loanType || 'Daily',
@@ -1135,7 +1208,7 @@ export default function DataEntryDashboard() {
         category: customer.category || 'A',
         officeCategory: customer.officeCategory || 'Office 1',
         createdAt: customer.createdAt,
-        loans: []
+        loans: [] // Ensure loans array is always present
       };
       
       setCustomerDetails(customerDetailsData);
@@ -1146,39 +1219,39 @@ export default function DataEntryDashboard() {
   };
 
   const handleEditCustomer = (customer: CustomerDetails) => {
-    // Ensure phone is always an array
-    const phoneArray = Array.isArray(customer.phone) ? customer.phone : [customer.phone || ''];
-    
-    setEditCustomerData({
-      name: customer.name,
-      phone: phoneArray,
-      businessName: customer.businessName,
-      area: customer.area,
-      loanNumber: customer.loanNumber,
-      loanAmount: customer.loanAmount.toString(),
-      emiAmount: customer.emiAmount.toString(),
-      loanType: customer.loanType,
-      address: customer.address || '',
-      customerId: customer._id,
-      category: customer.category || 'A',
-      officeCategory: customer.officeCategory || 'Office 1'
-    });
-    setShowEditCustomer(true);
-    setShowCustomerDetails(false);
-  };
+  const phoneArray = Array.isArray(customer.phone) ? customer.phone : [customer.phone || ''];
+  
+  setEditCustomerData({
+    name: customer.name,
+    phone: phoneArray,
+    whatsappNumber: customer.whatsappNumber || '',
+    businessName: customer.businessName,
+    area: customer.area,
+    customerNumber: customer.customerNumber,
+    loanAmount: customer.loanAmount ? customer.loanAmount.toString() : '0',
+    emiAmount: customer.emiAmount ? customer.emiAmount.toString() : '0',
+    loanType: customer.loanType || 'Daily',
+    address: customer.address || '',
+    customerId: customer._id,
+    category: customer.category || 'A',
+    officeCategory: customer.officeCategory || 'Office 1'
+  });
+  setShowEditCustomer(true);
+  setShowCustomerDetails(false);
+};
 
   const handleEditLoan = (loan: DisplayLoan) => {
     setEditLoanData({
       loanId: loan._id,
       customerId: loan.customerId,
       customerName: loan.customerName,
+      customerNumber: loan.customerNumber,
       loanNumber: loan.loanNumber,
       amount: loan.amount.toString(),
       emiAmount: loan.emiAmount.toString(),
       loanType: loan.loanType,
       dateApplied: loan.dateApplied.split('T')[0],
       loanDays: loan.loanDays.toString(),
-      isMainLoan: loan.isMainLoan || false,
       originalData: {
         amount: loan.amount,
         emiAmount: loan.emiAmount,
@@ -1195,6 +1268,7 @@ export default function DataEntryDashboard() {
       loanId: loan._id,
       customerId: loan.customerId,
       customerName: loan.customerName,
+      customerNumber: loan.customerNumber,
       loanNumber: loan.loanNumber,
       renewalDate: new Date().toISOString().split('T')[0],
       newLoanAmount: loan.amount.toString(),
@@ -1207,81 +1281,81 @@ export default function DataEntryDashboard() {
   };
 
   const handleSaveEditLoan = async () => {
-  setIsLoading(true);
-  try {
-    console.log('🔄 Starting edit loan request...');
-    console.log('📦 Edit loan data:', editLoanData);
+    setIsLoading(true);
+    try {
+      console.log('🔄 Starting edit loan request...');
+      console.log('📦 Edit loan data:', editLoanData);
 
-    if (!editLoanData.amount || !editLoanData.emiAmount || !editLoanData.loanDays) {
-      alert('Please fill all required fields');
-      setIsLoading(false);
-      return;
-    }
+      if (!editLoanData.amount || !editLoanData.emiAmount || !editLoanData.loanDays) {
+        alert('Please fill all required fields');
+        setIsLoading(false);
+        return;
+      }
 
-    const response = await fetch('/api/data-entry/edit-loan-request', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        type: 'Loan Edit',
-        customerId: editLoanData.customerId,
-        customerName: editLoanData.customerName,
-        loanId: editLoanData.loanId,
-        loanNumber: editLoanData.loanNumber,
-        requestedData: {
-          amount: Number(editLoanData.amount),
-          emiAmount: Number(editLoanData.emiAmount),
-          loanType: editLoanData.loanType,
-          loanDays: Number(editLoanData.loanDays),
-          dateApplied: editLoanData.dateApplied,
-          isMainLoan: editLoanData.isMainLoan,
-          originalData: editLoanData.originalData
+      const response = await fetch('/api/data-entry/edit-loan-request', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-        description: `Loan edit request for ${editLoanData.customerName} - Loan ${editLoanData.loanNumber}`,
-        status: 'Pending',
-        createdBy: 'data_entry_operator_1',
-        createdByRole: 'data_entry'
-      }),
-    });
+        body: JSON.stringify({
+          type: 'Loan Edit',
+          customerId: editLoanData.customerId,
+          customerName: editLoanData.customerName,
+          customerNumber: editLoanData.customerNumber,
+          loanId: editLoanData.loanId,
+          loanNumber: editLoanData.loanNumber,
+          requestedData: {
+            amount: Number(editLoanData.amount),
+            emiAmount: Number(editLoanData.emiAmount),
+            loanType: editLoanData.loanType,
+            loanDays: Number(editLoanData.loanDays),
+            dateApplied: editLoanData.dateApplied,
+            originalData: editLoanData.originalData
+          },
+          description: `Loan edit request for ${editLoanData.customerName} - Customer ${editLoanData.customerNumber}`,
+          status: 'Pending',
+          createdBy: 'data_entry_operator_1',
+          createdByRole: 'data_entry'
+        }),
+      });
 
-    console.log('📡 Response status:', response.status);
+      console.log('📡 Response status:', response.status);
 
-    const data = await response.json();
-    console.log('✅ Response data:', data);
-    
-    if (!response.ok) {
-      throw new Error(data.error || `HTTP error! status: ${response.status}`);
+      const data = await response.json();
+      console.log('✅ Response data:', data);
+      
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+      }
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to submit edit request');
+      }
+
+      alert(data.message || 'Loan edit request submitted successfully! Waiting for admin approval.');
+      setShowEditLoan(false);
+      setEditLoanData({
+        loanId: '',
+        customerId: '',
+        customerName: '',
+        customerNumber: '',
+        loanNumber: '',
+        amount: '',
+        emiAmount: '',
+        loanType: 'Daily',
+        dateApplied: new Date().toISOString().split('T')[0],
+        loanDays: '',
+      });
+      
+      if (activeTab === 'requests') fetchPendingRequests();
+      
+    } catch (error: any) {
+      console.error('💥 Error in handleSaveEditLoan:', error);
+      alert('Error: ' + error.message + '\n\nPlease make sure the API route is created at /api/data-entry/edit-loan-request');
+    } finally {
+      setIsLoading(false);
     }
-
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to submit edit request');
-    }
-
-    alert(data.message || 'Loan edit request submitted successfully! Waiting for admin approval.');
-    setShowEditLoan(false);
-    setEditLoanData({
-      loanId: '',
-      customerId: '',
-      customerName: '',
-      loanNumber: '',
-      amount: '',
-      emiAmount: '',
-      loanType: 'Daily',
-      dateApplied: new Date().toISOString().split('T')[0],
-      loanDays: '',
-      isMainLoan: false
-    });
-    
-    if (activeTab === 'requests') fetchPendingRequests();
-    
-  } catch (error: any) {
-    console.error('💥 Error in handleSaveEditLoan:', error);
-    alert('Error: ' + error.message + '\n\nPlease make sure the API route is created at /api/data-entry/edit-loan-request');
-  } finally {
-    setIsLoading(false);
-  }
-};
+  };
 
   const handleSaveRenewLoan = async () => {
     setIsLoading(true);
@@ -1343,6 +1417,7 @@ export default function DataEntryDashboard() {
         loanId: '',
         customerId: '',
         customerName: '',
+        customerNumber: '',
         loanNumber: '',
         renewalDate: new Date().toISOString().split('T')[0],
         newLoanAmount: '',
@@ -1362,7 +1437,7 @@ export default function DataEntryDashboard() {
   };
 
   const handleDeleteLoan = async (loan: DisplayLoan) => {
-    if (!confirm(`Are you sure you want to request deletion of ${loan.isMainLoan ? 'Main Loan' : 'Loan'} ${loan.loanNumber}? This action requires admin approval.`)) {
+    if (!confirm(`Are you sure you want to request deletion of Loan ${loan.loanNumber}? This action requires admin approval.`)) {
       return;
     }
 
@@ -1383,8 +1458,8 @@ export default function DataEntryDashboard() {
           loanId: loan._id,
           customerId: loan.customerId,
           customerName: loan.customerName,
+          customerNumber: loan.customerNumber,
           loanNumber: loan.loanNumber,
-          isMainLoan: loan.isMainLoan,
           requestedBy: 'data_entry_operator_1',
           requestType: 'delete_loan'
         }),
@@ -1438,7 +1513,6 @@ export default function DataEntryDashboard() {
 
       console.log('🟡 Creating loan addition request for:', customerDetails.name);
 
-      // Create loan addition request - NO LOAN CREATION until admin approval
       const requestResponse = await fetch('/api/data-entry/requests', {
         method: 'POST',
         headers: {
@@ -1448,25 +1522,23 @@ export default function DataEntryDashboard() {
           type: 'Loan Addition',
           customerId: customerDetails._id,
           customerName: customerDetails.name,
-          loanNumber: `ADD_${customerDetails.loanNumber}_${Date.now()}`,
+          customerNumber: customerDetails.customerNumber,
+          loanNumber: `L${(customerDetails.loans?.length || 0) + 1}`,
           requestedData: {
-            // Loan details
             amount: Number(newLoanData.amount),
             emiAmount: Number(newLoanData.emiAmount),
             loanType: newLoanData.loanType,
             loanDays: Number(newLoanData.loanDays),
             dateApplied: newLoanData.dateApplied,
-            // Customer reference
             customerId: customerDetails._id,
             customerName: customerDetails.name,
-            mainLoanNumber: customerDetails.loanNumber,
-            // Additional info
+            customerNumber: customerDetails.customerNumber,
             createdBy: 'data_entry_operator_1',
             requestType: 'loan_addition'
           },
-          description: `Additional loan request for ${customerDetails.name} - Main Loan: ${customerDetails.loanNumber}`,
+          description: `Additional loan request for ${customerDetails.name} - Customer: ${customerDetails.customerNumber}`,
           priority: 'Medium',
-          status: 'Pending', // ✅ Ensure capital P
+          status: 'Pending',
           createdBy: 'data_entry_operator_1',
           createdByRole: 'data_entry',
           requiresCustomerNotification: false,
@@ -1499,7 +1571,6 @@ export default function DataEntryDashboard() {
 
       alert('Loan addition request submitted successfully! Waiting for admin approval.');
       
-      // Reset form and close modal
       setShowAddLoanModal(false);
       setNewLoanData({
         amount: '',
@@ -1509,12 +1580,10 @@ export default function DataEntryDashboard() {
         loanDays: '30'
       });
       
-      // Refresh pending requests list
       if (activeTab === 'requests') {
         fetchPendingRequests();
       }
 
-      // Close the customer details modal
       setShowCustomerDetails(false);
       
     } catch (error: any) {
@@ -1531,7 +1600,7 @@ export default function DataEntryDashboard() {
       console.log('🔄 Starting edit customer request...');
       console.log('📦 Edit data:', editCustomerData);
 
-      if (!editCustomerData.name || !editCustomerData.phone || !editCustomerData.area || !editCustomerData.loanNumber) {
+      if (!editCustomerData.name || !editCustomerData.phone || !editCustomerData.area || !editCustomerData.customerNumber) {
         alert('Please fill all required fields');
         setIsLoading(false);
         return;
@@ -1547,6 +1616,7 @@ export default function DataEntryDashboard() {
         },
         body: JSON.stringify({
           ...editCustomerData,
+          whatsappNumber: editCustomerData.whatsappNumber || '',
           loanAmount: Number(editCustomerData.loanAmount),
           emiAmount: Number(editCustomerData.emiAmount),
           requestedBy: 'data_entry_operator_1'
@@ -1582,9 +1652,10 @@ export default function DataEntryDashboard() {
       setEditCustomerData({
         name: '',
         phone: [''],
+        whatsappNumber: '',
         businessName: '',
         area: '',
-        loanNumber: '',
+        customerNumber: '',
         loanAmount: '',
         emiAmount: '',
         loanType: 'Daily',
@@ -1606,16 +1677,14 @@ export default function DataEntryDashboard() {
   const handleAddCustomer = async () => {
     if (!validateStep3()) return;
 
-    // Double-check all required fields before submitting
     if (!step1Data.name || !step1Data.businessName || !step1Data.area || 
-        !step1Data.loanNumber || !step1Data.address || !step1Data.category || 
+        !step1Data.customerNumber || !step1Data.address || !step1Data.category || 
         !step1Data.officeCategory) {
       alert('Please fill all required fields in Step 1');
       setCurrentStep(1);
       return;
     }
 
-    // Check if at least one phone number is provided
     const validPhones = step1Data.phone.filter(p => p.trim() !== '');
     if (validPhones.length === 0) {
       alert('Please provide at least one phone number');
@@ -1623,7 +1692,6 @@ export default function DataEntryDashboard() {
       return;
     }
 
-    // Validate phone numbers
     for (const phone of validPhones) {
       if (!/^\d{10}$/.test(phone)) {
         alert('Please ensure all phone numbers are valid 10-digit numbers');
@@ -1632,7 +1700,6 @@ export default function DataEntryDashboard() {
       }
     }
 
-    // Check loan details
     if (!step2Data.loanAmount || !step2Data.emiAmount || !step2Data.loanDays) {
       alert('Please fill all required loan details in Step 2');
       setCurrentStep(2);
@@ -1641,35 +1708,29 @@ export default function DataEntryDashboard() {
 
     setIsLoading(true);
     try {
-      // Create FormData to handle file uploads
       const formData = new FormData();
       
-      // Append step1 data
       formData.append('name', step1Data.name.trim());
       
-      // Append all phone numbers
       step1Data.phone.forEach((phone, index) => {
         if (phone.trim()) {
           formData.append(`phone[${index}]`, phone.trim());
         }
       });
       
-      // Append WhatsApp number (optional)
       if (step1Data.whatsappNumber.trim()) {
         formData.append('whatsappNumber', step1Data.whatsappNumber.trim());
       } else {
-        formData.append('whatsappNumber', ''); // Send empty string if not provided
+        formData.append('whatsappNumber', '');
       }
       
       formData.append('businessName', step1Data.businessName.trim());
       formData.append('area', step1Data.area.trim());
-      // Store loan number with LN prefix
-      formData.append('loanNumber', `LN${step1Data.loanNumber}`);
+      formData.append('customerNumber', `CN${step1Data.customerNumber}`);
       formData.append('address', step1Data.address.trim());
       formData.append('category', step1Data.category);
       formData.append('officeCategory', step1Data.officeCategory);
       
-      // Append files
       if (step1Data.profilePicture) {
         formData.append('profilePicture', step1Data.profilePicture);
       }
@@ -1680,14 +1741,13 @@ export default function DataEntryDashboard() {
         formData.append('fiDocumentHome', step1Data.fiDocuments.home);
       }
       
-      // Append step2 data
       formData.append('loanDate', step2Data.loanDate);
+      formData.append('emiStartDate', step2Data.emiStartDate);
       formData.append('loanAmount', step2Data.loanAmount);
       formData.append('emiAmount', step2Data.emiAmount);
       formData.append('loanDays', step2Data.loanDays);
       formData.append('loanType', step2Data.loanType);
       
-      // Append step3 data
       formData.append('loginId', step3Data.loginId.trim());
       formData.append('password', step3Data.password);
       formData.append('createdBy', 'data_entry_operator_1');
@@ -1696,7 +1756,7 @@ export default function DataEntryDashboard() {
         name: step1Data.name,
         businessName: step1Data.businessName,
         area: step1Data.area,
-        loanNumber: `LN${step1Data.loanNumber}`,
+        customerNumber: `CN${step1Data.customerNumber}`,
         address: step1Data.address,
         category: step1Data.category,
         officeCategory: step1Data.officeCategory,
@@ -1705,7 +1765,8 @@ export default function DataEntryDashboard() {
         loanAmount: step2Data.loanAmount,
         emiAmount: step2Data.emiAmount,
         loanDays: step2Data.loanDays,
-        loanType: step2Data.loanType
+        loanType: step2Data.loanType,
+        emiStartDate: step2Data.emiStartDate
       });
 
       const response = await fetch('/api/data-entry/customers', {
@@ -1719,14 +1780,13 @@ export default function DataEntryDashboard() {
         if (response.status === 409) {
           if (data.field === 'phone') {
             throw new Error('Customer with this phone number already exists');
-          } else if (data.field === 'loanNumber') {
-            throw new Error('Loan number already exists. Please use a unique loan number');
+          } else if (data.field === 'customerNumber') {
+            throw new Error('Customer number already exists. Please use a unique customer number');
           } else {
-            throw new Error(data.error || 'A pending request already exists for this customer');
+            throw new Error('A pending request already exists for this customer');
           }
         }
         
-        // Show more specific error message from backend
         if (data.error) {
           throw new Error(data.error);
         } else if (data.message) {
@@ -1736,12 +1796,10 @@ export default function DataEntryDashboard() {
         }
       }
 
-      // SUCCESS: Show request submission message (not customer creation)
       alert(data.message || 'Customer request submitted successfully! Waiting for admin approval.');
       setShowAddCustomer(false);
       resetCustomerForm();
       
-      // Refresh dashboard and requests
       fetchDashboardData();
       if (activeTab === 'requests') fetchPendingRequests();
       
@@ -1765,25 +1823,24 @@ export default function DataEntryDashboard() {
       console.log('📦 Selected loan for payment:', selectedLoanForPayment);
       console.log('📋 EMI update data:', emiUpdate);
       
-      // Validate required fields
       if (!emiUpdate.amount || !emiUpdate.paymentDate) {
         alert('Please fill all required fields');
         setIsLoading(false);
         return;
       }
 
-      // Prepare EMI payment data
       const emiPaymentData = {
         customerId: selectedCustomer._id,
         customerName: selectedCustomer.name,
-        loanId: selectedLoanForPayment._id, // Use the actual loan ID
+        customerNumber: selectedCustomer.customerNumber,
+        loanId: selectedLoanForPayment._id,
         loanNumber: selectedLoanForPayment.loanNumber,
         paymentDate: emiUpdate.paymentDate,
         amount: Number(emiUpdate.amount),
         status: emiUpdate.status,
         collectedBy: emiUpdate.collectedBy,
         paymentMethod: 'Cash',
-        notes: emiUpdate.notes || `EMI payment recorded for ${selectedCustomer.name} - Loan ${selectedLoanForPayment.loanNumber}`
+        notes: emiUpdate.notes || `EMI payment recorded for ${selectedCustomer.name} - Customer ${selectedCustomer.customerNumber}`
       };
 
       console.log('📦 Sending EMI payment data:', emiPaymentData);
@@ -1810,7 +1867,6 @@ export default function DataEntryDashboard() {
       if (!response.ok) {
         console.error('❌ API error response:', data);
         
-        // Handle specific error cases
         if (response.status === 404) {
           throw new Error('Loan not found. Please refresh and try again.');
         } else if (response.status === 400) {
@@ -1826,14 +1882,13 @@ export default function DataEntryDashboard() {
 
       alert(data.message || 'EMI payment recorded successfully!');
       
-      // Reset form and close modal
       setShowPaymentForm(false);
       setSelectedLoanForPayment(null);
       setShowUpdateEMI(false);
       setSelectedCustomer(null);
       setSearchQuery('');
       setFilters({
-        loanNumber: '',
+        customerNumber: '',
         loanType: '',
         status: '',
         officeCategory: ''
@@ -1848,7 +1903,6 @@ export default function DataEntryDashboard() {
         collectedBy: 'Operator 1'
       });
       
-      // Refresh dashboard data
       fetchDashboardData();
       
     } catch (error: any) {
@@ -1866,10 +1920,10 @@ export default function DataEntryDashboard() {
       ...prev,
       customerId: customer._id || customer.id || '',
       customerName: customer.name,
+      customerNumber: customer.customerNumber,
       paymentDate: new Date().toISOString().split('T')[0]
     }));
     
-    // Clear search after selection
     setSearchQuery('');
   };
 
@@ -1879,19 +1933,17 @@ export default function DataEntryDashboard() {
       id: loan._id,
       loanNumber: loan.loanNumber,
       customerId: loan.customerId,
-      isMainLoan: loan.isMainLoan,
+      customerNumber: loan.customerNumber,
       amount: loan.amount,
       emiAmount: loan.emiAmount
     });
     
-    // Validate that we have a proper loan ID
     if (!loan._id) {
       console.error('❌ No loan ID found for loan:', loan);
       alert('Error: Loan ID not found. Please refresh and try again.');
       return;
     }
 
-    // Validate that we have a customer ID
     if (!selectedCustomer?._id) {
       console.error('❌ No customer selected');
       alert('Error: No customer selected. Please select a customer first.');
@@ -1903,7 +1955,8 @@ export default function DataEntryDashboard() {
       ...prev,
       customerId: selectedCustomer._id || '',
       customerName: selectedCustomer.name || '',
-      loanId: loan._id, // Use the actual loan ID
+      customerNumber: selectedCustomer.customerNumber || '',
+      loanId: loan._id,
       loanNumber: loan.loanNumber || '',
       amount: loan.emiAmount ? loan.emiAmount.toString() : '',
       paymentDate: new Date().toISOString().split('T')[0]
@@ -1915,7 +1968,6 @@ export default function DataEntryDashboard() {
     router.push('/auth');
   };
 
-  // Calendar component
   const renderEMICalendar = () => {
     if (!calendarData) return null;
 
@@ -1949,7 +2001,6 @@ export default function DataEntryDashboard() {
               </button>
             </div>
 
-            {/* Calendar Controls */}
             <div className="flex justify-between items-center mb-4">
               <div className="flex space-x-2">
                 <button
@@ -1969,7 +2020,6 @@ export default function DataEntryDashboard() {
                 </button>
               </div>
 
-              {/* Filters */}
               <select
       value={calendarFilter.loanFilter}
       onChange={(e) => setCalendarFilter(prev => ({
@@ -1981,14 +2031,12 @@ export default function DataEntryDashboard() {
       <option value="all">All Loans</option>
       {calendarData.loans.map((loan, index) => (
         <option key={loan._id} value={loan._id}>
-          {loan.isMainLoan ? 'L1 (Main)' : `L${index + 1}`} - {loan.loanNumber} 
-          {loan.isMainLoan && ' ★'}
+          {loan.loanNumber} - {loan.customerNumber}
         </option>
       ))}
     </select>
   </div>
 
-  {/* EMI Status Filter */}
   <div className="flex items-center space-x-2">
     <label className="text-sm font-medium text-gray-700">EMI Status:</label>
     <select
@@ -2008,7 +2056,6 @@ export default function DataEntryDashboard() {
     </select>
   </div>
 
-            {/* Legend */}
             <div className="flex flex-wrap gap-4 mb-4 p-3 bg-gray-50 rounded-md">
               <div className="flex items-center">
                 <div className="w-4 h-4 bg-green-100 border border-green-300 rounded mr-2"></div>
@@ -2032,7 +2079,6 @@ export default function DataEntryDashboard() {
               </div>
             </div>
 
-            {/* Calendar Grid */}
             <div className="grid grid-cols-7 gap-1 mb-2">
               {dayNames.map(day => (
                 <div key={day} className="text-center font-medium text-gray-600 py-2">
@@ -2086,16 +2132,16 @@ export default function DataEntryDashboard() {
               ))}
             </div>
 
-            {/* Customer Behavior Summary */}
             <div className="mt-6 p-4 bg-gray-50 rounded-lg">
               <h5 className="font-semibold mb-3">Payment Behavior Summary</h5>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 {calendarData.loans.map((loan, index) => {
                   const behavior = calculatePaymentBehavior(loan);
                   const completion = calculateEMICompletion(loan);
+                  
                   return (
                     <div key={loan._id} className="bg-white p-3 rounded border">
-                      <div className="font-medium">Loan {index + 1}</div>
+                      <div className="font-medium">{loan.loanNumber}</div>
                       <div className="text-xs text-gray-600">
                         Score: {behavior.punctualityScore.toFixed(0)}%
                       </div>
@@ -2203,7 +2249,7 @@ export default function DataEntryDashboard() {
 
     const clearFilters = () => {
       setFilters({
-        loanNumber: '',
+        customerNumber: '',
         loanType: '',
         status: '',
         officeCategory: ''
@@ -2220,7 +2266,7 @@ export default function DataEntryDashboard() {
             <div className="relative">
               <input
                 type="text"
-                placeholder="Search by customer name or loan number..."
+                placeholder="Search by customer name or customer number..."
                 className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -2242,7 +2288,7 @@ export default function DataEntryDashboard() {
               </span>
             </button>
             
-            {(filters.loanNumber || filters.loanType || filters.status || filters.officeCategory || searchQuery) && (
+            {(filters.customerNumber || filters.loanType || filters.status || filters.officeCategory || searchQuery) && (
               <button
                 onClick={clearFilters}
                 className="px-4 py-2 text-red-600 border border-red-300 rounded-lg hover:bg-red-50 transition-colors"
@@ -2258,14 +2304,14 @@ export default function DataEntryDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Loan Number
+                  Customer Number
                 </label>
                 <input
                   type="text"
-                  placeholder="Enter loan number..."
+                  placeholder="Enter customer number..."
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  value={filters.loanNumber}
-                  onChange={(e) => handleFilterChange('loanNumber', e.target.value)}
+                  value={filters.customerNumber}
+                  onChange={(e) => handleFilterChange('customerNumber', e.target.value)}
                 />
               </div>
 
@@ -2317,15 +2363,15 @@ export default function DataEntryDashboard() {
               </div>
             </div>
 
-            {(filters.loanNumber || filters.loanType || filters.status || filters.officeCategory) && (
+            {(filters.customerNumber || filters.loanType || filters.status || filters.officeCategory) && (
               <div className="mt-4 pt-4 border-t border-gray-200">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm text-gray-600">Active filters:</span>
-                  {filters.loanNumber && (
+                  {filters.customerNumber && (
                     <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
-                      Loan No: {filters.loanNumber}
+                      Customer No: {filters.customerNumber}
                       <button 
-                        onClick={() => handleFilterChange('loanNumber', '')}
+                        onClick={() => handleFilterChange('customerNumber', '')}
                         className="ml-1 text-blue-600 hover:text-blue-800"
                       >
                         ×
@@ -2406,7 +2452,6 @@ export default function DataEntryDashboard() {
             </button>
           </div>
 
-          {/* Progress Steps */}
           <div className="mb-8">
             <div className="flex items-center justify-between">
               {[1, 2, 3].map((step) => (
@@ -2431,316 +2476,292 @@ export default function DataEntryDashboard() {
             </div>
           </div>
 
-          {/* Step 1: Basic Details */}
           {currentStep === 1 && (
-            <div className="space-y-6">
-              <h4 className="text-lg font-semibold">Step 1: Customer Basic Details</h4>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Customer Name *</label>
-                  <input 
-                    type="text" 
-                    className={`w-full px-3 py-2 border rounded-md ${
-                      step1Errors.name ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    value={step1Data.name}
-                    onChange={(e) => setStep1Data({...step1Data, name: e.target.value})}
-                    placeholder="Enter full name"
-                  />
-                  {step1Errors.name && <p className="text-red-500 text-xs mt-1">{step1Errors.name}</p>}
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Phone Numbers *</label>
-                  {step1Data.phone.map((phoneNumber, index) => (
-                    <div key={index} className="flex gap-2 mb-2">
-                      <input 
-                        type="tel" 
-                        className={`w-full px-3 py-2 border rounded-md ${
-                          step1Errors.phone ? 'border-red-500' : 'border-gray-300'
-                        }`}
-                        value={phoneNumber}
-                        onChange={(e) => {
-                          const value = e.target.value.replace(/\D/g, '');
-                          if (value.length <= 10) {
-                            const newPhones = [...step1Data.phone];
-                            newPhones[index] = value;
-                            setStep1Data({...step1Data, phone: newPhones});
-                          }
-                        }}
-                        placeholder="Enter 10-digit phone number"
-                        maxLength={10}
-                      />
-                      {index === step1Data.phone.length - 1 && step1Data.phone.length < 3 && (
-                        <button
-                          type="button"
-                          onClick={() => setStep1Data({
-                            ...step1Data, 
-                            phone: [...step1Data.phone, '']
-                          })}
-                          className="px-3 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 text-sm"
-                        >
-                          +
-                        </button>
-                      )}
-                      {step1Data.phone.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const newPhones = step1Data.phone.filter((_, i) => i !== index);
-                            setStep1Data({...step1Data, phone: newPhones});
-                          }}
-                          className="px-3 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 text-sm"
-                        >
-                          ×
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                  {step1Errors.phone && <p className="text-red-500 text-xs mt-1">{step1Errors.phone}</p>}
-                  <p className="text-xs text-gray-500 mt-1">
-                    You can add up to 3 phone numbers. Click + to add another.
-                  </p>
-                </div>
+  <div className="space-y-6">
+    <h4 className="text-lg font-semibold">Step 1: Customer Basic Details</h4>
+    
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Row 1 */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Customer Name *</label>
+        <input 
+          type="text" 
+          className={`w-full px-3 py-2 border rounded-md ${
+            step1Errors.name ? 'border-red-500' : 'border-gray-300'
+          }`}
+          value={step1Data.name}
+          onChange={(e) => setStep1Data({...step1Data, name: e.target.value})}
+          placeholder="Enter full name"
+        />
+        {step1Errors.name && <p className="text-red-500 text-xs mt-1">{step1Errors.name}</p>}
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Primary Phone Number *</label>
+        <input 
+          type="tel" 
+          className={`w-full px-3 py-2 border rounded-md ${
+            step1Errors.phone ? 'border-red-500' : 'border-gray-300'
+          }`}
+          value={step1Data.phone[0] || ''}
+          onChange={(e) => {
+            const value = e.target.value.replace(/\D/g, '');
+            if (value.length <= 10) {
+              const newPhones = [...step1Data.phone];
+              newPhones[0] = value;
+              setStep1Data({...step1Data, phone: newPhones});
+            }
+          }}
+          placeholder="Enter 10-digit primary phone number"
+          maxLength={10}
+        />
+        {step1Errors.phone && <p className="text-red-500 text-xs mt-1">{step1Errors.phone}</p>}
+      </div>
 
-                {/* WhatsApp Number Field */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    <span className="flex items-center gap-2">
-                      <img 
-                        src="/images/whatsapp-logo.png" 
-                        alt="WhatsApp" 
-                        className="w-5 h-5"
-                      />
-                      <span className="text-green-600 font-semibold">WhatsApp Number</span>
-                    </span>
-                  </label>
-                  <div className="relative">
-                    {/* WhatsApp logo inside input */}
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <img 
-                        src="/images/whatsapp-logo.png" 
-                        alt="WhatsApp" 
-                        className="w-4 h-4"
-                      />
-                    </div>
-                    <input 
-                      type="tel" 
-                      className={`w-full px-3 py-2 pl-10 border rounded-md ${
-                        step1Errors.whatsappNumber ? 'border-red-500' : 'border-gray-300'
-                      } focus:ring-2 focus:ring-green-500 focus:border-green-500`}
-                      value={step1Data.whatsappNumber}
-                      onChange={(e) => {
-                        const value = e.target.value.replace(/\D/g, '');
-                        if (value.length <= 10) {
-                          setStep1Data({...step1Data, whatsappNumber: value});
-                        }
-                      }}
-                      placeholder="10-digit number"
-                      maxLength={10}
-                    />
-                  </div>
-                  {step1Errors.whatsappNumber && <p className="text-red-500 text-xs mt-1">{step1Errors.whatsappNumber}</p>}
-                  <p className="text-xs text-gray-500 mt-1">
-                    Optional - for WhatsApp communication
-                  </p>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Business Name *</label>
-                  <input 
-                    type="text" 
-                    className={`w-full px-3 py-2 border rounded-md ${
-                      step1Errors.businessName ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    value={step1Data.businessName}
-                    onChange={(e) => setStep1Data({...step1Data, businessName: e.target.value})}
-                    placeholder="Enter business name"
-                  />
-                  {step1Errors.businessName && <p className="text-red-500 text-xs mt-1">{step1Errors.businessName}</p>}
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Area *</label>
-                  <input 
-                    type="text" 
-                    className={`w-full px-3 py-2 border rounded-md ${
-                      step1Errors.area ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    value={step1Data.area}
-                    onChange={(e) => setStep1Data({...step1Data, area: e.target.value})}
-                    placeholder="Enter area"
-                  />
-                  {step1Errors.area && <p className="text-red-500 text-xs mt-1">{step1Errors.area}</p>}
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Number *</label>
-                  <div className="flex">
-                    <span className="inline-flex items-center px-3 py-2 border border-r-0 border-gray-300 bg-gray-50 text-gray-500 rounded-l-md">
-                      LN
-                    </span>
-                    <input 
-                      type="text" 
-                      className={`flex-1 px-3 py-2 border rounded-r-md ${
-                        step1Errors.loanNumber ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                      value={step1Data.loanNumber}
-                      onChange={(e) => setStep1Data({...step1Data, loanNumber: e.target.value.replace(/\D/g, '')})}
-                      placeholder="Enter numbers only"
-                      maxLength={10}
-                    />
-                  </div>
-                  {step1Errors.loanNumber && <p className="text-red-500 text-xs mt-1">{step1Errors.loanNumber}</p>}
-                  <p className="text-xs text-gray-500 mt-1">Must be unique. Full loan number: LN{step1Data.loanNumber || '___'}</p>
-                </div>
-                
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Address *</label>
-                  <textarea 
-                    className={`w-full px-3 py-2 border rounded-md ${
-                      step1Errors.address ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    rows={3}
-                    value={step1Data.address}
-                    onChange={(e) => setStep1Data({...step1Data, address: e.target.value})}
-                    placeholder="Enter complete address"
-                  />
-                  {step1Errors.address && <p className="text-red-500 text-xs mt-1">{step1Errors.address}</p>}
-                </div>
+      {/* Row 2 */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Secondary Phone Number</label>
+        <input 
+          type="tel" 
+          className="w-full px-3 py-2 border border-gray-300 rounded-md"
+          value={step1Data.phone[1] || ''}
+          onChange={(e) => {
+            const value = e.target.value.replace(/\D/g, '');
+            if (value.length <= 10) {
+              const newPhones = [...step1Data.phone];
+              newPhones[1] = value;
+              setStep1Data({...step1Data, phone: newPhones});
+            }
+          }}
+          placeholder="Secondary phone (optional)"
+          maxLength={10}
+        />
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          <span className="flex items-center gap-1">
+            <span>WhatsApp Number</span>
+            <img 
+              src="/images/whatsapp-logo.png" 
+              alt="WhatsApp" 
+              className="w-4 h-4"
+            />
+          </span>
+        </label>
+        <input 
+          type="tel" 
+          className={`w-full px-3 py-2 border rounded-md ${
+            step1Errors.whatsappNumber ? 'border-red-500' : 'border-gray-300'
+          }`}
+          value={step1Data.whatsappNumber}
+          onChange={(e) => {
+            const value = e.target.value.replace(/\D/g, '');
+            if (value.length <= 10) {
+              setStep1Data({...step1Data, whatsappNumber: value});
+            }
+          }}
+          placeholder="WhatsApp number (optional)"
+          maxLength={10}
+        />
+        {step1Errors.whatsappNumber && <p className="text-red-500 text-xs mt-1">{step1Errors.whatsappNumber}</p>}
+      </div>
 
-                {/* Category and Office Category Fields */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Category *</label>
-                  <select 
-                    className={`w-full px-3 py-2 border rounded-md ${
-                      step1Errors.category ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    value={step1Data.category}
-                    onChange={(e) => setStep1Data({...step1Data, category: e.target.value})}
-                    required
-                  >
-                    <option value="">Select Category</option>
-                    <option value="A">Category A</option>
-                    <option value="B">Category B</option>
-                    <option value="C">Category C</option>
-                  </select>
-                  {step1Errors.category && <p className="text-red-500 text-xs mt-1">{step1Errors.category}</p>}
-                  <p className="text-xs text-gray-500 mt-1">Customer priority category</p>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Office Category *</label>
-                  <select 
-                    className={`w-full px-3 py-2 border rounded-md ${
-                      step1Errors.officeCategory ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    value={step1Data.officeCategory}
-                    onChange={(e) => setStep1Data({...step1Data, officeCategory: e.target.value})}
-                    required
-                  >
-                    <option value="">Select Office Category</option>
-                    <option value="Office 1">Office 1</option>
-                    <option value="Office 2">Office 2</option>
-                  </select>
-                  {step1Errors.officeCategory && <p className="text-red-500 text-xs mt-1">{step1Errors.officeCategory}</p>}
-                  <p className="text-xs text-gray-500 mt-1">Assigned office location</p>
-                </div>
-              </div>
+      {/* Row 3 */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Business Name *</label>
+        <input 
+          type="text" 
+          className={`w-full px-3 py-2 border rounded-md ${
+            step1Errors.businessName ? 'border-red-500' : 'border-gray-300'
+          }`}
+          value={step1Data.businessName}
+          onChange={(e) => setStep1Data({...step1Data, businessName: e.target.value})}
+          placeholder="Enter business name"
+        />
+        {step1Errors.businessName && <p className="text-red-500 text-xs mt-1">{step1Errors.businessName}</p>}
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Area *</label>
+        <input 
+          type="text" 
+          className={`w-full px-3 py-2 border rounded-md ${
+            step1Errors.area ? 'border-red-500' : 'border-gray-300'
+          }`}
+          value={step1Data.area}
+          onChange={(e) => setStep1Data({...step1Data, area: e.target.value})}
+          placeholder="Enter area"
+        />
+        {step1Errors.area && <p className="text-red-500 text-xs mt-1">{step1Errors.area}</p>}
+      </div>
 
-              {/* File Uploads */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Profile Picture (Image)</label>
-                  <div className="border-2 border-dashed border-gray-300 rounded-md p-4 text-center">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => handleFileUpload('profilePicture', e.target.files?.[0] || null)}
-                      className="hidden"
-                      id="profile-picture"
-                    />
-                    <label htmlFor="profile-picture" className="cursor-pointer">
-                      <div className="text-gray-400 mb-2">📷</div>
-                      <p className="text-sm text-gray-600">
-                        {step1Data.profilePicture ? step1Data.profilePicture.name : 'Click to upload profile picture'}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">PNG, JPEG, JPG, etc.</p>
-                    </label>
-                  </div>
-                </div>
+      {/* Row 4 */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Customer Number *</label>
+        <div className="flex">
+          <span className="inline-flex items-center px-3 py-2 border border-r-0 border-gray-300 bg-gray-50 text-gray-500 rounded-l-md">
+            CN
+          </span>
+          <input 
+            type="text" 
+            className={`flex-1 px-3 py-2 border rounded-r-md ${
+              step1Errors.customerNumber ? 'border-red-500' : 'border-gray-300'
+            }`}
+            value={step1Data.customerNumber}
+            onChange={(e) => setStep1Data({...step1Data, customerNumber: e.target.value.replace(/\D/g, '')})}
+            placeholder="Enter numbers only"
+            maxLength={10}
+          />
+        </div>
+        {step1Errors.customerNumber && <p className="text-red-500 text-xs mt-1">{step1Errors.customerNumber}</p>}
+        <p className="text-xs text-gray-500 mt-1">Must be unique. Full customer number: CN{step1Data.customerNumber || '___'}</p>
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Address *</label>
+        <textarea 
+          className={`w-full px-3 py-2 border rounded-md ${
+            step1Errors.address ? 'border-red-500' : 'border-gray-300'
+          }`}
+          rows={3}
+          value={step1Data.address}
+          onChange={(e) => setStep1Data({...step1Data, address: e.target.value})}
+          placeholder="Enter complete address"
+        />
+        {step1Errors.address && <p className="text-red-500 text-xs mt-1">{step1Errors.address}</p>}
+      </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">FI Document - Shop (PDF)</label>
-                  <div className="border-2 border-dashed border-gray-300 rounded-md p-4 text-center">
-                    <input
-                      type="file"
-                      accept=".pdf"
-                      onChange={(e) => handleFileUpload('fiDocuments', e.target.files?.[0] || null, 'shop')}
-                      className="hidden"
-                      id="fi-doc-shop"
-                    />
-                    <label htmlFor="fi-doc-shop" className="cursor-pointer">
-                      <div className="text-gray-400 mb-2">📄</div>
-                      <p className="text-sm text-gray-600">
-                        {step1Data.fiDocuments.shop ? step1Data.fiDocuments.shop.name : 'Upload Shop FI Document'}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">PDF format only</p>
-                    </label>
-                  </div>
-                </div>
+      {/* Row 5 */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Category *</label>
+        <select 
+          className={`w-full px-3 py-2 border rounded-md ${
+            step1Errors.category ? 'border-red-500' : 'border-gray-300'
+          }`}
+          value={step1Data.category}
+          onChange={(e) => setStep1Data({...step1Data, category: e.target.value})}
+          required
+        >
+          <option value="">Select Category</option>
+          <option value="A">Category A</option>
+          <option value="B">Category B</option>
+          <option value="C">Category C</option>
+        </select>
+        {step1Errors.category && <p className="text-red-500 text-xs mt-1">{step1Errors.category}</p>}
+        <p className="text-xs text-gray-500 mt-1">Customer priority category</p>
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Office Category *</label>
+        <select 
+          className={`w-full px-3 py-2 border rounded-md ${
+            step1Errors.officeCategory ? 'border-red-500' : 'border-gray-300'
+          }`}
+          value={step1Data.officeCategory}
+          onChange={(e) => setStep1Data({...step1Data, officeCategory: e.target.value})}
+          required
+        >
+          <option value="">Select Office Category</option>
+          <option value="Office 1">Office 1</option>
+          <option value="Office 2">Office 2</option>
+        </select>
+        {step1Errors.officeCategory && <p className="text-red-500 text-xs mt-1">{step1Errors.officeCategory}</p>}
+        <p className="text-xs text-gray-500 mt-1">Assigned office location</p>
+      </div>
+    </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">FI Document - Home (PDF)</label>
-                  <div className="border-2 border-dashed border-gray-300 rounded-md p-4 text-center">
-                    <input
-                      type="file"
-                      accept=".pdf"
-                      onChange={(e) => handleFileUpload('fiDocuments', e.target.files?.[0] || null, 'home')}
-                      className="hidden"
-                      id="fi-doc-home"
-                    />
-                    <label htmlFor="fi-doc-home" className="cursor-pointer">
-                      <div className="text-gray-400 mb-2">📄</div>
-                      <p className="text-sm text-gray-600">
-                        {step1Data.fiDocuments.home ? step1Data.fiDocuments.home.name : 'Upload Home FI Document'}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">PDF format only</p>
-                    </label>
-                  </div>
-                </div>
-              </div>
+    {/* File Upload Section */}
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Profile Picture (Image)</label>
+        <div className="border-2 border-dashed border-gray-300 rounded-md p-4 text-center">
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => handleFileUpload('profilePicture', e.target.files?.[0] || null)}
+            className="hidden"
+            id="profile-picture"
+          />
+          <label htmlFor="profile-picture" className="cursor-pointer">
+            <div className="text-gray-400 mb-2">📷</div>
+            <p className="text-sm text-gray-600">
+              {step1Data.profilePicture ? step1Data.profilePicture.name : 'Click to upload profile picture'}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">PNG, JPEG, JPG, etc.</p>
+          </label>
+        </div>
+      </div>
 
-              <div className="flex justify-end space-x-3 mt-6">
-                <button 
-                  onClick={() => {
-                    setShowAddCustomer(false);
-                    resetCustomerForm();
-                  }}
-                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={handleStep1Next}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                >
-                  Next Step
-                </button>
-              </div>
-            </div>
-          )}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">FI Document - Shop (PDF)</label>
+        <div className="border-2 border-dashed border-gray-300 rounded-md p-4 text-center">
+          <input
+            type="file"
+            accept=".pdf"
+            onChange={(e) => handleFileUpload('fiDocuments', e.target.files?.[0] || null, 'shop')}
+            className="hidden"
+            id="fi-doc-shop"
+          />
+          <label htmlFor="fi-doc-shop" className="cursor-pointer">
+            <div className="text-gray-400 mb-2">📄</div>
+            <p className="text-sm text-gray-600">
+              {step1Data.fiDocuments.shop ? step1Data.fiDocuments.shop.name : 'Upload Shop FI Document'}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">PDF format only</p>
+          </label>
+        </div>
+      </div>
 
-          {/* Step 2: Loan Information - UPDATED FORMAT */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">FI Document - Home (PDF)</label>
+        <div className="border-2 border-dashed border-gray-300 rounded-md p-4 text-center">
+          <input
+            type="file"
+            accept=".pdf"
+            onChange={(e) => handleFileUpload('fiDocuments', e.target.files?.[0] || null, 'home')}
+            className="hidden"
+            id="fi-doc-home"
+          />
+          <label htmlFor="fi-doc-home" className="cursor-pointer">
+            <div className="text-gray-400 mb-2">📄</div>
+            <p className="text-sm text-gray-600">
+              {step1Data.fiDocuments.home ? step1Data.fiDocuments.home.name : 'Upload Home FI Document'}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">PDF format only</p>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div className="flex justify-end space-x-3 mt-6">
+      <button 
+        onClick={() => {
+          setShowAddCustomer(false);
+          resetCustomerForm();
+        }}
+        className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+      >
+        Cancel
+      </button>
+      <button 
+        onClick={handleStep1Next}
+        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+      >
+        Next Step
+      </button>
+    </div>
+  </div>
+)}
+
           {currentStep === 2 && (
   <div className="space-y-6">
     <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
       <h4 className="text-lg font-semibold text-blue-900 mb-2">Customer Information</h4>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
         <div>
-          <span className="text-blue-700 font-medium">Loan Number:</span>
-          <p className="text-blue-900">LN{step1Data.loanNumber}</p>
+          <span className="text-blue-700 font-medium">Customer Number:</span>
+          <p className="text-blue-900">CN{step1Data.customerNumber}</p>
         </div>
         <div>
           <span className="text-blue-700 font-medium">Customer Name:</span>
@@ -2756,22 +2777,9 @@ export default function DataEntryDashboard() {
     <h4 className="text-lg font-semibold">Step 2: Enter Loan Details</h4>
     
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Loan Date *</label>
-          <input 
-            type="date" 
-            className={`w-full px-3 py-2 border rounded-md ${
-              step2Errors.loanDate ? 'border-red-500' : 'border-gray-300'
-            }`}
-            value={formatDateForInput(step2Data.loanDate)}
-            onChange={(e) => setStep2Data({...step2Data, loanDate: e.target.value})}
-            required
-          />
-          {step2Errors.loanDate && <p className="text-red-500 text-xs mt-1">{step2Errors.loanDate}</p>}
-        </div>
-        
-        <div>
+      {/* Loan Type Selection */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="md:col-span-2 lg:col-span-1">
           <label className="block text-sm font-medium text-gray-700 mb-2">Loan Type *</label>
           <select 
             className={`w-full px-3 py-2 border rounded-md ${
@@ -2779,12 +2787,13 @@ export default function DataEntryDashboard() {
             }`}
             value={step2Data.loanType}
             onChange={(e) => {
+              const newLoanType = e.target.value;
               setStep2Data({
                 ...step2Data, 
-                loanType: e.target.value,
-                // Reset duration when loan type changes
-                loanDays: e.target.value === 'Monthly' ? '30' : 
-                         e.target.value === 'Weekly' ? '7' : '30'
+                loanType: newLoanType,
+                loanDays: newLoanType === 'Monthly' ? '1' : 
+                         newLoanType === 'Weekly' ? '1' : '30',
+                emiType: newLoanType === 'Daily' ? 'fixed' : step2Data.emiType
               });
             }}
             required
@@ -2796,8 +2805,68 @@ export default function DataEntryDashboard() {
           {step2Errors.loanType && <p className="text-red-500 text-xs mt-1">{step2Errors.loanType}</p>}
         </div>
         
+        {/* EMI Collection Type - Only show for Weekly/Monthly */}
+        {step2Data.loanType !== 'Daily' && (
+          <div className="md:col-span-2 lg:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2">EMI Collection Type *</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                step2Data.emiType === 'fixed' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+              }`}>
+                <input
+                  type="radio"
+                  name="emiType"
+                  value="fixed"
+                  checked={step2Data.emiType === 'fixed'}
+                  onChange={(e) => setStep2Data({...step2Data, emiType: e.target.value as 'fixed' | 'custom'})}
+                  className="mr-3 text-blue-600 focus:ring-blue-500"
+                />
+                <div>
+                  <div className="font-medium text-gray-900">Fixed EMI</div>
+                  <div className="text-sm text-gray-600">Same EMI amount for all periods</div>
+                </div>
+              </label>
+              
+              <label className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                step2Data.emiType === 'custom' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+              }`}>
+                <input
+                  type="radio"
+                  name="emiType"
+                  value="custom"
+                  checked={step2Data.emiType === 'custom'}
+                  onChange={(e) => setStep2Data({...step2Data, emiType: e.target.value as 'fixed' | 'custom'})}
+                  className="mr-3 text-blue-600 focus:ring-blue-500"
+                />
+                <div>
+                  <div className="font-medium text-gray-900">Custom EMI</div>
+                  <div className="text-sm text-gray-600">Different EMI for last period</div>
+                </div>
+              </label>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Loan Details Form */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Common Fields */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Loan Amount *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Loan Date *</label>
+          <input 
+            type="date" 
+            className={`w-full px-3 py-2 border rounded-md ${
+              step2Errors.loanDate ? 'border-red-500' : 'border-gray-300'
+            }`}
+            value={step2Data.loanDate}
+            onChange={(e) => setStep2Data({...step2Data, loanDate: e.target.value})}
+            required
+          />
+          {step2Errors.loanDate && <p className="text-red-500 text-xs mt-1">{step2Errors.loanDate}</p>}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Amount *</label>
           <input 
             type="number" 
             className={`w-full px-3 py-2 border rounded-md ${
@@ -2812,24 +2881,7 @@ export default function DataEntryDashboard() {
           />
           {step2Errors.loanAmount && <p className="text-red-500 text-xs mt-1">{step2Errors.loanAmount}</p>}
         </div>
-        
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">EMI Amount *</label>
-          <input 
-            type="number" 
-            className={`w-full px-3 py-2 border rounded-md ${
-              step2Errors.emiAmount ? 'border-red-500' : 'border-gray-300'
-            }`}
-            value={step2Data.emiAmount}
-            onChange={(e) => setStep2Data({...step2Data, emiAmount: e.target.value})}
-            placeholder="EMI Amount"
-            min="0"
-            step="0.01"
-            required
-          />
-          {step2Errors.emiAmount && <p className="text-red-500 text-xs mt-1">{step2Errors.emiAmount}</p>}
-        </div>
-        
+
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             {step2Data.loanType === 'Daily' ? 'No. of Days *' : 
@@ -2854,46 +2906,181 @@ export default function DataEntryDashboard() {
           </p>
         </div>
 
-        {/* NEW: Total Loan Amount Column */}
+        {/* EMI Amount Fields */}
+        {step2Data.emiType === 'fixed' || step2Data.loanType === 'Daily' ? (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">EMI Amount *</label>
+            <input 
+              type="number" 
+              className={`w-full px-3 py-2 border rounded-md ${
+                step2Errors.emiAmount ? 'border-red-500' : 'border-gray-300'
+              }`}
+              value={step2Data.emiAmount}
+              onChange={(e) => setStep2Data({...step2Data, emiAmount: e.target.value})}
+              placeholder="EMI Amount"
+              min="0"
+              step="0.01"
+              required
+            />
+            {step2Errors.emiAmount && <p className="text-red-500 text-xs mt-1">{step2Errors.emiAmount}</p>}
+          </div>
+        ) : (
+          <>
+            {/* Custom EMI Fields */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Fixed EMI Amount *</label>
+              <input 
+                type="number" 
+                className={`w-full px-3 py-2 border rounded-md ${
+                  step2Errors.emiAmount ? 'border-red-500' : 'border-gray-300'
+                }`}
+                value={step2Data.emiAmount}
+                onChange={(e) => setStep2Data({...step2Data, emiAmount: e.target.value})}
+                placeholder="Fixed EMI Amount"
+                min="0"
+                step="0.01"
+                required
+              />
+              {step2Errors.emiAmount && <p className="text-red-500 text-xs mt-1">{step2Errors.emiAmount}</p>}
+              <p className="text-xs text-gray-500 mt-1">
+                For first {Number(step2Data.loanDays || 1) - 1} {step2Data.loanType === 'Weekly' ? 'weeks' : 'months'}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Last EMI Amount *</label>
+              <input 
+                type="number" 
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={step2Data.customEmiAmount || ''}
+                onChange={(e) => setStep2Data({...step2Data, customEmiAmount: e.target.value})}
+                placeholder="Last EMI Amount"
+                min="0"
+                step="0.01"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                For last 1 {step2Data.loanType === 'Weekly' ? 'week' : 'month'}
+              </p>
+            </div>
+          </>
+        )}
+
+        {/* Total Loan Amount */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Total Loan</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Total Loan Amount</label>
           <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
             <p className="text-gray-900 font-semibold text-lg">
-              ₹{(Number(step2Data.emiAmount || 0) * Number(step2Data.loanDays || 0)).toLocaleString()}
+              ₹{step2Data.emiType === 'custom' && step2Data.loanType !== 'Daily' ? (
+                ((Number(step2Data.emiAmount || 0) * (Number(step2Data.loanDays || 1) - 1)) + 
+                 (Number(step2Data.customEmiAmount || 0) * 1)).toLocaleString()
+              ) : (
+                (Number(step2Data.emiAmount || 0) * Number(step2Data.loanDays || 1)).toLocaleString()
+              )}
             </p>
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            EMI × Duration (Auto-calculated)
+            {step2Data.emiType === 'custom' && step2Data.loanType !== 'Daily' ? (
+              `Fixed Periods + Last Period (Auto-calculated)`
+            ) : (
+              `EMI × Duration (Auto-calculated)`
+            )}
           </p>
+        </div>
+
+        {/* EMI Starting Date */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">EMI Starting Date *</label>
+          <input 
+            type="date" 
+            className={`w-full px-3 py-2 border rounded-md ${
+              step2Errors.emiStartDate ? 'border-red-500' : 'border-gray-300'
+            }`}
+            value={step2Data.emiStartDate}
+            onChange={(e) => setStep2Data({...step2Data, emiStartDate: e.target.value})}
+            required
+          />
+          {step2Errors.emiStartDate && <p className="text-red-500 text-xs mt-1">{step2Errors.emiStartDate}</p>}
+          <p className="text-xs text-gray-500 mt-1">When EMI collection will start</p>
         </div>
       </div>
 
-      {/* Loan Summary Preview */}
+      {/* Custom EMI Breakdown */}
+      {step2Data.emiType === 'custom' && step2Data.loanType !== 'Daily' && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+          <h5 className="font-medium text-yellow-800 mb-3">Custom EMI Breakdown</h5>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+            <div className="text-center">
+              <div className="font-semibold text-yellow-700">Fixed Periods</div>
+              <div className="text-lg font-bold text-yellow-900">{Number(step2Data.loanDays || 1) - 1}</div>
+              <div className="text-xs text-yellow-600">{step2Data.loanType === 'Weekly' ? 'weeks' : 'months'}</div>
+            </div>
+            <div className="text-center">
+              <div className="font-semibold text-yellow-700">Fixed EMI</div>
+              <div className="text-lg font-bold text-yellow-900">₹{step2Data.emiAmount || '0'}</div>
+              <div className="text-xs text-yellow-600">per period</div>
+            </div>
+            <div className="text-center">
+              <div className="font-semibold text-yellow-700">Last Period</div>
+              <div className="text-lg font-bold text-yellow-900">1</div>
+              <div className="text-xs text-yellow-600">{step2Data.loanType === 'Weekly' ? 'week' : 'month'}</div>
+            </div>
+            <div className="text-center">
+              <div className="font-semibold text-yellow-700">Last EMI</div>
+              <div className="text-lg font-bold text-yellow-900">₹{step2Data.customEmiAmount || '0'}</div>
+              <div className="text-xs text-yellow-600">final period</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loan Summary */}
       <div className="bg-green-50 border border-green-200 rounded-md p-4">
-        <h5 className="font-semibold text-green-900 mb-2">Loan Summary</h5>
+        <h5 className="font-semibold text-green-900 mb-3">Loan Summary</h5>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <div>
-            <span className="text-green-700">Loan Amount:</span>
-            <p className="font-semibold">₹{step2Data.loanAmount || '0'}</p>
+            <span className="text-green-700 font-medium">Loan Amount:</span>
+            <p className="font-semibold text-green-900">₹{step2Data.loanAmount || '0'}</p>
           </div>
           <div>
-            <span className="text-green-700">EMI Amount:</span>
-            <p className="font-semibold">₹{step2Data.emiAmount || '0'}</p>
+            <span className="text-green-700 font-medium">Total Loan:</span>
+            <p className="font-semibold text-green-900">
+              ₹{step2Data.emiType === 'custom' && step2Data.loanType !== 'Daily' ? (
+                ((Number(step2Data.emiAmount || 0) * (Number(step2Data.loanDays || 1) - 1)) + 
+                 (Number(step2Data.customEmiAmount || 0) * 1)).toLocaleString()
+              ) : (
+                (Number(step2Data.emiAmount || 0) * Number(step2Data.loanDays || 1)).toLocaleString()
+              )}
+            </p>
           </div>
           <div>
-            <span className="text-green-700">Duration:</span>
-            <p className="font-semibold">
+            <span className="text-green-700 font-medium">Duration:</span>
+            <p className="font-semibold text-green-900">
               {step2Data.loanDays || '0'} 
               {step2Data.loanType === 'Daily' ? ' days' : 
                step2Data.loanType === 'Weekly' ? ' weeks' : ' months'}
             </p>
           </div>
           <div>
-            <span className="text-green-700">Total Loan:</span>
-            <p className="font-semibold">
-              ₹{(Number(step2Data.emiAmount || 0) * Number(step2Data.loanDays || 0)).toLocaleString()}
+            <span className="text-green-700 font-medium">EMI Starts From:</span>
+            <p className="font-semibold text-green-900">
+              {step2Data.emiStartDate ? formatDateToDDMMYYYY(step2Data.emiStartDate) : 'Not set'}
             </p>
           </div>
+        </div>
+
+        {/* EMI Type Summary */}
+        <div className="mt-3 pt-3 border-t border-green-200">
+          <span className="text-green-700 font-medium">EMI Type:</span>
+          <p className="font-semibold text-green-900">
+            {step2Data.loanType === 'Daily' ? (
+              `Daily EMI - All ${step2Data.loanDays} days at ₹${step2Data.emiAmount || '0'}`
+            ) : step2Data.emiType === 'fixed' ? (
+              `Fixed EMI - All ${step2Data.loanDays} ${step2Data.loanType.toLowerCase()} periods at ₹${step2Data.emiAmount || '0'}`
+            ) : (
+              `Custom EMI - ${Number(step2Data.loanDays || 1) - 1} periods at ₹${step2Data.emiAmount || '0'} + 1 period at ₹${step2Data.customEmiAmount || '0'}`
+            )}
+          </p>
         </div>
       </div>
     </div>
@@ -2915,7 +3102,6 @@ export default function DataEntryDashboard() {
   </div>
 )}
 
-          {/* Step 3: Login Credentials */}
           {currentStep === 3 && (
             <div className="space-y-6">
               <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
@@ -2927,8 +3113,8 @@ export default function DataEntryDashboard() {
                       <span className="text-blue-900 ml-1">{step1Data.name}</span>
                     </div>
                     <div>
-                      <span className="text-blue-700 font-medium">Loan No:</span>
-                      <span className="text-blue-900 ml-1">LN{step1Data.loanNumber}</span>
+                      <span className="text-blue-700 font-medium">Customer No:</span>
+                      <span className="text-blue-900 ml-1">CN{step1Data.customerNumber}</span>
                     </div>
                     <div>
                       <span className="text-blue-700 font-medium">Category:</span>
@@ -3095,13 +3281,12 @@ export default function DataEntryDashboard() {
           </div>
           
           <div className="space-y-6">
-            {/* Customer Information Section */}
             <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
               <h4 className="text-lg font-semibold text-blue-900 mb-2">Customer Information</h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                 <div>
-                  <span className="text-blue-700 font-medium">Loan Number:</span>
-                  <p className="text-blue-900">{customerDetails?.loanNumber}</p>
+                  <span className="text-blue-700 font-medium">Customer Number:</span>
+                  <p className="text-blue-900">{customerDetails?.customerNumber}</p>
                 </div>
                 <div>
                   <span className="text-blue-700 font-medium">Customer Name:</span>
@@ -3114,7 +3299,6 @@ export default function DataEntryDashboard() {
               </div>
             </div>
 
-            {/* Enter Loan Details Section */}
             <div>
   <h4 className="text-lg font-semibold mb-4">Enter Loan Details</h4>
   
@@ -3139,7 +3323,6 @@ export default function DataEntryDashboard() {
           setNewLoanData({
             ...newLoanData, 
             loanType: e.target.value,
-            // Reset duration when loan type changes
             loanDays: e.target.value === 'Monthly' ? '30' : 
                      e.target.value === 'Weekly' ? '7' : '30'
           });
@@ -3201,7 +3384,6 @@ export default function DataEntryDashboard() {
       </p>
     </div>
 
-    {/* NEW: Total Loan Amount Column */}
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-2">Total Loan</label>
       <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
@@ -3216,7 +3398,6 @@ export default function DataEntryDashboard() {
   </div>
 </div>
 
-            {/* Loan Summary Preview */}
             <div className="bg-green-50 border border-green-200 rounded-md p-4">
   <h5 className="font-semibold text-green-900 mb-2">Loan Summary</h5>
   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -3282,7 +3463,6 @@ export default function DataEntryDashboard() {
           </div>
           
           <div className="space-y-6">
-            {/* Customer Information Section */}
             <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
               <h4 className="text-lg font-semibold text-blue-900 mb-2">Customer Information</h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
@@ -3291,19 +3471,16 @@ export default function DataEntryDashboard() {
                   <p className="text-blue-900">{editLoanData.customerName}</p>
                 </div>
                 <div>
-                  <span className="text-blue-700 font-medium">Loan Number:</span>
-                  <p className="text-blue-900">{editLoanData.loanNumber}</p>
+                  <span className="text-blue-700 font-medium">Customer Number:</span>
+                  <p className="text-blue-900">{editLoanData.customerNumber}</p>
                 </div>
                 <div>
-                  <span className="text-blue-700 font-medium">Type:</span>
-                  <p className="text-blue-900">
-                    {editLoanData.isMainLoan ? 'Main Loan' : 'Additional Loan'}
-                  </p>
+                  <span className="text-blue-700 font-medium">Loan Number:</span>
+                  <p className="text-blue-900">{editLoanData.loanNumber}</p>
                 </div>
               </div>
             </div>
 
-            {/* Edit Loan Details Section */}
             <div>
               <h4 className="text-lg font-semibold mb-4">Edit Loan Details</h4>
               
@@ -3391,7 +3568,6 @@ export default function DataEntryDashboard() {
               </div>
             </div>
 
-            {/* Changes Summary */}
             {editLoanData.originalData && (
               <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
                 <h5 className="font-semibold text-yellow-900 mb-2">Changes Summary</h5>
@@ -3439,7 +3615,6 @@ export default function DataEntryDashboard() {
               </div>
             )}
 
-            {/* Note */}
             <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
               <h5 className="font-semibold text-blue-900 mb-2">Note</h5>
               <p className="text-sm text-blue-700">
@@ -3484,7 +3659,6 @@ export default function DataEntryDashboard() {
           </div>
           
           <div className="space-y-6">
-            {/* Customer Information Section */}
             <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
               <h4 className="text-lg font-semibold text-blue-900 mb-2">Customer Information</h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
@@ -3493,8 +3667,8 @@ export default function DataEntryDashboard() {
                   <p className="text-blue-900">{renewLoanData.customerName}</p>
                 </div>
                 <div>
-                  <span className="text-blue-700 font-medium">Loan Number:</span>
-                  <p className="text-blue-900">{renewLoanData.loanNumber}</p>
+                  <span className="text-blue-700 font-medium">Customer Number:</span>
+                  <p className="text-blue-900">{renewLoanData.customerNumber}</p>
                 </div>
                 <div>
                   <span className="text-blue-700 font-medium">Renewal Date:</span>
@@ -3503,7 +3677,6 @@ export default function DataEntryDashboard() {
               </div>
             </div>
 
-            {/* Renew Loan Details Section */}
             <div>
               <h4 className="text-lg font-semibold mb-4">Renew Loan Details</h4>
               
@@ -3590,7 +3763,6 @@ export default function DataEntryDashboard() {
                 </div>
               </div>
 
-              {/* Remarks */}
               <div className="mt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Remarks</label>
                 <textarea 
@@ -3603,7 +3775,6 @@ export default function DataEntryDashboard() {
               </div>
             </div>
 
-            {/* Renewal Summary */}
             <div className="bg-green-50 border border-green-200 rounded-md p-4">
               <h5 className="font-semibold text-green-900 mb-2">Renewal Summary</h5>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -3630,7 +3801,6 @@ export default function DataEntryDashboard() {
               </div>
             </div>
 
-            {/* Note */}
             <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
               <h5 className="font-semibold text-blue-900 mb-2">Note</h5>
               <p className="text-sm text-blue-700">
@@ -3661,182 +3831,613 @@ export default function DataEntryDashboard() {
   );
 
   const renderEditCustomer = () => {
-    // Ensure phone is always an array
-    const phoneNumbers = Array.isArray(editCustomerData.phone) ? editCustomerData.phone : [editCustomerData.phone || ''];
+  const phoneNumbers = Array.isArray(editCustomerData.phone) ? editCustomerData.phone : [editCustomerData.phone || ''];
   
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-          <div className="p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold">Edit Customer Profile</h3>
-              <button 
-                onClick={() => setShowEditCustomer(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                ✕
-              </button>
-            </div>
-            
-            <div className="space-y-6">
-              {/* Customer Information Section */}
-              <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-                <h4 className="text-lg font-semibold text-blue-900 mb-2">Customer Information</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <span className="text-blue-700 font-medium">Customer ID:</span>
-                    <p className="text-blue-900">{editCustomerData.customerId}</p>
-                  </div>
-                  <div>
-                    <span className="text-blue-700 font-medium">Current Loan Number:</span>
-                    <p className="text-blue-900">{editCustomerData.loanNumber}</p>
-                  </div>
+  // Ensure we have at least two phone number slots
+  const primaryPhone = phoneNumbers[0] || '';
+  const secondaryPhone = phoneNumbers[1] || '';
+  const whatsappNumber = editCustomerData.whatsappNumber || '';
+  
+  const handleFileUpload = (file: File | null) => {
+    if (file && !file.type.startsWith('image/')) {
+      alert('Please upload an image file (PNG, JPEG, etc.) for profile picture');
+      return;
+    }
+    // In a real implementation, you would handle the file upload here
+    console.log('Profile picture selected:', file);
+    alert('Profile picture upload functionality would be implemented here');
+  };
+
+  const toggleEditField = (fieldName: string) => {
+    setEditingFields(prev => ({
+      ...prev,
+      [fieldName]: !prev[fieldName]
+    }));
+  };
+
+  const handleSaveEditCustomer = async () => {
+    setIsLoading(true);
+    try {
+      console.log('🔄 Starting edit customer request...');
+      console.log('📦 Edit data:', editCustomerData);
+
+      if (!editCustomerData.name || !primaryPhone || !editCustomerData.area || !editCustomerData.customerNumber) {
+        alert('Please fill all required fields');
+        setIsLoading(false);
+        return;
+      }
+
+      // Prepare phone array with valid numbers only
+      const phoneArray = [primaryPhone];
+      if (secondaryPhone.trim()) {
+        phoneArray.push(secondaryPhone);
+      }
+
+      const apiUrl = '/api/data-entry/edit-customer-request';
+      console.log('🌐 Calling API:', apiUrl);
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...editCustomerData,
+          phone: phoneArray,
+          whatsappNumber: whatsappNumber || '',
+          loanAmount: Number(editCustomerData.loanAmount),
+          emiAmount: Number(editCustomerData.emiAmount),
+          requestedBy: 'data_entry_operator_1'
+        }),
+      });
+
+      console.log('📡 Response status:', response.status);
+
+      const responseText = await response.text();
+      console.log('📄 Raw response:', responseText);
+
+      if (responseText.trim().startsWith('<!') || responseText.trim().startsWith('<html')) {
+        console.error('❌ Server returned HTML instead of JSON. Likely a 404 error.');
+        throw new Error('API endpoint not found. Please check the server.');
+      }
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('❌ Failed to parse response as JSON:', parseError);
+        throw new Error('Server returned invalid JSON. Response: ' + responseText.substring(0, 200));
+      }
+
+      console.log('✅ Parsed response data:', data);
+      
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+      }
+
+      alert('Edit request submitted successfully! Waiting for admin approval.');
+      setShowEditCustomer(false);
+      setEditingFields({});
+      setEditCustomerData({
+        name: '',
+        phone: [''],
+        whatsappNumber: '',
+        businessName: '',
+        area: '',
+        customerNumber: '',
+        loanAmount: '',
+        emiAmount: '',
+        loanType: 'Daily',
+        address: '',
+        customerId: '',
+        category: 'A',
+        officeCategory: 'Office 1'
+      });
+      
+      if (activeTab === 'requests') fetchPendingRequests();
+    } catch (error: any) {
+      console.error('💥 Error in handleSaveEditCustomer:', error);
+      alert('Error: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold">Edit Customer Profile</h3>
+            <button 
+              onClick={() => setShowEditCustomer(false)}
+              className="text-gray-500 hover:text-gray-700 text-2xl"
+            >
+              ✕
+            </button>
+          </div>
+          
+          <div className="space-y-6">
+            {/* Customer Information Header */}
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+              <h4 className="text-lg font-semibold text-blue-900 mb-2">Customer Information</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div>
+                  <span className="text-blue-700 font-medium">Customer ID:</span>
+                  <p className="text-blue-900">{editCustomerData.customerId}</p>
+                </div>
+                <div>
+                  <span className="text-blue-700 font-medium">Current Customer Number:</span>
+                  <p className="text-blue-900">{editCustomerData.customerNumber}</p>
+                </div>
+                <div>
+                  <span className="text-blue-700 font-medium">Status:</span>
+                  <p className="text-blue-900">Active</p>
                 </div>
               </div>
-  
-              {/* Edit Customer Details Section */}
-              <div>
-                <h4 className="text-lg font-semibold mb-4">Edit Customer Details</h4>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Customer Name *</label>
-                    <input 
-                      type="text" 
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      value={editCustomerData.name}
-                      onChange={(e) => setEditCustomerData({...editCustomerData, name: e.target.value})}
-                      required
-                    />
+            </div>
+
+            {/* Profile Picture Section */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <h4 className="text-lg font-semibold text-gray-900 mb-4">Profile Picture</h4>
+              <div className="flex items-center space-x-6">
+                <div className="flex-shrink-0">
+                  <div className="w-24 h-24 bg-gray-200 rounded-full flex items-center justify-center">
+                    <span className="text-gray-400 text-2xl">👤</span>
                   </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Business Name *</label>
-                    <input 
-                      type="text" 
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      value={editCustomerData.businessName}
-                      onChange={(e) => setEditCustomerData({...editCustomerData, businessName: e.target.value})}
-                      required
-                    />
+                </div>
+                <div className="flex-1">
+                  <div className="flex space-x-3">
+                    <div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleFileUpload(e.target.files?.[0] || null)}
+                        className="hidden"
+                        id="profile-picture-edit"
+                      />
+                      <label 
+                        htmlFor="profile-picture-edit"
+                        className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 cursor-pointer text-sm"
+                      >
+                        Upload New Photo
+                      </label>
+                    </div>
+                    <button className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 text-sm">
+                      Remove Current
+                    </button>
                   </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Area *</label>
-                    <input 
-                      type="text" 
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      value={editCustomerData.area}
-                      onChange={(e) => setEditCustomerData({...editCustomerData, area: e.target.value})}
-                      required
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Loan Number *</label>
-                    <div className="flex">
-                      <span className="inline-flex items-center px-3 py-2 border border-r-0 border-gray-300 bg-gray-50 text-gray-500 rounded-l-md">
-                        LN
-                      </span>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Recommended: Square image, 500x500 pixels, max 2MB
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Personal Information Section */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <h4 className="text-lg font-semibold text-gray-900 mb-4">Personal Information</h4>
+              
+              <div className="space-y-4">
+                {/* Customer Name */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Customer Name *
+                    </label>
+                    {editingFields.name ? (
                       <input 
                         type="text" 
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-r-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        value={editCustomerData.loanNumber.replace('LN', '')}
-                        onChange={(e) => setEditCustomerData({
-                          ...editCustomerData, 
-                          loanNumber: `LN${e.target.value.replace(/\D/g, '')}`
-                        })}
-                        placeholder="Enter numbers only"
-                        maxLength={10}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={editCustomerData.name}
+                        onChange={(e) => setEditCustomerData({...editCustomerData, name: e.target.value})}
                         required
                       />
+                    ) : (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                        <p className="text-gray-900">{editCustomerData.name}</p>
+                      </div>
+                    )}
+                  </div>
+                  <button 
+                    onClick={() => toggleEditField('name')}
+                    className={`px-4 py-2 rounded-md text-sm whitespace-nowrap mt-6 ${
+                      editingFields.name 
+                        ? 'bg-green-600 text-white hover:bg-green-700' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {editingFields.name ? 'Save' : 'Edit'}
+                  </button>
+                </div>
+
+                {/* Phone Numbers */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Primary Phone */}
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Primary Phone Number *
+                      </label>
+                      {editingFields.primaryPhone ? (
+                        <input 
+                          type="tel" 
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          value={primaryPhone}
+                          onChange={(e) => {
+                            const value = e.target.value.replace(/\D/g, '');
+                            if (value.length <= 10) {
+                              const newPhones = [value, secondaryPhone];
+                              setEditCustomerData({...editCustomerData, phone: newPhones});
+                            }
+                          }}
+                          placeholder="10-digit primary phone"
+                          maxLength={10}
+                          required
+                        />
+                      ) : (
+                        <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                          <p className="text-gray-900">{primaryPhone}</p>
+                        </div>
+                      )}
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">Full loan number: {editCustomerData.loanNumber}</p>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Loan Type *</label>
-                    <select 
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      value={editCustomerData.loanType}
-                      onChange={(e) => setEditCustomerData({...editCustomerData, loanType: e.target.value})}
-                      required
+                    <button 
+                      onClick={() => toggleEditField('primaryPhone')}
+                      className={`px-4 py-2 rounded-md text-sm whitespace-nowrap mt-6 ${
+                        editingFields.primaryPhone 
+                          ? 'bg-green-600 text-white hover:bg-green-700' 
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                      }`}
                     >
-                      <option value="Daily">Daily EMI</option>
-                      <option value="Weekly">Weekly EMI</option>
-                      <option value="Monthly">Monthly EMI</option>
-                    </select>
+                      {editingFields.primaryPhone ? 'Save' : 'Edit'}
+                    </button>
                   </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Category *</label>
-                    <select 
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      value={editCustomerData.category}
-                      onChange={(e) => setEditCustomerData({...editCustomerData, category: e.target.value})}
-                      required
+
+                  {/* Secondary Phone */}
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Secondary Phone Number
+                      </label>
+                      {editingFields.secondaryPhone ? (
+                        <input 
+                          type="tel" 
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          value={secondaryPhone}
+                          onChange={(e) => {
+                            const value = e.target.value.replace(/\D/g, '');
+                            if (value.length <= 10) {
+                              const newPhones = [primaryPhone, value];
+                              setEditCustomerData({...editCustomerData, phone: newPhones});
+                            }
+                          }}
+                          placeholder="10-digit secondary phone"
+                          maxLength={10}
+                        />
+                      ) : (
+                        <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                          <p className="text-gray-900">{secondaryPhone || 'Not provided'}</p>
+                        </div>
+                      )}
+                    </div>
+                    <button 
+                      onClick={() => toggleEditField('secondaryPhone')}
+                      className={`px-4 py-2 rounded-md text-sm whitespace-nowrap mt-6 ${
+                        editingFields.secondaryPhone 
+                          ? 'bg-green-600 text-white hover:bg-green-700' 
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                      }`}
                     >
-                      <option value="A">Category A</option>
-                      <option value="B">Category B</option>
-                      <option value="C">Category C</option>
-                    </select>
-                  </div>
-  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Office Category *</label>
-                    <select 
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      value={editCustomerData.officeCategory}
-                      onChange={(e) => setEditCustomerData({...editCustomerData, officeCategory: e.target.value})}
-                      required
-                    >
-                      <option value="Office 1">Office 1</option>
-                      <option value="Office 2">Office 2</option>
-                    </select>
-                  </div>
-                  
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
-                    <textarea 
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      rows={3}
-                      value={editCustomerData.address}
-                      onChange={(e) => setEditCustomerData({...editCustomerData, address: e.target.value})}
-                    />
+                      {editingFields.secondaryPhone ? 'Save' : 'Edit'}
+                    </button>
                   </div>
                 </div>
-              </div>
-  
-              {/* Note */}
-              <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-                <h5 className="font-semibold text-blue-900 mb-2">Note</h5>
-                <p className="text-sm text-blue-700">
-                  This edit request will be sent to the admin for approval. The changes will only be applied after admin approval.
-                </p>
+
+                {/* WhatsApp Number */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <span className="flex items-center gap-1">
+                        <span>WhatsApp Number</span>
+                        <span className="text-green-600">📱</span>
+                      </span>
+                    </label>
+                    {editingFields.whatsappNumber ? (
+                      <input 
+                        type="tel" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={whatsappNumber}
+                        onChange={(e) => {
+                          const value = e.target.value.replace(/\D/g, '');
+                          if (value.length <= 10) {
+                            setEditCustomerData({...editCustomerData, whatsappNumber: value});
+                          }
+                        }}
+                        placeholder="10-digit WhatsApp number"
+                        maxLength={10}
+                      />
+                    ) : (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                        <p className="text-gray-900">{whatsappNumber || 'Not provided'}</p>
+                      </div>
+                    )}
+                  </div>
+                  <button 
+                    onClick={() => toggleEditField('whatsappNumber')}
+                    className={`px-4 py-2 rounded-md text-sm whitespace-nowrap mt-6 ${
+                      editingFields.whatsappNumber 
+                        ? 'bg-green-600 text-white hover:bg-green-700' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {editingFields.whatsappNumber ? 'Save' : 'Edit'}
+                  </button>
+                </div>
               </div>
             </div>
-            
-            <div className="flex justify-end space-x-3 mt-6">
-              <button 
-                onClick={() => setShowEditCustomer(false)}
-                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-                disabled={isLoading}
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={handleSaveEditCustomer}
-                disabled={isLoading}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400"
-              >
-                {isLoading ? 'Submitting...' : 'Submit Profile Edit'}
-              </button>
+
+            {/* Business Information Section */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <h4 className="text-lg font-semibold text-gray-900 mb-4">Business Information</h4>
+              
+              <div className="space-y-4">
+                {/* Business Name */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Business Name *
+                    </label>
+                    {editingFields.businessName ? (
+                      <input 
+                        type="text" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={editCustomerData.businessName}
+                        onChange={(e) => setEditCustomerData({...editCustomerData, businessName: e.target.value})}
+                        required
+                      />
+                    ) : (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                        <p className="text-gray-900">{editCustomerData.businessName}</p>
+                      </div>
+                    )}
+                  </div>
+                  <button 
+                    onClick={() => toggleEditField('businessName')}
+                    className={`px-4 py-2 rounded-md text-sm whitespace-nowrap mt-6 ${
+                      editingFields.businessName 
+                        ? 'bg-green-600 text-white hover:bg-green-700' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {editingFields.businessName ? 'Save' : 'Edit'}
+                  </button>
+                </div>
+
+                {/* Area */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Area *
+                    </label>
+                    {editingFields.area ? (
+                      <input 
+                        type="text" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={editCustomerData.area}
+                        onChange={(e) => setEditCustomerData({...editCustomerData, area: e.target.value})}
+                        required
+                      />
+                    ) : (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                        <p className="text-gray-900">{editCustomerData.area}</p>
+                      </div>
+                    )}
+                  </div>
+                  <button 
+                    onClick={() => toggleEditField('area')}
+                    className={`px-4 py-2 rounded-md text-sm whitespace-nowrap mt-6 ${
+                      editingFields.area 
+                        ? 'bg-green-600 text-white hover:bg-green-700' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {editingFields.area ? 'Save' : 'Edit'}
+                  </button>
+                </div>
+
+                {/* Customer Number */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Customer Number *
+                    </label>
+                    {editingFields.customerNumber ? (
+                      <div className="flex">
+                        <span className="inline-flex items-center px-3 py-2 border border-r-0 border-gray-300 bg-gray-50 text-gray-500 rounded-l-md">
+                          CN
+                        </span>
+                        <input 
+                          type="text" 
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-r-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          value={editCustomerData.customerNumber.replace('CN', '')}
+                          onChange={(e) => setEditCustomerData({
+                            ...editCustomerData, 
+                            customerNumber: `CN${e.target.value.replace(/\D/g, '')}`
+                          })}
+                          placeholder="Enter numbers only"
+                          maxLength={10}
+                          required
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                        <p className="text-gray-900">{editCustomerData.customerNumber}</p>
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-500 mt-1">Full customer number: {editCustomerData.customerNumber}</p>
+                  </div>
+                  <button 
+                    onClick={() => toggleEditField('customerNumber')}
+                    className={`px-4 py-2 rounded-md text-sm whitespace-nowrap mt-6 ${
+                      editingFields.customerNumber 
+                        ? 'bg-green-600 text-white hover:bg-green-700' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {editingFields.customerNumber ? 'Save' : 'Edit'}
+                  </button>
+                </div>
+
+                {/* Address */}
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Address
+                    </label>
+                    {editingFields.address ? (
+                      <textarea 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        rows={3}
+                        value={editCustomerData.address}
+                        onChange={(e) => setEditCustomerData({...editCustomerData, address: e.target.value})}
+                        placeholder="Enter complete address"
+                      />
+                    ) : (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 min-h-[80px]">
+                        <p className="text-gray-900 whitespace-pre-wrap">{editCustomerData.address || 'Not provided'}</p>
+                      </div>
+                    )}
+                  </div>
+                  <button 
+                    onClick={() => toggleEditField('address')}
+                    className={`px-4 py-2 rounded-md text-sm whitespace-nowrap mt-6 ${
+                      editingFields.address 
+                        ? 'bg-green-600 text-white hover:bg-green-700' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {editingFields.address ? 'Save' : 'Edit'}
+                  </button>
+                </div>
+              </div>
             </div>
+
+            {/* Category & Office Information */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <h4 className="text-lg font-semibold text-gray-900 mb-4">Category & Office Information</h4>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Category */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Category *
+                    </label>
+                    {editingFields.category ? (
+                      <select 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={editCustomerData.category}
+                        onChange={(e) => setEditCustomerData({...editCustomerData, category: e.target.value})}
+                        required
+                      >
+                        <option value="A">Category A</option>
+                        <option value="B">Category B</option>
+                        <option value="C">Category C</option>
+                      </select>
+                    ) : (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                        <p className="text-gray-900">{editCustomerData.category}</p>
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-500 mt-1">Customer priority category</p>
+                  </div>
+                  <button 
+                    onClick={() => toggleEditField('category')}
+                    className={`px-4 py-2 rounded-md text-sm whitespace-nowrap mt-6 ${
+                      editingFields.category 
+                        ? 'bg-green-600 text-white hover:bg-green-700' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {editingFields.category ? 'Save' : 'Edit'}
+                  </button>
+                </div>
+
+                {/* Office Category */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Office Category *
+                    </label>
+                    {editingFields.officeCategory ? (
+                      <select 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={editCustomerData.officeCategory}
+                        onChange={(e) => setEditCustomerData({...editCustomerData, officeCategory: e.target.value})}
+                        required
+                      >
+                        <option value="Office 1">Office 1</option>
+                        <option value="Office 2">Office 2</option>
+                      </select>
+                    ) : (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                        <p className="text-gray-900">{editCustomerData.officeCategory}</p>
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-500 mt-1">Assigned office location</p>
+                  </div>
+                  <button 
+                    onClick={() => toggleEditField('officeCategory')}
+                    className={`px-4 py-2 rounded-md text-sm whitespace-nowrap mt-6 ${
+                      editingFields.officeCategory 
+                        ? 'bg-green-600 text-white hover:bg-green-700' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {editingFields.officeCategory ? 'Save' : 'Edit'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Note Section */}
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+              <h5 className="font-semibold text-blue-900 mb-2">Note</h5>
+              <p className="text-sm text-blue-700">
+                This edit request will be sent to the admin for approval. The changes will only be applied after admin approval.
+                Click the "Edit" buttons next to each field to make changes, then click "Submit Profile Edit" below to send for approval.
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex justify-end space-x-3 mt-6 pt-6 border-t border-gray-200">
+            <button 
+              onClick={() => setShowEditCustomer(false)}
+              className="px-6 py-3 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
+              disabled={isLoading}
+            >
+              Cancel
+            </button>
+            <button 
+              onClick={handleSaveEditCustomer}
+              disabled={isLoading || !editCustomerData.name || !primaryPhone || !editCustomerData.businessName || !editCustomerData.area || !editCustomerData.customerNumber}
+              className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+            >
+              {isLoading ? (
+                <span className="flex items-center">
+                  <span className="animate-spin mr-2">⏳</span>
+                  Submitting...
+                </span>
+              ) : (
+                'Submit Profile Edit Request'
+              )}
+            </button>
           </div>
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   const renderEMI = () => (
     <div className="px-4 py-6 sm:px-0">
@@ -3879,13 +4480,187 @@ export default function DataEntryDashboard() {
     </div>
   );
 
-  const renderRequests = () => (
+  const renderRequests = () => {
+
+  const requestTypes = [
+    'all',
+    'New Customer',
+    'New Loan', 
+    'Customer Edit',
+    'Loan Edit',
+    'Loan Renew',
+    'Loan Addition',
+    'Loan Deletion',
+    'EMI Correction'
+  ];
+
+  const statusOptions = [
+    'all',
+    'Pending',
+    'Approved',
+    'Rejected',
+    'Processing'
+  ];
+
+  const dateSortOptions = [
+    { value: 'latest', label: 'Latest First' },
+    { value: 'oldest', label: 'Oldest First' }
+  ];
+
+  // Filter and sort requests
+  const filteredRequests = pendingRequests
+    .filter(request => {
+      const matchesType = requestFilters.type === 'all' || request.type === requestFilters.type;
+      const matchesStatus = requestFilters.status === 'all' || request.status === requestFilters.status;
+      return matchesType && matchesStatus;
+    })
+    .sort((a, b) => {
+      if (requestFilters.dateSort === 'latest') {
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      } else {
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      }
+    });
+
+  const clearFilters = () => {
+    setRequestFilters({
+      type: 'all',
+      dateSort: 'latest',
+      status: 'all'
+    });
+  };
+
+  const hasActiveFilters = requestFilters.type !== 'all' || requestFilters.status !== 'all' || requestFilters.dateSort !== 'latest';
+
+  return (
     <div className="px-4 py-6 sm:px-0">
       <div className="bg-white shadow rounded-lg">
         <div className="px-4 py-5 sm:px-6">
-          <h3 className="text-lg leading-6 font-medium text-gray-900">Pending Requests</h3>
-          <p className="mt-1 max-w-2xl text-sm text-gray-500">Requests waiting for admin approval</p>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h3 className="text-lg leading-6 font-medium text-gray-900">Pending Requests</h3>
+              <p className="mt-1 max-w-2xl text-sm text-gray-500">Requests waiting for admin approval</p>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                filteredRequests.length > 0 ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-800'
+              }`}>
+                {filteredRequests.length} request(s)
+              </span>
+            </div>
+          </div>
         </div>
+
+        {/* Filters Section */}
+        <div className="border-t border-gray-200 px-4 py-4 bg-gray-50">
+          <div className="flex flex-col lg:flex-row gap-4">
+            {/* Request Type Filter */}
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Request Type
+              </label>
+              <select
+                value={requestFilters.type}
+                onChange={(e) => setRequestFilters(prev => ({ ...prev, type: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              >
+                {requestTypes.map(type => (
+                  <option key={type} value={type}>
+                    {type === 'all' ? 'All Types' : type}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Status Filter */}
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Status
+              </label>
+              <select
+                value={requestFilters.status}
+                onChange={(e) => setRequestFilters(prev => ({ ...prev, status: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              >
+                {statusOptions.map(status => (
+                  <option key={status} value={status}>
+                    {status === 'all' ? 'All Status' : status}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Date Sort */}
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Sort by Date
+              </label>
+              <select
+                value={requestFilters.dateSort}
+                onChange={(e) => setRequestFilters(prev => ({ ...prev, dateSort: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              >
+                {dateSortOptions.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Clear Filters Button */}
+            <div className="flex items-end">
+              <button
+                onClick={clearFilters}
+                disabled={!hasActiveFilters}
+                className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Clear Filters
+              </button>
+            </div>
+          </div>
+
+          {/* Active Filters Display */}
+          {hasActiveFilters && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className="text-xs text-gray-600">Active filters:</span>
+              {requestFilters.type !== 'all' && (
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
+                  Type: {requestFilters.type}
+                  <button 
+                    onClick={() => setRequestFilters(prev => ({ ...prev, type: 'all' }))}
+                    className="ml-1 text-blue-600 hover:text-blue-800"
+                  >
+                    ×
+                  </button>
+                </span>
+              )}
+              {requestFilters.status !== 'all' && (
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
+                  Status: {requestFilters.status}
+                  <button 
+                    onClick={() => setRequestFilters(prev => ({ ...prev, status: 'all' }))}
+                    className="ml-1 text-green-600 hover:text-green-800"
+                  >
+                    ×
+                  </button>
+                </span>
+              )}
+              {requestFilters.dateSort !== 'latest' && (
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
+                  Sort: {dateSortOptions.find(opt => opt.value === requestFilters.dateSort)?.label}
+                  <button 
+                    onClick={() => setRequestFilters(prev => ({ ...prev, dateSort: 'latest' }))}
+                    className="ml-1 text-purple-600 hover:text-purple-800"
+                  >
+                    ×
+                  </button>
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="border-t border-gray-200">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
@@ -3895,42 +4670,109 @@ export default function DataEntryDashboard() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer Name</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Details</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {Array.isArray(pendingRequests) && pendingRequests.length > 0 ? (
-                  pendingRequests.map((request) => (
-                    <tr key={request._id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{request.type}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{request.customerName}</td>
+                {Array.isArray(filteredRequests) && filteredRequests.length > 0 ? (
+                  filteredRequests.map((request) => (
+                    <tr key={request._id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            request.type === 'New Customer' ? 'bg-green-100 text-green-800' :
+                            request.type === 'New Loan' ? 'bg-blue-100 text-blue-800' :
+                            request.type === 'Customer Edit' ? 'bg-yellow-100 text-yellow-800' :
+                            request.type === 'Loan Edit' ? 'bg-orange-100 text-orange-800' :
+                            request.type === 'Loan Renew' ? 'bg-purple-100 text-purple-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {request.type}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {request.customerName || 'N/A'}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {formatDateToDDMMYYYY(request.createdAt)}
+                        <div className="text-xs text-gray-400">
+                          {new Date(request.createdAt).toLocaleTimeString()}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          request.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
+                          request.status === 'Approved' ? 'bg-green-100 text-green-800' :
+                          request.status === 'Rejected' ? 'bg-red-100 text-red-800' :
+                          request.status === 'Processing' ? 'bg-blue-100 text-blue-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
                           {request.status}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {request.description || request.type}
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500">
-                      {Array.isArray(pendingRequests) ? 'No pending requests' : 'Error loading requests'}
+                    <td colSpan={5} className="px-6 py-8 text-center">
+                      <div className="text-gray-400 text-4xl mb-4">📋</div>
+                      <p className="text-gray-500 text-lg">No requests found</p>
+                      <p className="text-sm text-gray-400 mt-2">
+                        {hasActiveFilters 
+                          ? 'Try adjusting your filters to see more results' 
+                          : 'All requests are processed or no requests submitted yet'
+                        }
+                      </p>
+                      {hasActiveFilters && (
+                        <button
+                          onClick={clearFilters}
+                          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+                        >
+                          Clear All Filters
+                        </button>
+                      )}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
+
+          {/* Summary */}
+          {filteredRequests.length > 0 && (
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+              <div className="flex flex-wrap gap-6 text-sm text-gray-600">
+                <div>
+                  <span className="font-medium">Total shown:</span> {filteredRequests.length}
+                </div>
+                {requestFilters.type !== 'all' && (
+                  <div>
+                    <span className="font-medium">Type:</span> {requestFilters.type}
+                  </div>
+                )}
+                {requestFilters.status !== 'all' && (
+                  <div>
+                    <span className="font-medium">Status:</span> {requestFilters.status}
+                  </div>
+                )}
+                <div>
+                  <span className="font-medium">Sorted:</span> {dateSortOptions.find(opt => opt.value === requestFilters.dateSort)?.label}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
+};
 
   const renderDashboard = () => (
     <div className="px-4 py-6 sm:px-0">
-      {/* Stats Grid */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <div className="bg-white overflow-hidden shadow rounded-lg">
           <div className="px-4 py-5 sm:p-6">
@@ -3965,7 +4807,6 @@ export default function DataEntryDashboard() {
         </div>
       </div>
 
-      {/* Quick Actions */}
       <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         <div className="bg-white shadow rounded-lg p-6">
           <div className="flex items-center mb-4">
@@ -4019,9 +4860,7 @@ export default function DataEntryDashboard() {
         </div>
       </div>
 
-      {/* Recent Activity & Info Section */}
       <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Activity */}
         <div className="bg-white shadow rounded-lg">
           <div className="px-4 py-5 sm:px-6">
             <h3 className="text-lg leading-6 font-medium text-gray-900">Recent Activity</h3>
@@ -4038,7 +4877,6 @@ export default function DataEntryDashboard() {
           </div>
         </div>
 
-        {/* Process Info */}
         <div className="bg-white shadow rounded-lg">
           <div className="px-4 py-5 sm:px-6">
             <h3 className="text-lg leading-6 font-medium text-gray-900">How It Works</h3>
@@ -4099,7 +4937,6 @@ export default function DataEntryDashboard() {
         </div>
       </div>
 
-      {/* Pending Requests Quick View */}
       {pendingRequests.length > 0 && (
         <div className="mt-8 bg-yellow-50 border border-yellow-200 rounded-lg p-6">
           <div className="flex items-center">
@@ -4138,7 +4975,6 @@ export default function DataEntryDashboard() {
           </div>
         </div>
         
-        {/* Add info note */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
           <div className="flex items-center">
             <div className="flex-shrink-0">
@@ -4167,7 +5003,7 @@ export default function DataEntryDashboard() {
       <table className="min-w-full divide-y divide-gray-200">
         <thead className="bg-gray-50">
           <tr>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">Loan Number</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">Customer Number</th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">Name</th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">Business</th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">Office</th>
@@ -4177,7 +5013,7 @@ export default function DataEntryDashboard() {
         <tbody className="bg-white divide-y divide-gray-200">
           {filteredCustomers.map((customer) => (
             <tr key={customer._id}>
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 w-1/5">{customer.loanNumber}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 w-1/5">{customer.customerNumber}</td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 w-1/5">{customer.name}</td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/5">{customer.businessName}</td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/5">
@@ -4225,15 +5061,12 @@ export default function DataEntryDashboard() {
     </div>
   );
 
-  // Update the EMI payment form to show completion percentage
   const renderUpdateEMIForm = () => {
-    // Get all loans for display
     const displayLoans = selectedCustomer ? getAllCustomerLoans(selectedCustomer, customerDetails) : [];
     const calculateTotalLoanAmount = (loan: DisplayLoan): number => {
   return loan.emiAmount * loan.totalEmiCount;
 };
 
-    // Get current operator name from user context or session
     const currentOperator = "Operator 1";
 
     return (
@@ -4250,7 +5083,7 @@ export default function DataEntryDashboard() {
                   setShowPaymentForm(false);
                   setSearchQuery('');
                   setFilters({
-                    loanNumber: '',
+                    customerNumber: '',
                     loanType: '',
                     status: '',
                     officeCategory: ''
@@ -4265,7 +5098,6 @@ export default function DataEntryDashboard() {
             
             {!showPaymentForm ? (
               <div className="space-y-4">
-                {/* Search Section */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Search Customer *
@@ -4273,7 +5105,7 @@ export default function DataEntryDashboard() {
                   <div className="relative">
                     <input
                       type="text"
-                      placeholder="Search by customer name or loan number..."
+                      placeholder="Search by customer name or customer number..."
                       className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
@@ -4287,7 +5119,6 @@ export default function DataEntryDashboard() {
                   </p>
                 </div>
 
-                {/* Customer Search Results */}
                 {searchQuery && !selectedCustomer && (
                   <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-md">
                     {filteredCustomers.length > 0 ? (
@@ -4311,7 +5142,7 @@ export default function DataEntryDashboard() {
                             <div className="flex-1">
                               <div className="font-medium">{customer.name}</div>
                               <div className="text-sm text-gray-600">
-                                {customer.loanNumber} • ₹{customer.emiAmount} {customer.loanType} EMI
+                                {customer.customerNumber} • ₹{customer.emiAmount} {customer.loanType} EMI
                               </div>
                               <div className="text-xs text-gray-500">
                                 {customer.businessName} • {customer.area}
@@ -4343,7 +5174,6 @@ export default function DataEntryDashboard() {
                   </div>
                 )}
 
-                {/* No Customers Message */}
                 {customers.length === 0 && !searchQuery && !selectedCustomer && (
                   <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md">
                     <div className="flex items-center">
@@ -4361,20 +5191,19 @@ export default function DataEntryDashboard() {
                   </div>
                 )}
 
-                {/* Selected Customer Display */}
                 {selectedCustomer && (
                   <div className="p-4 bg-blue-50 rounded-md border border-blue-200">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center">
                         <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-3">
                           <span className="text-blue-600 font-semibold text-sm">
-                            {selectedCustomer.name.split(' ').map((n: string) => n[0]).join('')}
-                          </span>
+  {selectedCustomer?.name?.split(' ').map((n: string) => n[0]).join('') || 'CU'}
+</span>
                         </div>
                         <div>
                           <div className="font-medium text-blue-900">{selectedCustomer.name}</div>
                           <div className="text-sm text-blue-700">
-                            {selectedCustomer.loanNumber}
+                            {selectedCustomer.customerNumber}
                           </div>
                         </div>
                       </div>
@@ -4415,6 +5244,7 @@ export default function DataEntryDashboard() {
                             ...prev,
                             customerId: '',
                             customerName: '',
+                            customerNumber: '',
                             amount: ''
                           }));
                         }}
@@ -4432,47 +5262,47 @@ export default function DataEntryDashboard() {
                   </div>
                 )}
 
-                {/* Customer Loans Section */}
                 {selectedCustomer && (
   <div className="mt-6">
     <h4 className="text-lg font-semibold mb-4">Customer Loans</h4>
     <div className="space-y-4">
-      {/* Get all loans including main loan and additional loans */}
       {displayLoans.map((loan, index) => {
-        const completion = calculateEMICompletion(loan);
-        const totalLoanAmount = calculateTotalLoanAmount(loan);
-        
-        return (
-          <div 
-            key={loan._id} 
-            className={`border rounded-lg p-4 ${
-              loan.isMainLoan 
-                ? 'border-gray-200 bg-white' 
-                : 'border-blue-200 bg-blue-50'
-            }`}
-          >
-            <div className="flex justify-between items-center mb-3">
-              <div>
-                <h5 className={`font-medium ${
-                  loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'
-                }`}>
-                  Loan {loan.isMainLoan ? 'L1 (Main Loan)' : `L${index + 1}`}
-                </h5>
-                <p className="text-xs text-gray-500">
-                  Loan Date: {formatDateToDDMMYYYY(loan.dateApplied)}
-                </p>
-              </div>
-              {/* REMOVED: Completion Percentage Badge */}
-              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                loan.isMainLoan 
-                  ? 'bg-blue-100 text-blue-800' 
-                  : 'bg-green-100 text-green-800'
-              }`}>
-                {loan.isMainLoan ? 'Main' : 'Additional'}
-              </span>
-            </div>
+  const completion = calculateEMICompletion(loan);
+  const behavior = calculatePaymentBehavior(loan); // ✅ Define behavior here
+  const totalLoanAmount = calculateTotalLoanAmount(loan);
+  
+  return (
+    <div key={loan._id} className="border border-gray-200 rounded-lg p-4 bg-white">
+      {/* Loan Header - UPDATED */}
+      <div className="flex justify-between items-start mb-3">
+        <div>
+          <div className="flex items-center gap-4">
+            <h5 className="font-medium text-gray-900 text-lg">
+              {loan.loanNumber}
+            </h5>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+              {loan.loanType} Loan
+            </span>
+          </div>
+          <p className="text-sm text-gray-500 mt-1">
+            Loan Date: {formatDateToDDMMYYYY(loan.dateApplied)}
+          </p>
+        </div>
+        {/* Behavior Score Section */}
+        <div className="text-right">
+          <div className="text-xs font-medium text-gray-500">Behavior Score</div>
+          <div className={`text-lg font-semibold ${
+            behavior.punctualityScore >= 90 ? 'text-green-600' :
+            behavior.punctualityScore >= 75 ? 'text-blue-600' :
+            behavior.punctualityScore >= 60 ? 'text-yellow-600' : 'text-red-600'
+          }`}>
+            {behavior.punctualityScore.toFixed(0)}%
+          </div>
+        </div>
+      </div>
+      
 
-            {/* Completion Progress Bar */}
+            {/* Completion Progress - UPDATED */}
             <div className="mb-4">
               <div className="flex justify-between text-sm mb-1">
                 <span>Completion: {completion.completionPercentage.toFixed(1)}%</span>
@@ -4490,61 +5320,51 @@ export default function DataEntryDashboard() {
               </div>
             </div>
 
+            {/* Loan Details Grid - UPDATED */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
               <div>
-                <label className={`block text-xs font-medium ${
-                  loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
-                }`}>
-                  Total Loan
+                <label className="block text-xs font-medium text-gray-500">
+                  Amount
                 </label>
-                <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
-                  ₹{totalLoanAmount.toLocaleString()}
+                <p className="text-gray-900">
+                  ₹{loan.amount?.toLocaleString()}
                 </p>
               </div>
               <div>
-                <label className={`block text-xs font-medium ${
-                  loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
-                }`}>
+                <label className="block text-xs font-medium text-gray-500">
                   EMI Amount
                 </label>
-                <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
+                <p className="text-gray-900">
                   ₹{loan.emiAmount}
                 </p>
               </div>
               <div>
-                <label className={`block text-xs font-medium ${
-                  loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
-                }`}>
-                  Loan Type
+                <label className="block text-xs font-medium text-gray-500">
+                  {loan.loanType === 'Daily' ? 'No. of Days' : 
+                   loan.loanType === 'Weekly' ? 'No. of Weeks' : 'No. of Months'}
                 </label>
-                <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
-                  {loan.loanType}
+                <p className="text-gray-900">
+                  {loan.loanDays}
                 </p>
               </div>
               <div>
-                <label className={`block text-xs font-medium ${
-                  loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
-                }`}>
-                  Duration
+                <label className="block text-xs font-medium text-gray-500">
+                  Total Loan Amount
                 </label>
-                <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
-                  {loan.loanDays} {loan.loanType === 'Daily' ? 'days' : 
-                                 loan.loanType === 'Weekly' ? 'weeks' : 'months'}
+                <p className="text-gray-900 font-semibold">
+                  ₹{totalLoanAmount.toLocaleString()}
                 </p>
               </div>
               <div>
-                <label className={`block text-xs font-medium ${
-                  loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
-                }`}>
+                <label className="block text-xs font-medium text-gray-500">
                   Next EMI Date
                 </label>
-                <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
+                <p className="text-gray-900">
                   {formatDateToDDMMYYYY(loan.nextEmiDate)}
                 </p>
               </div>
             </div>
             
-            {/* REMOVED: Duplicate EMI remaining and paid details */}
             <div className="mt-4 flex justify-end">
               <button 
                 onClick={() => handlePayNow(loan)}
@@ -4560,14 +5380,14 @@ export default function DataEntryDashboard() {
   </div>
 )}
 
-                {/* Help Text */}
+
                 {!selectedCustomer && (
                   <div className="mt-4 p-3 bg-blue-50 rounded-md border border-blue-200">
                     <p className="text-sm text-blue-700">
                       <strong>How to record EMI payment:</strong>
                     </p>
                     <ol className="text-xs text-blue-600 mt-1 list-decimal list-inside space-y-1">
-                      <li>Search for an active customer using name or loan number</li>
+                      <li>Search for an active customer using name or customer number</li>
                       <li>Select the customer from the search results</li>
                       <li>View the customer's loans and click "Pay Now" for the relevant loan</li>
                       <li>Fill in the payment details in the next screen</li>
@@ -4577,7 +5397,6 @@ export default function DataEntryDashboard() {
                 )}
               </div>
             ) : (
-              /* Payment Form */
               <div className="space-y-6">
                 <div className="bg-blue-50 p-4 rounded-md border border-blue-200">
                   <h4 className="text-lg font-semibold text-blue-900 mb-2">EMI Payment</h4>
@@ -4587,20 +5406,18 @@ export default function DataEntryDashboard() {
                       <p className="text-blue-900">{selectedCustomer?.name}</p>
                     </div>
                     <div>
+                      <span className="text-blue-600 font-medium">Customer Number:</span>
+                      <p className="text-blue-900">{selectedCustomer?.customerNumber}</p>
+                    </div>
+                    <div>
                       <span className="text-blue-600 font-medium">Loan:</span>
                       <p className="text-blue-900">
-                        {selectedLoanForPayment && displayLoans.find(l => l._id === selectedLoanForPayment._id)?.isMainLoan 
-                          ? 'L1 (Main Loan)' 
-                          : `L${displayLoans.findIndex(l => l._id === selectedLoanForPayment?._id) + 1}`}
+                        {selectedLoanForPayment?.loanNumber}
                       </p>
                     </div>
                     <div>
                       <span className="text-blue-600 font-medium">EMI Amount:</span>
                       <p className="text-blue-900 font-semibold">₹{selectedLoanForPayment?.emiAmount}</p>
-                    </div>
-                    <div>
-                      <span className="text-blue-600 font-medium">Loan Type:</span>
-                      <p className="text-blue-900">{selectedLoanForPayment?.loanType}</p>
                     </div>
                   </div>
                 </div>
@@ -4675,7 +5492,6 @@ export default function DataEntryDashboard() {
                       <p className="text-gray-900 font-medium">{currentOperator}</p>
                       <p className="text-xs text-gray-500 mt-1">Automatically set to logged-in operator</p>
                     </div>
-                    {/* Hidden input to maintain the value in state */}
                     <input 
                       type="hidden" 
                       value={currentOperator}
@@ -4684,7 +5500,6 @@ export default function DataEntryDashboard() {
                   </div>
                 </div>
 
-                {/* Notes Field */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Notes (Optional)
@@ -4698,7 +5513,6 @@ export default function DataEntryDashboard() {
                   />
                 </div>
 
-                {/* Action Buttons */}
                 <div className="flex justify-between space-x-3 mt-6">
                   <button 
                     onClick={() => setShowPaymentForm(false)}
@@ -4730,263 +5544,252 @@ export default function DataEntryDashboard() {
     );
   };
 
-  // Update the customer details view to show completion percentage
   const renderCustomerDetails = () => {
-    // Get all loans for display
-    const displayLoans = customerDetails ? getAllCustomerLoans(customerDetails, customerDetails) : [];
+  const displayLoans = customerDetails ? getAllCustomerLoans(customerDetails, customerDetails) : [];
 
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-          <div className="p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold">Customer Details</h3>
-              <button 
-                onClick={() => setShowCustomerDetails(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                ✕
-              </button>
-            </div>
-            
-            {customerDetails ? (
-              <div className="space-y-6">
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h4 className="text-lg font-semibold text-gray-900 mb-4">Personal Information</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">Customer Name</label>
-                      <p className="mt-1 text-sm text-gray-900">{customerDetails.name}</p>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">Status</label>
-                      <p className="mt-1">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          customerDetails.status === 'active' 
-                            ? 'bg-green-100 text-green-800'
-                            : customerDetails.status === 'inactive'
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-yellow-100 text-yellow-800'
-                        }`}>
-                          {customerDetails.status || 'Unknown'}
-                        </span>
-                      </p>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">Category</label>
-                      <p className="mt-1">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          customerDetails.category === 'A' ? 'bg-green-100 text-green-800' :
-                          customerDetails.category === 'B' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-blue-100 text-blue-800'
-                        }`}>
-                          {customerDetails.category || 'Not specified'}
-                        </span>
-                      </p>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">Office Category</label>
-                      <p className="mt-1 text-sm text-gray-900">{customerDetails.officeCategory || 'Not specified'}</p>
-                    </div>
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold">Customer Details</h3>
+            <button 
+              onClick={() => setShowCustomerDetails(false)}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              ✕
+            </button>
+          </div>
+          
+          {customerDetails ? (
+            <div className="space-y-6">
+              {/* Personal Information Section - Keep as is */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="text-lg font-semibold text-gray-900 mb-4">Personal Information</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Customer Name</label>
+                    <p className="mt-1 text-sm text-gray-900">{customerDetails.name}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Status</label>
+                    <p className="mt-1">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        customerDetails.status === 'active' 
+                          ? 'bg-green-100 text-green-800'
+                          : customerDetails.status === 'inactive'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {customerDetails.status || 'Unknown'}
+                      </span>
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Category</label>
+                    <p className="mt-1">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        customerDetails.category === 'A' ? 'bg-green-100 text-green-800' :
+                        customerDetails.category === 'B' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-blue-100 text-blue-800'
+                      }`}>
+                        {customerDetails.category || 'Not specified'}
+                      </span>
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Office Category</label>
+                    <p className="mt-1 text-sm text-gray-900">{customerDetails.officeCategory || 'Not specified'}</p>
                   </div>
                 </div>
+              </div>
 
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h4 className="text-lg font-semibold text-gray-900 mb-4">Business Information</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">Business Name</label>
-                      <p className="mt-1 text-sm text-gray-900">{customerDetails.businessName}</p>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">Area</label>
-                      <p className="mt-1 text-sm text-gray-900">{customerDetails.area}</p>
-                    </div>
-                    <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700">Address</label>
-                      <p className="mt-1 text-sm text-gray-900">{customerDetails.address || 'Not provided'}</p>
-                    </div>
+              {/* Business Information Section - Keep as is */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="text-lg font-semibold text-gray-900 mb-4">Business Information</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Business Name</label>
+                    <p className="mt-1 text-sm text-gray-900">{customerDetails.businessName}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Area</label>
+                    <p className="mt-1 text-sm text-gray-900">{customerDetails.area}</p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700">Address</label>
+                    <p className="mt-1 text-sm text-gray-900">{customerDetails.address || 'Not provided'}</p>
                   </div>
                 </div>
+              </div>
 
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <div className="flex justify-between items-center mb-4">
-                    <h4 className="text-lg font-semibold text-gray-900">Loan Information</h4>
-                    <button 
-                      onClick={() => setShowAddLoanModal(true)}
-                      className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm"
-                    >
-                      + Add New Loan
-                    </button>
-                  </div>
+              {/* Loan Information Section - UPDATED */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="flex justify-between items-center mb-4">
+                  <h4 className="text-lg font-semibold text-gray-900">Loan Information</h4>
+                  <button 
+                    onClick={() => setShowAddLoanModal(true)}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm"
+                  >
+                    + Add New Loan
+                  </button>
+                </div>
 
-                  <div className="space-y-4">
-                    {/* Display all loans including main loan and additional loans */}
-                    {displayLoans.map((loan, index) => {
-                      const completion = calculateEMICompletion(loan);
-                      const behavior = calculatePaymentBehavior(loan);
-                      
-                      return (
-                        <div 
-                          key={loan._id} 
-                          className={`border rounded-lg p-4 ${
-                            loan.isMainLoan 
-                              ? 'border-gray-200 bg-white' 
-                              : 'border-blue-200 bg-blue-50'
-                          }`}
-                        >
-                          <div className="flex justify-between items-center mb-3">
-                            <div>
-                              <h5 className={`font-medium ${
-                                loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'
-                              }`}>
-                                Loan {loan.isMainLoan ? 'L1 (Main Loan)' : `L${index + 1}`}
+                <div className="space-y-4">
+                  {displayLoans.map((loan, index) => {
+                    const completion = calculateEMICompletion(loan);
+                    const behavior = calculatePaymentBehavior(loan);
+                    const totalLoanAmount = calculateTotalLoanAmount(loan);
+                    
+                    return (
+                      <div 
+                        key={loan._id} 
+                        className="border border-gray-200 rounded-lg p-4 bg-white"
+                      >
+                        {/* Loan Header - UPDATED */}
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <div className="flex items-center gap-4">
+                              <h5 className="font-medium text-gray-900 text-lg">
+                                {loan.loanNumber}
                               </h5>
-                              <p className="text-xs text-gray-500">
-                Loan Date: {formatDateToDDMMYYYY(loan.dateApplied)}
-              </p>
-                              {loan.isMainLoan && (
-                                <p className="text-xs text-gray-500">Primary loan account</p>
-                              )}
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                {loan.loanType} Loan
+                              </span>
                             </div>
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                              loan.isMainLoan 
-                                ? 'bg-blue-100 text-blue-800' 
-                                : 'bg-green-100 text-green-800'
-                            }`}>
-                              {loan.isMainLoan ? 'Main' : 'Additional'}
-                            </span>
+                            <p className="text-sm text-gray-500 mt-1">
+                              Loan Date: {formatDateToDDMMYYYY(loan.dateApplied)}
+                            </p>
                           </div>
-                          
-                          {/* Completion Progress Bar */}
-                          <div className="mb-4">
-  <div className="flex justify-between text-sm mb-1">
-    <span>Completion: {completion.completionPercentage.toFixed(1)}%</span>
-    <span>{completion.remainingEmis} EMIs remaining</span>
-  </div>
-  <div className="w-full bg-gray-200 rounded-full h-2">
-    <div 
-      className="bg-green-600 h-2 rounded-full transition-all duration-300" 
-      style={{width: `${Math.min(completion.completionPercentage, 100)}%`}}
-    ></div>
-  </div>
-  <div className="flex justify-between text-xs text-gray-500 mt-1">
-    <span>Paid: ₹{completion.totalPaid}</span>
-    <span>Remaining: ₹{completion.remainingAmount}</span>
-  </div>
-</div>
-
-                          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-  <div>
-    <label className={`block text-xs font-medium ${
-      loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
-    }`}>
-      Total Loan
-    </label>
-    <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
-      ₹{calculateTotalLoanAmount(loan).toLocaleString()}
-    </p>
-  </div>
-  <div>
-    <label className={`block text-xs font-medium ${
-      loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
-    }`}>
-      EMI Amount
-    </label>
-    <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
-      ₹{loan.emiAmount}
-    </p>
-  </div>
-  <div>
-    <label className={`block text-xs font-medium ${
-      loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
-    }`}>
-      Loan Type
-    </label>
-    <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
-      {loan.loanType}
-    </p>
-  </div>
-  <div>
-    <label className={`block text-xs font-medium ${
-      loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
-    }`}>
-      Next EMI Date
-    </label>
-    <p className={loan.isMainLoan ? 'text-gray-900' : 'text-blue-900'}>
-      {formatDateToDDMMYYYY(loan.nextEmiDate)}
-    </p>
-  </div>
-  <div>
-    <label className={`block text-xs font-medium ${
-      loan.isMainLoan ? 'text-gray-500' : 'text-blue-600'
-    }`}>
-      Behavior Score
-    </label>
-    <p className={`font-semibold ${
-      behavior.punctualityScore >= 90 ? 'text-green-600' :
-      behavior.punctualityScore >= 75 ? 'text-blue-600' :
-      behavior.punctualityScore >= 60 ? 'text-yellow-600' : 'text-red-600'
-    }`}>
-      {behavior.punctualityScore.toFixed(0)}%
-    </p>
-  </div>
-</div>
-                          
-                          {/* Edit, Renew and Delete Buttons */}
-                          <div className="flex justify-end space-x-2 mt-4">
-                            <button 
-                              onClick={() => handleEditLoan(loan)}
-                              className="bg-yellow-600 text-white px-3 py-1 rounded-md hover:bg-yellow-700 text-sm"
-                            >
-                              Edit
-                            </button>
-                            <button 
-                              onClick={() => handleRenewLoan(loan)}
-                              className="bg-green-600 text-white px-3 py-1 rounded-md hover:bg-green-700 text-sm"
-                            >
-                              Renew
-                            </button>
-                            <button 
-                              onClick={() => handleDeleteLoan(loan)}
-                              className="bg-red-600 text-white px-3 py-1 rounded-md hover:bg-red-700 text-sm"
-                              disabled={isLoading}
-                            >
-                              {isLoading ? 'Deleting...' : 'Delete'}
-                            </button>
+                          <div className="text-right">
+                            <div className="text-xs font-medium text-gray-500">Behavior Score</div>
+                            <div className={`text-lg font-semibold ${
+                              behavior.punctualityScore >= 90 ? 'text-green-600' :
+                              behavior.punctualityScore >= 75 ? 'text-blue-600' :
+                              behavior.punctualityScore >= 60 ? 'text-yellow-600' : 'text-red-600'
+                            }`}>
+                              {behavior.punctualityScore.toFixed(0)}%
+                            </div>
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                        
+                        {/* Completion Progress - UPDATED */}
+                        <div className="mb-4">
+                          <div className="flex justify-between text-sm mb-1">
+                            <span>Completion: {completion.completionPercentage.toFixed(1)}%</span>
+                            <span>{completion.remainingEmis} EMIs remaining</span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div 
+                              className="bg-green-600 h-2 rounded-full transition-all duration-300" 
+                              style={{width: `${Math.min(completion.completionPercentage, 100)}%`}}
+                            ></div>
+                          </div>
+                          <div className="flex justify-between text-xs text-gray-500 mt-1">
+                            <span>Paid: ₹{completion.totalPaid}</span>
+                            <span>Remaining: ₹{completion.remainingAmount}</span>
+                          </div>
+                        </div>
 
-                <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
-                  <button 
-                    onClick={() => setShowCustomerDetails(false)}
-                    className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-                  >
-                    Close
-                  </button>
-                  <button 
-                    onClick={() => handleEditCustomer(customerDetails)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                  >
-                    Edit Profile
-                  </button>
+                        {/* Loan Details Grid - UPDATED */}
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500">
+                              Amount
+                            </label>
+                            <p className="text-gray-900 font-semibold">
+                              ₹{loan.amount?.toLocaleString()}
+                            </p>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500">
+                              EMI Amount
+                            </label>
+                            <p className="text-gray-900 font-semibold">
+                              ₹{loan.emiAmount}
+                            </p>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500">
+                              {loan.loanType === 'Daily' ? 'No. of Days' : 
+                               loan.loanType === 'Weekly' ? 'No. of Weeks' : 'No. of Months'}
+                            </label>
+                            <p className="text-gray-900 font-semibold">
+                              {loan.loanDays}
+                            </p>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500">
+                              Total Loan Amount
+                            </label>
+                            <p className="text-gray-900 font-semibold">
+                              ₹{totalLoanAmount.toLocaleString()}
+                            </p>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500">
+                              Next EMI Date
+                            </label>
+                            <p className="text-gray-900 font-semibold">
+                              {formatDateToDDMMYYYY(loan.nextEmiDate)}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        {/* Action Buttons */}
+                        <div className="flex justify-end space-x-2 mt-4">
+                          <button 
+                            onClick={() => handleEditLoan(loan)}
+                            className="bg-yellow-600 text-white px-3 py-1 rounded-md hover:bg-yellow-700 text-sm"
+                          >
+                            Edit
+                          </button>
+                          <button 
+                            onClick={() => handleRenewLoan(loan)}
+                            className="bg-green-600 text-white px-3 py-1 rounded-md hover:bg-green-700 text-sm"
+                          >
+                            Renew
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteLoan(loan)}
+                            className="bg-red-600 text-white px-3 py-1 rounded-md hover:bg-red-700 text-sm"
+                            disabled={isLoading}
+                          >
+                            {isLoading ? 'Deleting...' : 'Delete'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-            ) : (
-              <div className="text-center py-8">
-                <div className="text-gray-400 text-4xl mb-4">⏳</div>
-                <p className="text-gray-600">Loading customer details...</p>
+
+              <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                <button 
+                  onClick={() => setShowCustomerDetails(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  Close
+                </button>
+                <button 
+                  onClick={() => handleEditCustomer(customerDetails)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  Edit Profile
+                </button>
               </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <div className="text-gray-400 text-4xl mb-4">⏳</div>
+              <p className="text-gray-600">Loading customer details...</p>
+            </div>
+          )}
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   return (
     <div className="min-h-screen bg-gray-50">
