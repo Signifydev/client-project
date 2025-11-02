@@ -216,9 +216,6 @@ interface Filters {
   officeCategory: string;
 }
 
-interface DisplayLoan extends Loan {
-  // Removed isMainLoan property to make all loans equal
-}
 
 interface CalendarDay {
   date: Date;
