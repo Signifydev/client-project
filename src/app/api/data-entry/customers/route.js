@@ -149,17 +149,16 @@ export async function POST(request) {
 
     // Validate required fields
     if (!name || !businessName || !area || !customerNumber || !address || 
-        !category || !officeCategory || !loanDate || !loanAmount || 
-        !emiAmount || !loanDays || !loanType || !loginId || !password) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'All required fields must be filled'
-        },
-        { status: 400 }
-      );
-    }
-
+    !category || !officeCategory || !loanDate || !loanAmount || 
+    !emiAmount || !loanDays || !loanType || !loginId || !password) {
+  return NextResponse.json(
+    {
+      success: false,
+      error: 'All required fields must be filled'
+    },
+    { status: 400 }
+  );
+}
     // Validate phone numbers
     if (phone.length === 0) {
       return NextResponse.json(
@@ -229,35 +228,34 @@ export async function POST(request) {
 
     // Create new customer with pending status (requires admin approval)
     const newCustomer = new Customer({
-      name: name.trim(),
-      phone,
-      whatsappNumber: whatsappNumber.trim(),
-      businessName: businessName.trim(),
-      area: area.trim(),
-      customerNumber: customerNumber.trim(), // Updated field name
-      loanAmount: parseFloat(loanAmount),
-      emiAmount: parseFloat(emiAmount),
-      loanType,
-      address: address.trim(),
-      category,
-      officeCategory,
-      status: 'pending', // Set to pending for admin approval
-      userId: loginId.trim(),
-      password, // In production, this should be hashed
-      createdBy: createdBy || 'data_entry_operator_1',
-      
-      // Loan details for the main loan
-      loanDate: new Date(loanDate),
-      loanDays: parseInt(loanDays),
-      
-      // File uploads (you'll need to handle file storage)
-      profilePicture: profilePicture ? `/uploads/profile/${profilePicture.name}` : null,
-      fiDocuments: {
-        shop: fiDocumentShop ? `/uploads/documents/shop/${fiDocumentShop.name}` : null,
-        home: fiDocumentHome ? `/uploads/documents/home/${fiDocumentHome.name}` : null
-      }
-    });
-
+  name: name.trim(),
+  phone,
+  whatsappNumber: whatsappNumber.trim(),
+  businessName: businessName.trim(),
+  area: area.trim(),
+  customerNumber: customerNumber.trim(),
+  loanAmount: parseFloat(loanAmount),
+  emiAmount: parseFloat(emiAmount),
+  loanType,
+  address: address.trim(),
+  category,
+  officeCategory,
+  status: 'pending', // Set to pending for admin approval
+  loginId: loginId.trim(),  // ← FIXED: Changed from userId to loginId
+  password: password, // Make sure password is passed correctly
+  createdBy: createdBy || 'data_entry_operator_1',
+  
+  // Loan details for the main loan
+  loanDate: new Date(loanDate),
+  loanDays: parseInt(loanDays),
+  
+  // File uploads (you'll need to handle file storage)
+  profilePicture: profilePicture ? `/uploads/profile/${profilePicture.name}` : null,
+  fiDocuments: {
+    shop: fiDocumentShop ? `/uploads/documents/shop/${fiDocumentShop.name}` : null,
+    home: fiDocumentHome ? `/uploads/documents/home/${fiDocumentHome.name}` : null
+  }
+});
     console.log('💾 Saving customer to database...');
 
     // Save customer to database
