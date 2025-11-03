@@ -127,6 +127,8 @@ interface NewCustomerStep1 {
     shop: File | null;
     home: File | null;
   };
+  // Add index signature to fix TypeScript error
+  [key: string]: any;
 }
 
 interface NewCustomerStep2 {
@@ -138,12 +140,16 @@ interface NewCustomerStep2 {
   loanType: string;
   emiType: 'fixed' | 'custom';
   customEmiAmount?: string;
+  // Add index signature to fix TypeScript error
+  [key: string]: any;
 }
 
 interface NewCustomerStep3 {
   loginId: string;
   password: string;
   confirmPassword: string;
+  // Add index signature to fix TypeScript error
+  [key: string]: any;
 }
 
 interface RenewLoanData {
@@ -993,42 +999,42 @@ export default function DataEntryDashboard() {
   };
 
   const resetCustomerForm = (): void => {
-    setCurrentStep(1);
-    setStep1Data({
-      name: '',
-      phone: ['', ''],
-      whatsappNumber: '',
-      businessName: '',
-      area: '',
-      customerNumber: '',
-      address: '',
-      category: '',
-      officeCategory: '',
-      profilePicture: null,
-      fiDocuments: {
-        shop: null,
-        home: null
-      }
-    });
-    setStep2Data({
-      loanDate: new Date().toISOString().split('T')[0],
-      emiStartDate: new Date().toISOString().split('T')[0],
-      loanAmount: '',
-      emiAmount: '',
-      loanDays: '',
-      loanType: 'Daily',
-      emiType: 'fixed',
-      customEmiAmount: ''
-    });
-    setStep3Data({
-      loginId: '',
-      password: '',
-      confirmPassword: ''
-    });
-    setStep1Errors({});
-    setStep2Errors({});
-    setStep3Errors({});
-  };
+  setCurrentStep(1);
+  setStep1Data({
+    name: '',
+    phone: ['', ''],
+    whatsappNumber: '',
+    businessName: '',
+    area: '',
+    customerNumber: '',
+    address: '',
+    category: '',
+    officeCategory: '',
+    profilePicture: null,
+    fiDocuments: {
+      shop: null,
+      home: null
+    }
+  });
+  setStep2Data({
+    loanDate: new Date().toISOString().split('T')[0],
+    emiStartDate: new Date().toISOString().split('T')[0],
+    loanAmount: '',
+    emiAmount: '',
+    loanDays: '',
+    loanType: 'Daily',
+    emiType: 'fixed', // Make sure this has a default value
+    customEmiAmount: ''
+  });
+  setStep3Data({
+    loginId: '',
+    password: '',
+    confirmPassword: ''
+  });
+  setStep1Errors({});
+  setStep2Errors({});
+  setStep3Errors({});
+};
 
   const fetchDashboardData = async () => {
     try {
@@ -1671,141 +1677,245 @@ export default function DataEntryDashboard() {
   };
 
   const handleAddCustomer = async () => {
-    if (!validateStep3()) return;
+  if (!validateStep3()) return;
 
-    if (!step1Data.name || !step1Data.businessName || !step1Data.area || 
-        !step1Data.customerNumber || !step1Data.address || !step1Data.category || 
-        !step1Data.officeCategory) {
-      alert('Please fill all required fields in Step 1');
+  if (!step1Data.name || !step1Data.businessName || !step1Data.area || 
+      !step1Data.customerNumber || !step1Data.address || !step1Data.category || 
+      !step1Data.officeCategory) {
+    alert('Please fill all required fields in Step 1');
+    setCurrentStep(1);
+    return;
+  }
+
+  const validPhones = step1Data.phone.filter(p => p.trim() !== '');
+  if (validPhones.length === 0) {
+    alert('Please provide at least one phone number');
+    setCurrentStep(1);
+    return;
+  }
+
+  for (const phone of validPhones) {
+    if (!/^\d{10}$/.test(phone)) {
+      alert('Please ensure all phone numbers are valid 10-digit numbers');
       setCurrentStep(1);
       return;
     }
+  }
 
-    const validPhones = step1Data.phone.filter(p => p.trim() !== '');
-    if (validPhones.length === 0) {
-      alert('Please provide at least one phone number');
-      setCurrentStep(1);
-      return;
-    }
+  // ENHANCED: Validate Step 2 data with detailed checks
+  console.log('🔍 DEBUG - Validating Step 2 data before submission:');
+  const step2Validation = {
+    loanDate: step2Data.loanDate,
+    emiStartDate: step2Data.emiStartDate,
+    loanAmount: step2Data.loanAmount,
+    emiAmount: step2Data.emiAmount,
+    loanDays: step2Data.loanDays,
+    loanType: step2Data.loanType,
+    emiType: step2Data.emiType
+  };
 
-    for (const phone of validPhones) {
-      if (!/^\d{10}$/.test(phone)) {
-        alert('Please ensure all phone numbers are valid 10-digit numbers');
-        setCurrentStep(1);
-        return;
-      }
-    }
+  console.log('Step 2 Data:', step2Validation);
 
-    if (!step2Data.loanAmount || !step2Data.emiAmount || !step2Data.loanDays) {
-      alert('Please fill all required loan details in Step 2');
+  // Fix TypeScript error by using type-safe field access
+  const missingFields: string[] = [];
+  if (!step2Data.loanDate) missingFields.push('loanDate');
+  if (!step2Data.emiStartDate) missingFields.push('emiStartDate');
+  if (!step2Data.loanAmount) missingFields.push('loanAmount');
+  if (!step2Data.emiAmount) missingFields.push('emiAmount');
+  if (!step2Data.loanDays) missingFields.push('loanDays');
+  if (!step2Data.loanType) missingFields.push('loanType');
+  if (!step2Data.emiType) missingFields.push('emiType');
+
+  if (missingFields.length > 0) {
+    console.error('❌ Missing Step 2 fields:', missingFields);
+    alert(`Please fill all loan details. Missing: ${missingFields.join(', ')}`);
+    setCurrentStep(2);
+    return;
+  }
+
+  // Validate numbers are positive - type-safe access
+  const invalidNumbers: string[] = [];
+  const loanAmountNum = parseFloat(step2Data.loanAmount);
+  const emiAmountNum = parseFloat(step2Data.emiAmount);
+  const loanDaysNum = parseFloat(step2Data.loanDays);
+
+  if (isNaN(loanAmountNum) || loanAmountNum <= 0) invalidNumbers.push('loanAmount');
+  if (isNaN(emiAmountNum) || emiAmountNum <= 0) invalidNumbers.push('emiAmount');
+  if (isNaN(loanDaysNum) || loanDaysNum <= 0) invalidNumbers.push('loanDays');
+
+  if (invalidNumbers.length > 0) {
+    alert(`Please enter valid positive numbers for: ${invalidNumbers.join(', ')}`);
+    setCurrentStep(2);
+    return;
+  }
+
+  // Validate custom EMI
+  if (step2Data.emiType === 'custom' && step2Data.loanType !== 'Daily') {
+    if (!step2Data.customEmiAmount || parseFloat(step2Data.customEmiAmount) <= 0) {
+      alert('Custom EMI amount is required for custom EMI type with Weekly/Monthly loans');
       setCurrentStep(2);
       return;
     }
+  }
 
-    setIsLoading(true);
-    try {
-      const formData = new FormData();
-      
-      formData.append('name', step1Data.name.trim());
-      
-      step1Data.phone.forEach((phone, index) => {
-        if (phone.trim()) {
-          formData.append(`phone[${index}]`, phone.trim());
-        }
-      });
-      
-      if (step1Data.whatsappNumber.trim()) {
-        formData.append('whatsappNumber', step1Data.whatsappNumber.trim());
-      } else {
-        formData.append('whatsappNumber', '');
-      }
-      
-      formData.append('businessName', step1Data.businessName.trim());
-      formData.append('area', step1Data.area.trim());
-      formData.append('customerNumber', `CN${step1Data.customerNumber}`);
-      formData.append('address', step1Data.address.trim());
-      formData.append('category', step1Data.category);
-      formData.append('officeCategory', step1Data.officeCategory);
-      
-      if (step1Data.profilePicture) {
-        formData.append('profilePicture', step1Data.profilePicture);
-      }
-      if (step1Data.fiDocuments.shop) {
-        formData.append('fiDocumentShop', step1Data.fiDocuments.shop);
-      }
-      if (step1Data.fiDocuments.home) {
-        formData.append('fiDocumentHome', step1Data.fiDocuments.home);
-      }
-      
-      formData.append('loanDate', step2Data.loanDate);
-      formData.append('emiStartDate', step2Data.emiStartDate);
-      formData.append('loanAmount', step2Data.loanAmount);
-      formData.append('emiAmount', step2Data.emiAmount);
-      formData.append('loanDays', step2Data.loanDays);
-      formData.append('loanType', step2Data.loanType);
-      
-      formData.append('loginId', step3Data.loginId.trim());
-      formData.append('password', step3Data.password);
-      formData.append('createdBy', 'data_entry_operator_1');
+  // Validate dates
+  if (new Date(step2Data.emiStartDate) < new Date(step2Data.loanDate)) {
+    alert('EMI start date cannot be before loan date');
+    setCurrentStep(2);
+    return;
+  }
 
-      console.log('📦 Sending customer data:', {
-        name: step1Data.name,
-        businessName: step1Data.businessName,
-        area: step1Data.area,
-        customerNumber: `CN${step1Data.customerNumber}`,
-        address: step1Data.address,
-        category: step1Data.category,
-        officeCategory: step1Data.officeCategory,
-        phones: step1Data.phone.filter(p => p.trim()),
-        whatsappNumber: step1Data.whatsappNumber,
-        loanAmount: step2Data.loanAmount,
-        emiAmount: step2Data.emiAmount,
-        loanDays: step2Data.loanDays,
-        loanType: step2Data.loanType,
-        emiStartDate: step2Data.emiStartDate
-      });
+  setIsLoading(true);
+  try {
+    // DEBUG: Log all data before creating FormData
+    console.log('📦 DEBUG - All data before API call:');
+    console.log('Step 1:', {
+      name: step1Data.name,
+      phone: step1Data.phone,
+      whatsappNumber: step1Data.whatsappNumber,
+      businessName: step1Data.businessName,
+      area: step1Data.area,
+      customerNumber: step1Data.customerNumber,
+      address: step1Data.address,
+      category: step1Data.category,
+      officeCategory: step1Data.officeCategory
+    });
+    console.log('Step 2:', step2Validation);
+    console.log('Step 3:', {
+      loginId: step3Data.loginId,
+      password: step3Data.password ? '***' : 'missing',
+      confirmPassword: step3Data.confirmPassword ? '***' : 'missing'
+    });
 
-      const response = await fetch('/api/data-entry/customers', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json();
-      
-      if (!response.ok) {
-        if (response.status === 409) {
-          if (data.field === 'phone') {
-            throw new Error('Customer with this phone number already exists');
-          } else if (data.field === 'customerNumber') {
-            throw new Error('Customer number already exists. Please use a unique customer number');
-          } else {
-            throw new Error('A pending request already exists for this customer');
-          }
-        }
-        
-        if (data.error) {
-          throw new Error(data.error);
-        } else if (data.message) {
-          throw new Error(data.message);
-        } else {
-          throw new Error(`Failed to submit customer request: ${response.status} ${response.statusText}`);
-        }
+    const formData = new FormData();
+    
+    // Step 1: Customer Basic Details
+    formData.append('name', step1Data.name.trim());
+    
+    // Add phone numbers - ensure at least primary phone exists
+    step1Data.phone.forEach((phone, index) => {
+      if (phone && phone.trim()) {
+        formData.append(`phone[${index}]`, phone.trim());
       }
-
-      alert(data.message || 'Customer request submitted successfully! Waiting for admin approval.');
-      setShowAddCustomer(false);
-      resetCustomerForm();
-      
-      fetchDashboardData();
-      if (activeTab === 'requests') fetchPendingRequests();
-      
-    } catch (error: any) {
-      console.error('Error submitting customer:', error);
-      alert('Error: ' + error.message);
-    } finally {
-      setIsLoading(false);
+    });
+    
+    // Add WhatsApp number (can be empty)
+    formData.append('whatsappNumber', step1Data.whatsappNumber ? step1Data.whatsappNumber.trim() : '');
+    
+    formData.append('businessName', step1Data.businessName.trim());
+    formData.append('area', step1Data.area.trim());
+    formData.append('customerNumber', `CN${step1Data.customerNumber.replace('CN', '')}`.trim());
+    formData.append('address', step1Data.address.trim());
+    formData.append('category', step1Data.category);
+    formData.append('officeCategory', step1Data.officeCategory);
+    
+    // Step 2: Loan Details - ALL FIELDS ARE REQUIRED
+    formData.append('loanDate', step2Data.loanDate);
+    formData.append('emiStartDate', step2Data.emiStartDate);
+    formData.append('loanAmount', step2Data.loanAmount.toString());
+    formData.append('emiAmount', step2Data.emiAmount.toString());
+    formData.append('loanDays', step2Data.loanDays.toString());
+    formData.append('loanType', step2Data.loanType);
+    formData.append('emiType', step2Data.emiType);
+    
+    // Custom EMI amount - only append if it exists
+    if (step2Data.customEmiAmount) {
+      formData.append('customEmiAmount', step2Data.customEmiAmount.toString());
+    } else {
+      formData.append('customEmiAmount', ''); // Send empty string if not applicable
     }
-  };
+    
+    // Step 3: Login Credentials
+    formData.append('loginId', step3Data.loginId.trim());
+    formData.append('password', step3Data.password);
+    formData.append('confirmPassword', step3Data.confirmPassword);
+    formData.append('createdBy', 'data_entry_operator_1');
+
+    // File Uploads
+    if (step1Data.profilePicture) {
+      formData.append('profilePicture', step1Data.profilePicture);
+      console.log('📷 Profile picture added:', step1Data.profilePicture.name);
+    }
+    if (step1Data.fiDocuments.shop) {
+      formData.append('fiDocumentShop', step1Data.fiDocuments.shop);
+      console.log('📄 Shop FI document added:', step1Data.fiDocuments.shop.name);
+    }
+    if (step1Data.fiDocuments.home) {
+      formData.append('fiDocumentHome', step1Data.fiDocuments.home);
+      console.log('📄 Home FI document added:', step1Data.fiDocuments.home.name);
+    }
+
+    // DEBUG: Verify all form data is properly set
+    console.log('📤 DEBUG - FormData contents:');
+    for (let [key, value] of formData.entries()) {
+      if (key.includes('password')) {
+        console.log(`  ${key}: *** (hidden)`);
+      } else {
+        console.log(`  ${key}:`, value);
+      }
+    }
+
+    // Count the number of fields to ensure all are present
+    const fieldCount = Array.from(formData.entries()).length;
+    console.log(`✅ FormData prepared with ${fieldCount} fields`);
+
+    console.log('🟡 Sending customer data to API...');
+    const response = await fetch('/api/data-entry/customers', {
+      method: 'POST',
+      body: formData,
+    });
+
+    const responseText = await response.text();
+    console.log('📄 Raw API response:', responseText);
+
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('❌ Failed to parse response as JSON:', parseError);
+      throw new Error('Server returned invalid response');
+    }
+
+    if (!response.ok) {
+      console.error('❌ API error response:', data);
+      
+      if (response.status === 409) {
+        if (data.field === 'phone') {
+          throw new Error('Customer with this phone number already exists');
+        } else if (data.field === 'customerNumber') {
+          throw new Error('Customer number already exists. Please use a unique customer number');
+        } else if (data.field === 'loginId') {
+          throw new Error('Login ID already exists. Please use a unique login ID');
+        } else {
+          throw new Error('A pending request already exists for this customer');
+        }
+      }
+      
+      if (data.error) {
+        throw new Error(data.error);
+      } else if (data.message) {
+        throw new Error(data.message);
+      } else {
+        throw new Error(`Failed to submit customer request: ${response.status} ${response.statusText}`);
+      }
+    }
+
+    console.log('✅ API response success:', data);
+
+    alert(data.message || 'Customer request submitted successfully! Waiting for admin approval.');
+    setShowAddCustomer(false);
+    resetCustomerForm();
+    
+    fetchDashboardData();
+    if (activeTab === 'requests') fetchPendingRequests();
+    
+  } catch (error: any) { // Fix TypeScript error by specifying error type
+    console.error('❌ Error submitting customer:', error);
+    alert('Error: ' + (error.message || 'Unknown error occurred'));
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const handleUpdateEMI = async () => {
     if (!selectedCustomer || !selectedLoanForPayment) {
@@ -2594,25 +2704,29 @@ export default function DataEntryDashboard() {
 
       {/* Row 4 */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Customer Number *</label>
-        <div className="flex">
-          <span className="inline-flex items-center px-3 py-2 border border-r-0 border-gray-300 bg-gray-50 text-gray-500 rounded-l-md">
-            CN
-          </span>
-          <input 
-            type="text" 
-            className={`flex-1 px-3 py-2 border rounded-r-md ${
-              step1Errors.customerNumber ? 'border-red-500' : 'border-gray-300'
-            }`}
-            value={step1Data.customerNumber}
-            onChange={(e) => setStep1Data({...step1Data, customerNumber: e.target.value.replace(/\D/g, '')})}
-            placeholder="Enter numbers only"
-            maxLength={10}
-          />
-        </div>
-        {step1Errors.customerNumber && <p className="text-red-500 text-xs mt-1">{step1Errors.customerNumber}</p>}
-        <p className="text-xs text-gray-500 mt-1">Must be unique. Full customer number: CN{step1Data.customerNumber || '___'}</p>
-      </div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">Customer Number *</label>
+  <div className="flex">
+    <span className="inline-flex items-center px-3 py-2 border border-r-0 border-gray-300 bg-gray-50 text-gray-500 rounded-l-md">
+      CN
+    </span>
+    <input 
+      type="text" 
+      className={`flex-1 px-3 py-2 border rounded-r-md ${
+        step1Errors.customerNumber ? 'border-red-500' : 'border-gray-300'
+      }`}
+      value={step1Data.customerNumber.replace('CN', '')} // Remove CN for input display
+      onChange={(e) => {
+        const numbersOnly = e.target.value.replace(/\D/g, '');
+        // Store with CN prefix
+        setStep1Data({...step1Data, customerNumber: `CN${numbersOnly}`});
+      }}
+      placeholder="Enter numbers only"
+      maxLength={10}
+    />
+  </div>
+  {step1Errors.customerNumber && <p className="text-red-500 text-xs mt-1">{step1Errors.customerNumber}</p>}
+  <p className="text-xs text-gray-500 mt-1">Must be unique. Full customer number: {step1Data.customerNumber || 'CN___'}</p>
+</div>
       
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">Address *</label>
