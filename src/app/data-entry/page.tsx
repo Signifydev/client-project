@@ -1847,7 +1847,7 @@ export default function DataEntryDashboard() {
 
     // DEBUG: Verify all form data is properly set
     console.log('📤 DEBUG - FormData contents:');
-    for (let [key, value] of formData.entries()) {
+    for (const [key, value] of formData.entries()) {
       if (key.includes('password')) {
         console.log(`  ${key}: *** (hidden)`);
       } else {
