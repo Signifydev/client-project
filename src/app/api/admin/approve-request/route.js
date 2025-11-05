@@ -192,37 +192,44 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
   // Hash password
   const hashedPassword = await bcrypt.hash(loginData.password, 12);
 
-  // Create customer with proper data extraction
-  const customerDataToSave = {
-    name: customerData.name,
-    phone: Array.isArray(customerData.phone) ? customerData.phone : [customerData.phone],
-    whatsappNumber: customerData.whatsappNumber || '',
-    businessName: customerData.businessName,
-    area: customerData.area,
-    customerNumber: customerData.customerNumber,
-    address: customerData.address,
-    category: customerData.category || 'A',
-    officeCategory: customerData.officeCategory || 'Office 1',
-    profilePicture: customerData.profilePicture || {},
-    fiDocuments: customerData.fiDocuments || { shop: {}, home: {} },
-    loanAmount: parseFloat(loanData.loanAmount),
-    emiAmount: parseFloat(loanData.emiAmount),
-    loanType: loanData.loanType,
-    loanDate: new Date(loanData.loanDate || loanData.dateApplied || new Date()),
-    loanDays: parseInt(loanData.loanDays) || 30,
-    emiType: loanData.emiType || 'fixed',
-    customEmiAmount: loanData.customEmiAmount ? parseFloat(loanData.customEmiAmount) : null,
-    emiStartDate: new Date(loanData.emiStartDate || loanData.loanDate || new Date()),
-    loginId: loginData.loginId,
-    password: hashedPassword,
-    status: 'active',
-    isActive: true,
-    createdBy: requestDoc.createdBy,
-    approvedBy: processedBy,
-    approvedAt: new Date(),
-    createdAt: new Date(),
-    updatedAt: new Date()
-  };
+  // Create customer with proper data extraction and file handling
+const customerDataToSave = {
+  name: customerData.name,
+  phone: Array.isArray(customerData.phone) ? customerData.phone : [customerData.phone],
+  whatsappNumber: customerData.whatsappNumber || '',
+  businessName: customerData.businessName,
+  area: customerData.area,
+  customerNumber: customerData.customerNumber,
+  address: customerData.address,
+  category: customerData.category || 'A',
+  officeCategory: customerData.officeCategory || 'Office 1',
+  
+  // Fix for file upload fields - ensure they are objects, not null
+  profilePicture: customerData.profilePicture && typeof customerData.profilePicture === 'object' 
+    ? customerData.profilePicture 
+    : {},
+  fiDocuments: customerData.fiDocuments && typeof customerData.fiDocuments === 'object'
+    ? customerData.fiDocuments
+    : { shop: {}, home: {} },
+  
+  loanAmount: parseFloat(loanData.loanAmount),
+  emiAmount: parseFloat(loanData.emiAmount),
+  loanType: loanData.loanType,
+  loanDate: new Date(loanData.loanDate || loanData.dateApplied || new Date()),
+  loanDays: parseInt(loanData.loanDays) || 30,
+  emiType: loanData.emiType || 'fixed',
+  customEmiAmount: loanData.customEmiAmount ? parseFloat(loanData.customEmiAmount) : null,
+  emiStartDate: new Date(loanData.emiStartDate || loanData.loanDate || new Date()),
+  loginId: loginData.loginId,
+  password: hashedPassword,
+  status: 'active',
+  isActive: true,
+  createdBy: requestDoc.createdBy,
+  approvedBy: processedBy,
+  approvedAt: new Date(),
+  createdAt: new Date(),
+  updatedAt: new Date()
+};
 
   console.log('💾 Creating customer with data:', {
     name: customerDataToSave.name,
@@ -443,8 +450,8 @@ async function approveCustomerEdit(requestDoc, reason, processedBy) {
   const updatableFields = [
     'name', 'phone', 'whatsappNumber', 'businessName', 'area', 'address',
     'customerNumber', 'category', 'officeCategory', 'loginId',
-    'profilePicture', 'fiDocuments', 'loanAmount', 'emiAmount', 'loanType',
-    'loanDate', 'loanDays', 'emiType', 'customEmiAmount', 'emiStartDate'
+    'loanAmount', 'emiAmount', 'loanType', 'loanDate', 'loanDays', 
+    'emiType', 'customEmiAmount', 'emiStartDate'
   ];
 
   let updatedFields = [];
@@ -454,6 +461,21 @@ async function approveCustomerEdit(requestDoc, reason, processedBy) {
       updatedFields.push(field);
     }
   });
+
+  // Handle file upload fields separately to ensure they are objects
+  if (changes.profilePicture !== undefined) {
+    customer.profilePicture = changes.profilePicture && typeof changes.profilePicture === 'object' 
+      ? changes.profilePicture 
+      : {};
+    updatedFields.push('profilePicture');
+  }
+
+  if (changes.fiDocuments !== undefined) {
+    customer.fiDocuments = changes.fiDocuments && typeof changes.fiDocuments === 'object'
+      ? changes.fiDocuments
+      : { shop: {}, home: {} };
+    updatedFields.push('fiDocuments');
+  }
 
   customer.updatedAt = new Date();
   customer.lastEditedBy = processedBy;
