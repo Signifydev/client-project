@@ -193,50 +193,57 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
   const hashedPassword = await bcrypt.hash(loginData.password, 12);
 
   // Create customer with proper data extraction and file handling
-const customerDataToSave = {
-  name: customerData.name,
-  phone: Array.isArray(customerData.phone) ? customerData.phone : [customerData.phone],
-  whatsappNumber: customerData.whatsappNumber || '',
-  businessName: customerData.businessName,
-  area: customerData.area,
-  customerNumber: customerData.customerNumber,
-  address: customerData.address,
-  category: customerData.category || 'A',
-  officeCategory: customerData.officeCategory || 'Office 1',
-  
-  // Fix for file upload fields - ensure they are objects, not null
-  profilePicture: customerData.profilePicture && typeof customerData.profilePicture === 'object' 
-    ? customerData.profilePicture 
-    : {},
-  fiDocuments: customerData.fiDocuments && typeof customerData.fiDocuments === 'object'
-    ? customerData.fiDocuments
-    : { shop: {}, home: {} },
-  
-  loanAmount: parseFloat(loanData.loanAmount),
-  emiAmount: parseFloat(loanData.emiAmount),
-  loanType: loanData.loanType,
-  loanDate: new Date(loanData.loanDate || loanData.dateApplied || new Date()),
-  loanDays: parseInt(loanData.loanDays) || 30,
-  emiType: loanData.emiType || 'fixed',
-  customEmiAmount: loanData.customEmiAmount ? parseFloat(loanData.customEmiAmount) : null,
-  emiStartDate: new Date(loanData.emiStartDate || loanData.loanDate || new Date()),
-  loginId: loginData.loginId,
-  password: hashedPassword,
-  status: 'active',
-  isActive: true,
-  createdBy: requestDoc.createdBy,
-  approvedBy: processedBy,
-  approvedAt: new Date(),
-  createdAt: new Date(),
-  updatedAt: new Date()
-};
+  const customerDataToSave = {
+    name: customerData.name,
+    phone: Array.isArray(customerData.phone) ? customerData.phone : [customerData.phone],
+    whatsappNumber: customerData.whatsappNumber || '',
+    businessName: customerData.businessName,
+    area: customerData.area,
+    customerNumber: customerData.customerNumber,
+    address: customerData.address,
+    category: customerData.category || 'A',
+    officeCategory: customerData.officeCategory || 'Office 1',
+    
+    // FIXED: Handle null values for file upload fields
+    profilePicture: customerData.profilePicture && customerData.profilePicture !== null 
+      ? customerData.profilePicture 
+      : {},
+    fiDocuments: {
+      shop: (customerData.fiDocuments?.shop && customerData.fiDocuments.shop !== null) 
+        ? customerData.fiDocuments.shop 
+        : {},
+      home: (customerData.fiDocuments?.home && customerData.fiDocuments.home !== null) 
+        ? customerData.fiDocuments.home 
+        : {}
+    },
+    
+    loanAmount: parseFloat(loanData.loanAmount),
+    emiAmount: parseFloat(loanData.emiAmount),
+    loanType: loanData.loanType,
+    loanDate: new Date(loanData.loanDate || loanData.dateApplied || new Date()),
+    loanDays: parseInt(loanData.loanDays) || 30,
+    emiType: loanData.emiType || 'fixed',
+    customEmiAmount: loanData.customEmiAmount ? parseFloat(loanData.customEmiAmount) : null,
+    emiStartDate: new Date(loanData.emiStartDate || loanData.loanDate || new Date()),
+    loginId: loginData.loginId,
+    password: hashedPassword,
+    status: 'active',
+    isActive: true,
+    createdBy: requestDoc.createdBy,
+    approvedBy: processedBy,
+    approvedAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date()
+  };
 
   console.log('💾 Creating customer with data:', {
     name: customerDataToSave.name,
     customerNumber: customerDataToSave.customerNumber,
     phone: customerDataToSave.phone,
     loanAmount: customerDataToSave.loanAmount,
-    emiAmount: customerDataToSave.emiAmount
+    emiAmount: customerDataToSave.emiAmount,
+    profilePicture: customerDataToSave.profilePicture,
+    fiDocuments: customerDataToSave.fiDocuments
   });
 
   const customer = new Customer(customerDataToSave);
