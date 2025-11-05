@@ -204,18 +204,28 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     category: customerData.category || 'A',
     officeCategory: customerData.officeCategory || 'Office 1',
     
-    // FIXED: Handle null values for file upload fields
-    profilePicture: customerData.profilePicture && customerData.profilePicture !== null 
-      ? customerData.profilePicture 
-      : {},
-    fiDocuments: {
-      shop: (customerData.fiDocuments?.shop && customerData.fiDocuments.shop !== null) 
-        ? customerData.fiDocuments.shop 
-        : {},
-      home: (customerData.fiDocuments?.home && customerData.fiDocuments.home !== null) 
-        ? customerData.fiDocuments.home 
-        : {}
-    },
+    
+    // FIXED: Match the Customer schema structure for file fields
+profilePicture: {
+  filename: null,
+  url: null,
+  originalName: null,
+  uploadedAt: new Date()
+},
+fiDocuments: {
+  shop: {
+    filename: null,
+    url: null,
+    originalName: null,
+    uploadedAt: new Date()
+  },
+  home: {
+    filename: null,
+    url: null,
+    originalName: null,
+    uploadedAt: new Date()
+  }
+},
     
     loanAmount: parseFloat(loanData.loanAmount),
     emiAmount: parseFloat(loanData.emiAmount),
