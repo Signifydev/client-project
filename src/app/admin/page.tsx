@@ -1797,33 +1797,39 @@ export default function DashboardPage() {
   // Filter states
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
-    loanNumber: '',
-    loanType: '',
-    status: ''
-  });
+  customerNumber: '',
+  loanType: '',
+  status: '',
+  officeCategory: '',
+  category: '' // Add category filter
+});
   const [loading, setLoading] = useState(true)
   const [showLoanDetails, setShowLoanDetails] = useState(false)
 
   // Enhanced filtered customers calculation
   const filteredCustomers = customers.filter(customer => {
-    // Main search term (name, phone, or loan number)
-    const matchesSearch = searchTerm === '' || 
-      customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      customer.loanNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      customer.phone.includes(searchTerm);
+  const matchesSearch = searchTerm === '' || 
+    customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    customer.customerNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    customer.phone.includes(searchTerm);
 
-    // Additional filters
-    const matchesLoanNumber = filters.loanNumber === '' || 
-      customer.loanNumber.toLowerCase().includes(filters.loanNumber.toLowerCase());
-    
-    const matchesLoanType = filters.loanType === '' || 
-      customer.loanType === filters.loanType;
-    
-    const matchesStatus = filters.status === '' || 
-      customer.status === filters.status;
+  const matchesCustomerNumber = filters.customerNumber === '' || 
+    (customer.customerNumber && customer.customerNumber.toLowerCase().includes(filters.customerNumber.toLowerCase()));
+  
+  const matchesLoanType = filters.loanType === '' || 
+    customer.loanType === filters.loanType;
+  
+  const matchesStatus = filters.status === '' || 
+    customer.status === filters.status;
 
-    return matchesSearch && matchesLoanNumber && matchesLoanType && matchesStatus;
-  });
+  const matchesOfficeCategory = filters.officeCategory === '' || 
+    customer.officeCategory === filters.officeCategory;
+
+  const matchesCategory = filters.category === '' || 
+    customer.category === filters.category;
+
+  return matchesSearch && matchesCustomerNumber && matchesLoanType && matchesStatus && matchesOfficeCategory && matchesCategory;
+});
 
   // Fetch real data
   const fetchDashboardData = async () => {
@@ -2052,179 +2058,237 @@ const handleApproveRequest = async (request: any) => {
 
   // Enhanced Search and Filters function
   const renderSearchAndFilters = () => {
-    const handleFilterChange = (key: string, value: string) => {
-      setFilters(prev => ({ ...prev, [key]: value }));
-    };
+  const handleFilterChange = (key: keyof typeof filters, value: string) => {
+    setFilters(prev => ({ ...prev, [key]: value }));
+  };
 
-    const clearFilters = () => {
-      setFilters({
-        loanNumber: '',
-        loanType: '',
-        status: ''
-      });
-      setSearchTerm('');
-    };
+  const clearFilters = () => {
+    setFilters({
+      customerNumber: '',
+      loanType: '',
+      status: '',
+      officeCategory: '',
+      category: ''
+    });
+    setSearchTerm('');
+  };
 
-    // Get unique loan types for dropdown
-    const loanTypes = [...new Set(customers.map(customer => customer.loanType).filter(Boolean))];
+  const loanTypes = [...new Set(customers.map(customer => customer.loanType).filter(Boolean))];
+  const officeCategories = [...new Set(customers.map(customer => customer.officeCategory).filter(Boolean))];
+  const customerCategories = [...new Set(customers.map(customer => customer.category).filter(Boolean))];
 
-    return (
-      <div className="space-y-4">
-        {/* Main Search Bar with Filter Toggle */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1">
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Search by customer name, phone, or loan number..."
-                className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <span className="text-gray-400">🔍</span>
-              </div>
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="flex-1">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search by customer name or customer number..."
+              className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <span className="text-gray-400">🔍</span>
             </div>
-          </div>
-          
-          <div className="flex gap-2">
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              <span>Filters</span>
-              <span className={`transform transition-transform ${showFilters ? 'rotate-180' : ''}`}>
-                ▼
-              </span>
-            </button>
-            
-            {(filters.loanNumber || filters.loanType || filters.status || searchTerm) && (
-              <button
-                onClick={clearFilters}
-                className="px-4 py-2 text-red-600 border border-red-300 rounded-lg hover:bg-red-50 transition-colors"
-              >
-                Clear
-              </button>
-            )}
           </div>
         </div>
-
-        {/* Advanced Filters - Collapsible */}
-        {showFilters && (
-          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Loan Number Filter */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Loan Number
-                </label>
-                <input
-                  type="text"
-                  placeholder="Enter loan number..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  value={filters.loanNumber}
-                  onChange={(e) => handleFilterChange('loanNumber', e.target.value)}
-                />
-              </div>
-
-              {/* Loan Type Filter */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Loan Type
-                </label>
-                <select
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  value={filters.loanType}
-                  onChange={(e) => handleFilterChange('loanType', e.target.value)}
-                >
-                  <option value="">All Loan Types</option>
-                  <option value="Daily">Daily</option>
-                  <option value="Weekly">Weekly</option>
-                  <option value="Monthly">Monthly</option>
-                  <option value="Yearly">Yearly</option>
-                </select>
-              </div>
-
-              {/* Status Filter */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Status
-                </label>
-                <select
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  value={filters.status}
-                  onChange={(e) => handleFilterChange('status', e.target.value)}
-                >
-                  <option value="">All Status</option>
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                  <option value="pending">Pending</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Active Filters Display */}
-            {(filters.loanNumber || filters.loanType || filters.status) && (
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm text-gray-600">Active filters:</span>
-                  {filters.loanNumber && (
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
-                      Loan No: {filters.loanNumber}
-                      <button 
-                        onClick={() => handleFilterChange('loanNumber', '')}
-                        className="ml-1 text-blue-600 hover:text-blue-800"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  )}
-                  {filters.loanType && (
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
-                      Type: {filters.loanType}
-                      <button 
-                        onClick={() => handleFilterChange('loanType', '')}
-                        className="ml-1 text-green-600 hover:text-green-800"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  )}
-                  {filters.status && (
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
-                      Status: {filters.status}
-                      <button 
-                        onClick={() => handleFilterChange('status', '')}
-                        className="ml-1 text-purple-600 hover:text-purple-800"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Results Count */}
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-gray-600">
-            Showing {filteredCustomers.length} of {customers.length} customers
-          </span>
+        
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <span>Filters</span>
+            <span className={`transform transition-transform ${showFilters ? 'rotate-180' : ''}`}>
+              ▼
+            </span>
+          </button>
           
-          {filteredCustomers.length < customers.length && (
+          {(filters.customerNumber || filters.loanType || filters.status || filters.officeCategory || filters.category || searchTerm) && (
             <button
               onClick={clearFilters}
-              className="text-sm text-blue-600 hover:text-blue-800"
+              className="px-4 py-2 text-red-600 border border-red-300 rounded-lg hover:bg-red-50 transition-colors"
             >
-              Clear all filters
+              Clear
             </button>
           )}
         </div>
       </div>
-    );
-  };
+
+      {showFilters && (
+        <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            {/* Customer Number Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Customer Number
+              </label>
+              <input
+                type="text"
+                placeholder="Enter customer number..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                value={filters.customerNumber}
+                onChange={(e) => handleFilterChange('customerNumber', e.target.value)}
+              />
+            </div>
+
+            {/* Loan Type Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Loan Type
+              </label>
+              <select
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                value={filters.loanType}
+                onChange={(e) => handleFilterChange('loanType', e.target.value)}
+              >
+                <option value="">All Loan Types</option>
+                {loanTypes.map(type => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Status Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Status
+              </label>
+              <select
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                value={filters.status}
+                onChange={(e) => handleFilterChange('status', e.target.value)}
+              >
+                <option value="">All Status</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="pending">Pending</option>
+              </select>
+            </div>
+
+            {/* Office Category Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Office Category
+              </label>
+              <select
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                value={filters.officeCategory}
+                onChange={(e) => handleFilterChange('officeCategory', e.target.value)}
+              >
+                <option value="">All Offices</option>
+                {officeCategories.map(office => (
+                  <option key={office} value={office}>{office}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Category Filter - NEW */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Category
+              </label>
+              <select
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                value={filters.category}
+                onChange={(e) => handleFilterChange('category', e.target.value)}
+              >
+                <option value="">All Categories</option>
+                <option value="A">Category A</option>
+                <option value="B">Category B</option>
+                <option value="C">Category C</option>
+                {customerCategories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Active Filters Display */}
+          {(filters.customerNumber || filters.loanType || filters.status || filters.officeCategory || filters.category) && (
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm text-gray-600">Active filters:</span>
+                {filters.customerNumber && (
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
+                    Customer No: {filters.customerNumber}
+                    <button 
+                      onClick={() => handleFilterChange('customerNumber', '')}
+                      className="ml-1 text-blue-600 hover:text-blue-800"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+                {filters.loanType && (
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
+                    Type: {filters.loanType}
+                    <button 
+                      onClick={() => handleFilterChange('loanType', '')}
+                      className="ml-1 text-green-600 hover:text-green-800"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+                {filters.status && (
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
+                    Status: {filters.status}
+                    <button 
+                      onClick={() => handleFilterChange('status', '')}
+                      className="ml-1 text-purple-600 hover:text-purple-800"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+                {filters.officeCategory && (
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-orange-100 text-orange-800">
+                    Office: {filters.officeCategory}
+                    <button 
+                      onClick={() => handleFilterChange('officeCategory', '')}
+                      className="ml-1 text-orange-600 hover:text-orange-800"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+                {filters.category && (
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-indigo-100 text-indigo-800">
+                    Category: {filters.category}
+                    <button 
+                      onClick={() => handleFilterChange('category', '')}
+                      className="ml-1 text-indigo-600 hover:text-indigo-800"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex justify-between items-center">
+        <span className="text-sm text-gray-600">
+          Showing {filteredCustomers.length} of {customers.length} customers
+        </span>
+        
+        {filteredCustomers.length < customers.length && (
+          <button
+            onClick={clearFilters}
+            className="text-sm text-blue-600 hover:text-blue-800"
+          >
+            Clear all filters
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
 
   // Navigation Tabs - Mobile Scrollable
   const renderNavigation = () => (
@@ -2435,83 +2499,73 @@ const handleApproveRequest = async (request: any) => {
 
   // Customers Section with Enhanced Filters
   const renderCustomers = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Customer Management</h1>
-          <p className="text-gray-600">Manage all customer accounts and loan details</p>
-        </div>
-        <span className="text-sm text-gray-600">{customers.length} customers</span>
+  <div className="space-y-6">
+    <div className="flex items-center justify-between">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Customer Management</h1>
+        <p className="text-gray-600">Manage all customer accounts and loan details</p>
       </div>
+      <span className="text-sm text-gray-600">{customers.length} customers</span>
+    </div>
 
-      {/* Enhanced Search and Filters */}
-      {renderSearchAndFilters()}
+    {/* Enhanced Search and Filters */}
+    {renderSearchAndFilters()}
 
-      <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-        <div className="p-6">
-          {loading ? (
-            <div className="text-center py-8">
-              <div className="text-gray-400 text-4xl mb-4">⏳</div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Loading customers...</h3>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {filteredCustomers.map((customer) => (
-                <div key={customer._id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-4">
-                      <div className="flex-shrink-0">
-                        <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                          <span className="text-blue-600 font-semibold text-sm">
-                            {customer.name.split(' ').map((n: string) => n[0]).join('')}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex-1">
-                        <div>
-                          <h4 className="text-sm font-semibold text-gray-900">{customer.name}</h4>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {customer.loanNumber} • ₹{customer.emiAmount} • {customer.loanType} EMI
-                          </p>
-                          <p className="text-xs text-gray-400 mt-1">
-                            {customer.businessName} • {customer.area} • {customer.phone}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center space-x-4">
-                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                      customer.status === 'active' 
-                        ? 'bg-green-100 text-green-800' 
-                        : 'bg-red-100 text-red-800'
-                    }`}>
-                      {customer.status === 'active' ? 'Active' : 'Inactive'}
-                    </span>
-                    <button 
-                      onClick={() => handleViewDetails(customer)}
-                      className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
-                    >
-                      View Details
-                    </button>
-                  </div>
-                </div>
-              ))}
-              
-              {filteredCustomers.length === 0 && (
-                <div className="text-center py-8">
-                  <div className="text-gray-400 text-4xl mb-4">🔍</div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No customers found</h3>
-                  <p className="text-gray-600">Try adjusting your search criteria or filters.</p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+    <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Customer Number</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Name</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Business</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Office</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Category</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {filteredCustomers.map((customer) => (
+              <tr key={customer._id} className="hover:bg-gray-50">
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 w-1/6">{customer.customerNumber}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 w-1/6">{customer.name}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/6">{customer.businessName}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/6">
+                  {customer.officeCategory || 'N/A'}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/6">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    customer.category === 'A' ? 'bg-green-100 text-green-800' :
+                    customer.category === 'B' ? 'bg-yellow-100 text-yellow-800' :
+                    customer.category === 'C' ? 'bg-blue-100 text-blue-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>
+                    {customer.category || 'Not specified'}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium w-1/6">
+                  <button 
+                    onClick={() => handleViewDetails(customer)}
+                    className="bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 text-sm"
+                  >
+                    View Details
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {filteredCustomers.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
+                  No customers found
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
-  )
+  </div>
+)
 
   // Conditional render
   if (selectedCustomer) {
