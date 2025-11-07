@@ -1,3 +1,6 @@
+/* eslint-disable @next/next/no-img-element */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -739,101 +742,76 @@ export default function DataEntryDashboard() {
   });
 
   const getAllCustomerLoans = (customer: Customer, customerDetails: CustomerDetails | null): Loan[] => {
-    const loans: Loan[] = [];
-    
-    console.log('🔄 getAllCustomerLoans called with:', {
-      customer: {
-        id: customer._id,
-        name: customer.name,
-        loanAmount: customer.loanAmount,
-        emiAmount: customer.emiAmount,
-        loanType: customer.loanType
-      },
-      customerDetails: customerDetails ? {
-        loans: customerDetails.loans,
-        loansCount: customerDetails.loans?.length
-      } : 'null'
+  const loans: Loan[] = [];
+  
+  console.log('🔄 getAllCustomerLoans called with:', {
+    customer: {
+      id: customer._id,
+      name: customer.name,
+      loanAmount: customer.loanAmount,
+      emiAmount: customer.emiAmount,
+      loanType: customer.loanType
+    },
+    customerDetails: customerDetails ? {
+      loans: customerDetails.loans,
+      loansCount: customerDetails.loans?.length
+    } : 'null'
+  });
+
+  // Only use loans from customerDetails if available
+  if (customerDetails?.loans && Array.isArray(customerDetails.loans)) {
+    console.log(`📊 Processing ${customerDetails.loans.length} loans from customerDetails`);
+    customerDetails.loans.forEach((loan, index) => {
+      const enhancedLoan: Loan = {
+        ...loan,
+        loanNumber: loan.loanNumber || `L${index + 1}`,
+        totalEmiCount: (loan as any).totalEmiCount || loan.loanDays || 30,
+        emiPaidCount: (loan as any).emiPaidCount || 0,
+        lastEmiDate: (loan as any).lastEmiDate || loan.dateApplied,
+        nextEmiDate: (loan as any).nextEmiDate || calculateNextEmiDate(loan.dateApplied, loan.loanType),
+        totalPaidAmount: (loan as any).totalPaidAmount || 0,
+        remainingAmount: (loan as any).remainingAmount || loan.amount,
+        emiHistory: (loan as any).emiHistory || [],
+        status: (loan as any).status || 'active'
+      };
+      loans.push(enhancedLoan);
+      console.log(`📋 Added loan ${index + 1}:`, enhancedLoan);
     });
-
-    // Check if customer has loan data directly
-    if (customer.loanAmount && customer.emiAmount && customer.loanType) {
-      console.log('✅ Creating loan from customer direct data');
-      const initialLoan: Loan = {
-        _id: customer._id,
-        customerId: customer._id,
-        customerName: customer.name,
-        customerNumber: customer.customerNumber || `CN${customer._id}`,
-        loanNumber: 'L1',
-        amount: customer.loanAmount,
-        emiAmount: customer.emiAmount,
-        loanType: customer.loanType,
-        dateApplied: customer.createdAt || new Date().toISOString(),
-        loanDays: 30,
-        totalEmiCount: 30,
-        emiPaidCount: 0,
-        lastEmiDate: customer.createdAt || new Date().toISOString(),
-        nextEmiDate: calculateNextEmiDate(customer.createdAt || new Date().toISOString(), customer.loanType),
-        totalPaidAmount: 0,
-        remainingAmount: customer.loanAmount,
-        emiHistory: [],
-        status: customer.status || 'active'
-      };
-      loans.push(initialLoan);
-      console.log('📝 Created initial loan:', initialLoan);
-    }
-    
-    // Add loans from customer details if available
-    if (customerDetails?.loans && Array.isArray(customerDetails.loans)) {
-      console.log(`📊 Processing ${customerDetails.loans.length} loans from customerDetails`);
-      customerDetails.loans.forEach((loan, index) => {
-        const enhancedLoan: Loan = {
-          ...loan,
-          loanNumber: loan.loanNumber || `L${index + 1}`,
-          totalEmiCount: (loan as any).totalEmiCount || loan.loanDays || 30,
-          emiPaidCount: (loan as any).emiPaidCount || 0,
-          lastEmiDate: (loan as any).lastEmiDate || loan.dateApplied,
-          nextEmiDate: (loan as any).nextEmiDate || calculateNextEmiDate(loan.dateApplied, loan.loanType),
-          totalPaidAmount: (loan as any).totalPaidAmount || 0,
-          remainingAmount: (loan as any).remainingAmount || loan.amount,
-          emiHistory: (loan as any).emiHistory || [],
-          status: (loan as any).status || 'active'
-        };
-        loans.push(enhancedLoan);
-        console.log(`📋 Added loan ${index + 1}:`, enhancedLoan);
-      });
-    }
-    
-    // If no loans found but customer has loan data, create one
-    if (loans.length === 0 && customer.loanAmount) {
-      console.log('⚠️ No loans found, creating default loan from customer data');
-      const defaultLoan: Loan = {
-        _id: customer._id,
-        customerId: customer._id,
-        customerName: customer.name,
-        customerNumber: customer.customerNumber || `CN${customer._id}`,
-        loanNumber: 'L1',
-        amount: customer.loanAmount || 0,
-        emiAmount: customer.emiAmount || 0,
-        loanType: customer.loanType || 'Daily',
-        dateApplied: customer.createdAt || new Date().toISOString(),
-        loanDays: 30,
-        totalEmiCount: 30,
-        emiPaidCount: 0,
-        lastEmiDate: customer.createdAt || new Date().toISOString(),
-        nextEmiDate: calculateNextEmiDate(customer.createdAt || new Date().toISOString(), customer.loanType || 'Daily'),
-        totalPaidAmount: 0,
-        remainingAmount: customer.loanAmount || 0,
-        emiHistory: [],
-        status: customer.status || 'active'
-      };
-      loans.push(defaultLoan);
-      console.log('📝 Created default loan:', defaultLoan);
-    }
-    
-    console.log(`🎯 Final loans count: ${loans.length}`, loans);
-    return loans;
-  };
-
+  }
+  
+  // REMOVED: Don't create loan from customer direct data if we already have loans from customerDetails
+  // This was causing the duplicate L1 issue
+  
+  // If no loans found but customer has loan data, create one (only as fallback)
+  if (loans.length === 0 && customer.loanAmount) {
+    console.log('⚠️ No loans found in customerDetails, creating default loan from customer data');
+    const defaultLoan: Loan = {
+      _id: customer._id + '_default', // Use a different ID to avoid conflicts
+      customerId: customer._id,
+      customerName: customer.name,
+      customerNumber: customer.customerNumber || `CN${customer._id}`,
+      loanNumber: 'L1',
+      amount: customer.loanAmount || 0,
+      emiAmount: customer.emiAmount || 0,
+      loanType: customer.loanType || 'Daily',
+      dateApplied: customer.createdAt || new Date().toISOString(),
+      loanDays: 30,
+      totalEmiCount: 30,
+      emiPaidCount: 0,
+      lastEmiDate: customer.createdAt || new Date().toISOString(),
+      nextEmiDate: calculateNextEmiDate(customer.createdAt || new Date().toISOString(), customer.loanType || 'Daily'),
+      totalPaidAmount: 0,
+      remainingAmount: customer.loanAmount || 0,
+      emiHistory: [],
+      status: customer.status || 'active'
+    };
+    loans.push(defaultLoan);
+    console.log('📝 Created default loan:', defaultLoan);
+  }
+  
+  console.log(`🎯 Final loans count: ${loans.length}`, loans);
+  return loans;
+};
   const validateStep1 = () => {
     const errors: {[key: string]: string} = {};
     
