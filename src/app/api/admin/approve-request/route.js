@@ -3,6 +3,7 @@ import Request from '@/lib/models/Request';
 import Customer from '@/lib/models/Customer';
 import User from '@/lib/models/User';
 import Loan from '@/lib/models/Loan';
+import EMIPayment from '@/lib/models/EMIPayment';
 import { connectDB } from '@/lib/db';
 import bcrypt from 'bcryptjs';
 
@@ -67,6 +68,10 @@ async function handleApproval(requestDoc, reason, processedBy) {
         return await approveCustomerEdit(requestDoc, reason, processedBy);
       case 'Loan Edit':
         return await approveLoanEdit(requestDoc, reason, processedBy);
+      case 'Loan Deletion':
+        return await approveLoanDeletion(requestDoc, reason, processedBy);
+      case 'Loan Renew':
+        return await approveLoanRenew(requestDoc, reason, processedBy);
       default:
         return NextResponse.json({ 
           success: false,
@@ -204,28 +209,27 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     category: customerData.category || 'A',
     officeCategory: customerData.officeCategory || 'Office 1',
     
-    
     // FIXED: Match the Customer schema structure for file fields
-profilePicture: {
-  filename: null,
-  url: null,
-  originalName: null,
-  uploadedAt: new Date()
-},
-fiDocuments: {
-  shop: {
-    filename: null,
-    url: null,
-    originalName: null,
-    uploadedAt: new Date()
-  },
-  home: {
-    filename: null,
-    url: null,
-    originalName: null,
-    uploadedAt: new Date()
-  }
-},
+    profilePicture: {
+      filename: null,
+      url: null,
+      originalName: null,
+      uploadedAt: new Date()
+    },
+    fiDocuments: {
+      shop: {
+        filename: null,
+        url: null,
+        originalName: null,
+        uploadedAt: new Date()
+      },
+      home: {
+        filename: null,
+        url: null,
+        originalName: null,
+        uploadedAt: new Date()
+      }
+    },
     
     loanAmount: parseFloat(loanData.loanAmount),
     emiAmount: parseFloat(loanData.emiAmount),
@@ -392,6 +396,28 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
     return date;
   };
 
+  // Fix date handling for emiStartDate
+  let emiStartDate;
+  try {
+    emiStartDate = requestedData.emiStartDate ? new Date(requestedData.emiStartDate) : new Date();
+    if (isNaN(emiStartDate.getTime())) {
+      emiStartDate = new Date();
+    }
+  } catch (error) {
+    emiStartDate = new Date();
+  }
+
+  // Fix date handling for dateApplied
+  let dateApplied;
+  try {
+    dateApplied = requestedData.dateApplied ? new Date(requestedData.dateApplied) : new Date();
+    if (isNaN(dateApplied.getTime())) {
+      dateApplied = new Date();
+    }
+  } catch (error) {
+    dateApplied = new Date();
+  }
+
   const loanData = {
     customerId: customer._id,
     customerName: customer.name,
@@ -400,15 +426,15 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
     amount: Number(requestedData.amount),
     emiAmount: Number(requestedData.emiAmount),
     loanType: requestedData.loanType,
-    dateApplied: new Date(requestedData.dateApplied) || new Date(),
+    dateApplied: dateApplied,
     loanDays: Number(requestedData.loanDays) || 30,
     emiType: requestedData.emiType || 'fixed',
     customEmiAmount: requestedData.customEmiAmount || null,
-    emiStartDate: new Date(requestedData.emiStartDate) || new Date(),
+    emiStartDate: emiStartDate,
     totalEmiCount: Number(requestedData.loanDays) || 30,
     emiPaidCount: 0,
     lastEmiDate: null,
-    nextEmiDate: calculateNextEmiDate(requestedData.emiStartDate, requestedData.loanType),
+    nextEmiDate: calculateNextEmiDate(emiStartDate, requestedData.loanType),
     totalPaidAmount: 0,
     remainingAmount: Number(requestedData.amount),
     status: 'active',
@@ -586,6 +612,169 @@ async function approveLoanEdit(requestDoc, reason, processedBy) {
       loanId: loan._id,
       loanNumber: loan.loanNumber,
       updatedFields: updatedFields
+    }
+  });
+}
+
+async function approveLoanDeletion(requestDoc, reason, processedBy) {
+  console.log('🗑️ Processing Loan Deletion request...');
+  
+  const loanId = requestDoc.loanId;
+  if (!loanId) {
+    return NextResponse.json({ 
+      success: false,
+      error: 'Loan ID not found' 
+    }, { status: 400 });
+  }
+
+  const loan = await Loan.findById(loanId);
+  if (!loan) {
+    return NextResponse.json({ 
+      success: false,
+      error: 'Loan not found' 
+    }, { status: 404 });
+  }
+
+  // Check if loan has any EMI payments
+  const hasEMIPayments = await EMIPayment.findOne({ loanId: loanId });
+  if (hasEMIPayments) {
+    return NextResponse.json({ 
+      success: false,
+      error: 'Cannot delete loan with existing EMI payments. Consider marking it as inactive instead.'
+    }, { status: 400 });
+  }
+
+  // Delete the loan
+  await Loan.findByIdAndDelete(loanId);
+  console.log('✅ Loan deleted');
+
+  // Update request
+  requestDoc.status = 'Approved';
+  requestDoc.reviewedBy = processedBy;
+  requestDoc.reviewedByRole = 'admin';
+  requestDoc.reviewNotes = reason || 'Loan deletion approved by admin';
+  requestDoc.actionTaken = `Loan ${loan.loanNumber} deleted permanently`;
+  requestDoc.reviewedAt = new Date();
+  requestDoc.approvedAt = new Date();
+  requestDoc.completedAt = new Date();
+  requestDoc.updatedAt = new Date();
+  
+  await requestDoc.save();
+  console.log('✅ Loan deletion approved');
+
+  return NextResponse.json({ 
+    success: true,
+    message: 'Loan deleted successfully!',
+    data: {
+      loanNumber: loan.loanNumber,
+      customerName: loan.customerName
+    }
+  });
+}
+
+async function approveLoanRenew(requestDoc, reason, processedBy) {
+  console.log('🔄 Processing Loan Renew request...');
+  
+  const requestedData = requestDoc.requestedData || requestDoc;
+  
+  if (!requestedData.newLoanAmount || !requestedData.newEmiAmount || !requestedData.newLoanType) {
+    return NextResponse.json({ 
+      success: false,
+      error: 'Missing required renewal data' 
+    }, { status: 400 });
+  }
+
+  const customer = await Customer.findById(requestedData.customerId);
+  if (!customer || customer.status !== 'active') {
+    return NextResponse.json({ 
+      success: false,
+      error: 'Customer not found or not active' 
+    }, { status: 404 });
+  }
+
+  const existingLoans = await Loan.find({ customerId: customer._id });
+  const nextLoanNumber = `L${existingLoans.length + 1}`;
+
+  const calculateNextEmiDate = (emiStartDate, loanType) => {
+    const date = new Date(emiStartDate || new Date());
+    switch(loanType) {
+      case 'Daily':
+        date.setDate(date.getDate() + 1);
+        break;
+      case 'Weekly':
+        date.setDate(date.getDate() + 7);
+        break;
+      case 'Monthly':
+        date.setMonth(date.getMonth() + 1);
+        break;
+      default:
+        date.setDate(date.getDate() + 1);
+    }
+    return date;
+  };
+
+  // Fix date handling for emiStartDate
+  let emiStartDate;
+  try {
+    emiStartDate = requestedData.emiStartDate ? new Date(requestedData.emiStartDate) : new Date();
+    if (isNaN(emiStartDate.getTime())) {
+      emiStartDate = new Date();
+    }
+  } catch (error) {
+    emiStartDate = new Date();
+  }
+
+  const loanData = {
+    customerId: customer._id,
+    customerName: customer.name,
+    customerNumber: customer.customerNumber,
+    loanNumber: nextLoanNumber,
+    amount: Number(requestedData.newLoanAmount),
+    emiAmount: Number(requestedData.newEmiAmount),
+    loanType: requestedData.newLoanType,
+    dateApplied: new Date(requestedData.renewalDate) || new Date(),
+    loanDays: Number(requestedData.newLoanDays) || 30,
+    emiType: requestedData.emiType || 'fixed',
+    customEmiAmount: requestedData.customEmiAmount || null,
+    emiStartDate: emiStartDate,
+    totalEmiCount: Number(requestedData.newLoanDays) || 30,
+    emiPaidCount: 0,
+    lastEmiDate: null,
+    nextEmiDate: calculateNextEmiDate(emiStartDate, requestedData.newLoanType),
+    totalPaidAmount: 0,
+    remainingAmount: Number(requestedData.newLoanAmount),
+    status: 'active',
+    createdBy: requestDoc.createdBy,
+    isRenewal: true,
+    originalLoanId: requestedData.loanId,
+    renewalRemarks: requestedData.remarks
+  };
+
+  const newLoan = new Loan(loanData);
+  await newLoan.save();
+  console.log('✅ Renewed loan created');
+
+  // Update request
+  requestDoc.status = 'Approved';
+  requestDoc.reviewedBy = processedBy;
+  requestDoc.reviewedByRole = 'admin';
+  requestDoc.reviewNotes = reason || 'Loan renewal approved by admin';
+  requestDoc.actionTaken = `Loan renewed: ${nextLoanNumber}`;
+  requestDoc.reviewedAt = new Date();
+  requestDoc.approvedAt = new Date();
+  requestDoc.completedAt = new Date();
+  requestDoc.updatedAt = new Date();
+  
+  await requestDoc.save();
+  console.log('✅ Loan renewal approved');
+
+  return NextResponse.json({ 
+    success: true,
+    message: 'Loan renewed successfully!',
+    data: {
+      loanId: newLoan._id,
+      loanNumber: newLoan.loanNumber,
+      customerName: customer.name
     }
   });
 }
