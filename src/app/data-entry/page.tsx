@@ -276,12 +276,15 @@ export default function DataEntryDashboard() {
   const [showAddLoanModal, setShowAddLoanModal] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [newLoanData, setNewLoanData] = useState({
-    amount: '',
-    dateApplied: new Date().toISOString().split('T')[0],
-    emiAmount: '',
-    loanType: 'Monthly',
-    loanDays: '30'
-  });
+  loanAmount: '',
+  loanDate: new Date().toISOString().split('T')[0],
+  emiStartDate: new Date().toISOString().split('T')[0],
+  emiAmount: '',
+  loanType: 'Monthly',
+  loanDays: '30',
+  emiType: 'fixed' as 'fixed' | 'custom',
+  customEmiAmount: ''
+});
   const [showCustomerDetails, setShowCustomerDetails] = useState(false);
   const [showEditCustomer, setShowEditCustomer] = useState(false);
   const [showEditLoan, setShowEditLoan] = useState(false);
@@ -1481,98 +1484,151 @@ export default function DataEntryDashboard() {
   };
 
   const handleAddNewLoan = async () => {
-    if (!customerDetails) return;
+  if (!customerDetails) return;
 
-    setIsLoading(true);
-    try {
-      if (!newLoanData.amount || !newLoanData.emiAmount || !newLoanData.loanDays) {
-        alert('Please fill all required fields');
+  setIsLoading(true);
+  try {
+    // Enhanced validation for all required fields
+    const missingFields: string[] = [];
+    if (!newLoanData.loanDate) missingFields.push('loanDate');
+    if (!newLoanData.emiStartDate) missingFields.push('emiStartDate');
+    if (!newLoanData.loanAmount) missingFields.push('loanAmount');
+    if (!newLoanData.emiAmount) missingFields.push('emiAmount');
+    if (!newLoanData.loanDays) missingFields.push('loanDays');
+    if (!newLoanData.loanType) missingFields.push('loanType');
+    if (!newLoanData.emiType) missingFields.push('emiType');
+
+    if (missingFields.length > 0) {
+      alert(`Please fill all required fields. Missing: ${missingFields.join(', ')}`);
+      setIsLoading(false);
+      return;
+    }
+
+    // Validate numbers are positive
+    const invalidNumbers: string[] = [];
+    const loanAmountNum = parseFloat(newLoanData.loanAmount);
+    const emiAmountNum = parseFloat(newLoanData.emiAmount);
+    const loanDaysNum = parseFloat(newLoanData.loanDays);
+
+    if (isNaN(loanAmountNum) || loanAmountNum <= 0) invalidNumbers.push('loanAmount');
+    if (isNaN(emiAmountNum) || emiAmountNum <= 0) invalidNumbers.push('emiAmount');
+    if (isNaN(loanDaysNum) || loanDaysNum <= 0) invalidNumbers.push('loanDays');
+
+    if (invalidNumbers.length > 0) {
+      alert(`Please enter valid positive numbers for: ${invalidNumbers.join(', ')}`);
+      setIsLoading(false);
+      return;
+    }
+
+    // Validate custom EMI
+    if (newLoanData.emiType === 'custom' && newLoanData.loanType !== 'Daily') {
+      if (!newLoanData.customEmiAmount || parseFloat(newLoanData.customEmiAmount) <= 0) {
+        alert('Custom EMI amount is required for custom EMI type with Weekly/Monthly loans');
         setIsLoading(false);
         return;
       }
+    }
 
-      console.log('🟡 Creating loan addition request for:', customerDetails.name);
+    // Validate dates
+    if (new Date(newLoanData.emiStartDate) < new Date(newLoanData.loanDate)) {
+      alert('EMI start date cannot be before loan date');
+      setIsLoading(false);
+      return;
+    }
 
-      const requestResponse = await fetch('/api/data-entry/requests', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          type: 'Loan Addition',
+    console.log('🟡 Creating enhanced loan addition request for:', customerDetails.name);
+    console.log('📦 Loan data being submitted:', newLoanData);
+
+    const requestResponse = await fetch('/api/data-entry/requests', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        type: 'Loan Addition',
+        customerId: customerDetails._id,
+        customerName: customerDetails.name,
+        customerNumber: customerDetails.customerNumber,
+        loanNumber: `L${(customerDetails.loans?.length || 0) + 1}`,
+        requestedData: {
+          // Enhanced loan data matching Step 2 structure
+          loanAmount: Number(newLoanData.loanAmount),
+          emiAmount: Number(newLoanData.emiAmount),
+          loanType: newLoanData.loanType,
+          loanDays: Number(newLoanData.loanDays),
+          loanDate: newLoanData.loanDate,
+          emiStartDate: newLoanData.emiStartDate,
+          emiType: newLoanData.emiType,
+          customEmiAmount: newLoanData.customEmiAmount ? Number(newLoanData.customEmiAmount) : null,
           customerId: customerDetails._id,
           customerName: customerDetails.name,
           customerNumber: customerDetails.customerNumber,
-          loanNumber: `L${(customerDetails.loans?.length || 0) + 1}`,
-          requestedData: {
-            amount: Number(newLoanData.amount),
-            emiAmount: Number(newLoanData.emiAmount),
-            loanType: newLoanData.loanType,
-            loanDays: Number(newLoanData.loanDays),
-            dateApplied: newLoanData.dateApplied,
-            customerId: customerDetails._id,
-            customerName: customerDetails.name,
-            customerNumber: customerDetails.customerNumber,
-            createdBy: 'data_entry_operator_1',
-            requestType: 'loan_addition'
-          },
-          description: `Additional loan request for ${customerDetails.name} - Customer: ${customerDetails.customerNumber}`,
-          priority: 'Medium',
-          status: 'Pending',
           createdBy: 'data_entry_operator_1',
-          createdByRole: 'data_entry',
-          requiresCustomerNotification: false,
-          estimatedImpact: 'Medium'
-        }),
-      });
+          requestType: 'loan_addition'
+        },
+        description: `Additional ${newLoanData.loanType} loan request for ${customerDetails.name} - Customer: ${customerDetails.customerNumber}`,
+        priority: 'Medium',
+        status: 'Pending',
+        createdBy: 'data_entry_operator_1',
+        createdByRole: 'data_entry',
+        requiresCustomerNotification: false,
+        estimatedImpact: 'Medium'
+      }),
+    });
 
-      console.log('Request response status:', requestResponse.status);
+    console.log('📡 Request response status:', requestResponse.status);
 
-      const responseText = await requestResponse.text();
-      console.log('Raw response:', responseText);
+    const responseText = await requestResponse.text();
+    console.log('📄 Raw response:', responseText);
 
-      let requestData;
-      try {
-        requestData = JSON.parse(responseText);
-      } catch (parseError: any) {
-        console.error('Failed to parse response as JSON:', parseError);
-        throw new Error('Server returned invalid JSON response');
-      }
-
-      if (!requestResponse.ok) {
-        throw new Error(requestData.error || `HTTP error! status: ${requestResponse.status}`);
-      }
-
-      if (!requestData.success) {
-        throw new Error(requestData.error || 'Failed to create loan addition request');
-      }
-
-      console.log('✅ Loan addition request created successfully:', requestData.data);
-
-      alert('Loan addition request submitted successfully! Waiting for admin approval.');
-      
-      setShowAddLoanModal(false);
-      setNewLoanData({
-        amount: '',
-        dateApplied: new Date().toISOString().split('T')[0],
-        emiAmount: '',
-        loanType: 'Monthly',
-        loanDays: '30'
-      });
-      
-      if (activeTab === 'requests') {
-        fetchPendingRequests();
-      }
-
-      setShowCustomerDetails(false);
-      
-    } catch (error: any) {
-      console.error('❌ Error adding new loan:', error);
-      alert('Error: ' + error.message);
-    } finally {
-      setIsLoading(false);
+    let requestData;
+    try {
+      requestData = JSON.parse(responseText);
+    } catch (parseError: any) {
+      console.error('Failed to parse response as JSON:', parseError);
+      throw new Error('Server returned invalid JSON response');
     }
-  };
+
+    if (!requestResponse.ok) {
+      throw new Error(requestData.error || `HTTP error! status: ${requestResponse.status}`);
+    }
+
+    if (!requestData.success) {
+      throw new Error(requestData.error || 'Failed to create loan addition request');
+    }
+
+    console.log('✅ Loan addition request created successfully:', requestData.data);
+
+    alert('Loan addition request submitted successfully! Waiting for admin approval.');
+    
+    // Reset form and close modal
+    setShowAddLoanModal(false);
+    setNewLoanData({
+      loanAmount: '',
+      loanDate: new Date().toISOString().split('T')[0],
+      emiStartDate: new Date().toISOString().split('T')[0],
+      emiAmount: '',
+      loanType: 'Monthly',
+      loanDays: '30',
+      emiType: 'fixed',
+      customEmiAmount: ''
+    });
+    
+    // Refresh requests if on requests tab
+    if (activeTab === 'requests') {
+      fetchPendingRequests();
+    }
+
+    // Close customer details modal
+    setShowCustomerDetails(false);
+    
+  } catch (error: any) {
+    console.error('❌ Error adding new loan:', error);
+    alert('Error: ' + error.message);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const handleSaveEditCustomer = async () => {
     setIsLoading(true);
@@ -3355,186 +3411,349 @@ export default function DataEntryDashboard() {
   );
 
   const renderAddLoanModal = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-bold">Add New Loan</h3>
-            <button 
-              onClick={() => setShowAddLoanModal(false)}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              ✕
-            </button>
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-bold">Add New Loan</h3>
+          <button 
+            onClick={() => setShowAddLoanModal(false)}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            ✕
+          </button>
+        </div>
+        
+        <div className="space-y-6">
+          <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+            <h4 className="text-lg font-semibold text-blue-900 mb-2">Customer Information</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div>
+                <span className="text-blue-700 font-medium">Customer Number:</span>
+                <p className="text-blue-900">{customerDetails?.customerNumber}</p>
+              </div>
+              <div>
+                <span className="text-blue-700 font-medium">Customer Name:</span>
+                <p className="text-blue-900">{customerDetails?.name}</p>
+              </div>
+              <div>
+                <span className="text-blue-700 font-medium">Business Name:</span>
+                <p className="text-blue-900">{customerDetails?.businessName}</p>
+              </div>
+            </div>
           </div>
-          
-          <div className="space-y-6">
-            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-              <h4 className="text-lg font-semibold text-blue-900 mb-2">Customer Information</h4>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                <div>
-                  <span className="text-blue-700 font-medium">Customer Number:</span>
-                  <p className="text-blue-900">{customerDetails?.customerNumber}</p>
+
+          <div>
+            <h4 className="text-lg font-semibold mb-4">Enter Loan Details</h4>
+            
+            <div className="space-y-6">
+              {/* Loan Type Selection */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="md:col-span-2 lg:col-span-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Type *</label>
+                  <select 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={newLoanData.loanType}
+                    onChange={(e) => {
+                      const newLoanType = e.target.value;
+                      setNewLoanData({
+                        ...newLoanData, 
+                        loanType: newLoanType,
+                        loanDays: newLoanType === 'Monthly' ? '1' : 
+                                 newLoanType === 'Weekly' ? '1' : '30',
+                        emiType: newLoanType === 'Daily' ? 'fixed' : newLoanData.emiType
+                      });
+                    }}
+                    required
+                  >
+                    <option value="Daily">Daily EMI</option>
+                    <option value="Weekly">Weekly EMI</option>
+                    <option value="Monthly">Monthly EMI</option>
+                  </select>
                 </div>
+                
+                {/* EMI Collection Type - Only show for Weekly/Monthly */}
+                {newLoanData.loanType !== 'Daily' && (
+                  <div className="md:col-span-2 lg:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">EMI Collection Type *</label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <label className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                        newLoanData.emiType === 'fixed' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="emiType"
+                          value="fixed"
+                          checked={newLoanData.emiType === 'fixed'}
+                          onChange={(e) => setNewLoanData({...newLoanData, emiType: e.target.value as 'fixed' | 'custom'})}
+                          className="mr-3 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div>
+                          <div className="font-medium text-gray-900">Fixed EMI</div>
+                          <div className="text-sm text-gray-600">Same EMI amount for all periods</div>
+                        </div>
+                      </label>
+                      
+                      <label className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                        newLoanData.emiType === 'custom' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="emiType"
+                          value="custom"
+                          checked={newLoanData.emiType === 'custom'}
+                          onChange={(e) => setNewLoanData({...newLoanData, emiType: e.target.value as 'fixed' | 'custom'})}
+                          className="mr-3 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div>
+                          <div className="font-medium text-gray-900">Custom EMI</div>
+                          <div className="text-sm text-gray-600">Different EMI for last period</div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Loan Details Form */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Common Fields */}
                 <div>
-                  <span className="text-blue-700 font-medium">Customer Name:</span>
-                  <p className="text-blue-900">{customerDetails?.name}</p>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Date *</label>
+                  <input 
+                    type="date" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={newLoanData.loanDate}
+                    onChange={(e) => setNewLoanData({...newLoanData, loanDate: e.target.value})}
+                    required
+                  />
                 </div>
+
                 <div>
-                  <span className="text-blue-700 font-medium">Business Name:</span>
-                  <p className="text-blue-900">{customerDetails?.businessName}</p>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">EMI Starting Date *</label>
+                  <input 
+                    type="date" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={newLoanData.emiStartDate}
+                    onChange={(e) => setNewLoanData({...newLoanData, emiStartDate: e.target.value})}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Amount *</label>
+                  <input 
+                    type="number" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={newLoanData.loanAmount}
+                    onChange={(e) => setNewLoanData({...newLoanData, loanAmount: e.target.value})}
+                    placeholder="Amount"
+                    min="0"
+                    step="0.01"
+                    required
+                  />
+                </div>
+
+                {/* EMI Amount Fields */}
+                {newLoanData.emiType === 'fixed' || newLoanData.loanType === 'Daily' ? (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">EMI Amount *</label>
+                    <input 
+                      type="number" 
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      value={newLoanData.emiAmount}
+                      onChange={(e) => setNewLoanData({...newLoanData, emiAmount: e.target.value})}
+                      placeholder="EMI Amount"
+                      min="0"
+                      step="0.01"
+                      required
+                    />
+                  </div>
+                ) : (
+                  <>
+                    {/* Custom EMI Fields */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Fixed EMI Amount *</label>
+                      <input 
+                        type="number" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={newLoanData.emiAmount}
+                        onChange={(e) => setNewLoanData({...newLoanData, emiAmount: e.target.value})}
+                        placeholder="Fixed EMI Amount"
+                        min="0"
+                        step="0.01"
+                        required
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        For first {Number(newLoanData.loanDays || 1) - 1} {newLoanData.loanType === 'Weekly' ? 'weeks' : 'months'}
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Last EMI Amount *</label>
+                      <input 
+                        type="number" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={newLoanData.customEmiAmount || ''}
+                        onChange={(e) => setNewLoanData({...newLoanData, customEmiAmount: e.target.value})}
+                        placeholder="Last EMI Amount"
+                        min="0"
+                        step="0.01"
+                        required
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        For last 1 {newLoanData.loanType === 'Weekly' ? 'week' : 'month'}
+                      </p>
+                    </div>
+                  </>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {newLoanData.loanType === 'Daily' ? 'No. of Days *' : 
+                     newLoanData.loanType === 'Weekly' ? 'No. of Weeks *' : 'No. of Months *'}
+                  </label>
+                  <input 
+                    type="number" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={newLoanData.loanDays}
+                    onChange={(e) => setNewLoanData({...newLoanData, loanDays: e.target.value})}
+                    placeholder={newLoanData.loanType === 'Daily' ? 'Days' : 
+                               newLoanData.loanType === 'Weekly' ? 'Weeks' : 'Months'}
+                    min="1"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {newLoanData.loanType === 'Daily' ? 'Total duration in days' : 
+                     newLoanData.loanType === 'Weekly' ? 'Total duration in weeks' : 'Total duration in months'}
+                  </p>
+                </div>
+
+                {/* Total Loan Amount */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Total Loan Amount</label>
+                  <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                    <p className="text-gray-900 font-semibold text-lg">
+                      ₹{newLoanData.emiType === 'custom' && newLoanData.loanType !== 'Daily' ? (
+                        ((Number(newLoanData.emiAmount || 0) * (Number(newLoanData.loanDays || 1) - 1)) + 
+                         (Number(newLoanData.customEmiAmount || 0) * 1)).toLocaleString()
+                      ) : (
+                        (Number(newLoanData.emiAmount || 0) * Number(newLoanData.loanDays || 1)).toLocaleString()
+                      )}
+                    </p>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {newLoanData.emiType === 'custom' && newLoanData.loanType !== 'Daily' ? (
+                      `Fixed Periods + Last Period (Auto-calculated)`
+                    ) : (
+                      `EMI × Duration (Auto-calculated)`
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              {/* Custom EMI Breakdown */}
+              {newLoanData.emiType === 'custom' && newLoanData.loanType !== 'Daily' && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+                  <h5 className="font-medium text-yellow-800 mb-3">Custom EMI Breakdown</h5>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                    <div className="text-center">
+                      <div className="font-semibold text-yellow-700">Fixed Periods</div>
+                      <div className="text-lg font-bold text-yellow-900">{Number(newLoanData.loanDays || 1) - 1}</div>
+                      <div className="text-xs text-yellow-600">{newLoanData.loanType === 'Weekly' ? 'weeks' : 'months'}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="font-semibold text-yellow-700">Fixed EMI</div>
+                      <div className="text-lg font-bold text-yellow-900">₹{newLoanData.emiAmount || '0'}</div>
+                      <div className="text-xs text-yellow-600">per period</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="font-semibold text-yellow-700">Last Period</div>
+                      <div className="text-lg font-bold text-yellow-900">1</div>
+                      <div className="text-xs text-yellow-600">{newLoanData.loanType === 'Weekly' ? 'week' : 'month'}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="font-semibold text-yellow-700">Last EMI</div>
+                      <div className="text-lg font-bold text-yellow-900">₹{newLoanData.customEmiAmount || '0'}</div>
+                      <div className="text-xs text-yellow-600">final period</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Loan Summary */}
+              <div className="bg-green-50 border border-green-200 rounded-md p-4">
+                <h5 className="font-semibold text-green-900 mb-3">Loan Summary</h5>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <span className="text-green-700 font-medium">Loan Amount:</span>
+                    <p className="font-semibold text-green-900">₹{newLoanData.loanAmount || '0'}</p>
+                  </div>
+                  <div>
+                    <span className="text-green-700 font-medium">Total Loan:</span>
+                    <p className="font-semibold text-green-900">
+                      ₹{newLoanData.emiType === 'custom' && newLoanData.loanType !== 'Daily' ? (
+                        ((Number(newLoanData.emiAmount || 0) * (Number(newLoanData.loanDays || 1) - 1)) + 
+                         (Number(newLoanData.customEmiAmount || 0) * 1)).toLocaleString()
+                      ) : (
+                        (Number(newLoanData.emiAmount || 0) * Number(newLoanData.loanDays || 1)).toLocaleString()
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-green-700 font-medium">Duration:</span>
+                    <p className="font-semibold text-green-900">
+                      {newLoanData.loanDays || '0'} 
+                      {newLoanData.loanType === 'Daily' ? ' days' : 
+                       newLoanData.loanType === 'Weekly' ? ' weeks' : ' months'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-green-700 font-medium">EMI Starts From:</span>
+                    <p className="font-semibold text-green-900">
+                      {newLoanData.emiStartDate ? formatDateToDDMMYYYY(newLoanData.emiStartDate) : 'Not set'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* EMI Type Summary */}
+                <div className="mt-3 pt-3 border-t border-green-200">
+                  <span className="text-green-700 font-medium">EMI Type:</span>
+                  <p className="font-semibold text-green-900">
+                    {newLoanData.loanType === 'Daily' ? (
+                      `Daily EMI - All ${newLoanData.loanDays} days at ₹${newLoanData.emiAmount || '0'}`
+                    ) : newLoanData.emiType === 'fixed' ? (
+                      `Fixed EMI - All ${newLoanData.loanDays} ${newLoanData.loanType.toLowerCase()} periods at ₹${newLoanData.emiAmount || '0'}`
+                    ) : (
+                      `Custom EMI - ${Number(newLoanData.loanDays || 1) - 1} periods at ₹${newLoanData.emiAmount || '0'} + 1 period at ₹${newLoanData.customEmiAmount || '0'}`
+                    )}
+                  </p>
                 </div>
               </div>
             </div>
-
-            <div>
-  <h4 className="text-lg font-semibold mb-4">Enter Loan Details</h4>
-  
-  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">Loan Date *</label>
-      <input 
-        type="date" 
-        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-        value={formatDateForInput(newLoanData.dateApplied)}
-        onChange={(e) => setNewLoanData({...newLoanData, dateApplied: e.target.value})}
-        required
-      />
-    </div>
-    
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">Loan Type *</label>
-      <select 
-        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-        value={newLoanData.loanType}
-        onChange={(e) => {
-          setNewLoanData({
-            ...newLoanData, 
-            loanType: e.target.value,
-            loanDays: e.target.value === 'Monthly' ? '30' : 
-                     e.target.value === 'Weekly' ? '7' : '30'
-          });
-        }}
-        required
-      >
-        <option value="Daily">Daily EMI</option>
-        <option value="Weekly">Weekly EMI</option>
-        <option value="Monthly">Monthly EMI</option>
-      </select>
-    </div>
-    
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">Loan Amount *</label>
-      <input 
-        type="number" 
-        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-        value={newLoanData.amount}
-        onChange={(e) => setNewLoanData({...newLoanData, amount: e.target.value})}
-        placeholder="Amount"
-        min="0"
-        step="0.01"
-        required
-      />
-    </div>
-    
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">EMI Amount *</label>
-      <input 
-        type="number" 
-        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-        value={newLoanData.emiAmount}
-        onChange={(e) => setNewLoanData({...newLoanData, emiAmount: e.target.value})}
-        placeholder="EMI Amount"
-        min="0"
-        step="0.01"
-        required
-      />
-    </div>
-    
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">
-        {newLoanData.loanType === 'Daily' ? 'No. of Days *' : 
-         newLoanData.loanType === 'Weekly' ? 'No. of Weeks *' : 'No. of Months *'}
-      </label>
-      <input 
-        type="number" 
-        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-        value={newLoanData.loanDays}
-        onChange={(e) => setNewLoanData({...newLoanData, loanDays: e.target.value})}
-        placeholder={newLoanData.loanType === 'Daily' ? 'Days' : 
-                   newLoanData.loanType === 'Weekly' ? 'Weeks' : 'Months'}
-        min="1"
-        required
-      />
-      <p className="text-xs text-gray-500 mt-1">
-        {newLoanData.loanType === 'Daily' ? 'Total duration in days' : 
-         newLoanData.loanType === 'Weekly' ? 'Total duration in weeks' : 'Total duration in months'}
-      </p>
-    </div>
-
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">Total Loan</label>
-      <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
-        <p className="text-gray-900 font-semibold text-lg">
-          ₹{(Number(newLoanData.emiAmount || 0) * Number(newLoanData.loanDays || 0)).toLocaleString()}
-        </p>
-      </div>
-      <p className="text-xs text-gray-500 mt-1">
-        EMI × Duration (Auto-calculated)
-      </p>
-    </div>
-  </div>
-</div>
-
-            <div className="bg-green-50 border border-green-200 rounded-md p-4">
-  <h5 className="font-semibold text-green-900 mb-2">Loan Summary</h5>
-  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-    <div>
-      <span className="text-green-700">Loan Amount:</span>
-      <p className="font-semibold">₹{newLoanData.amount || '0'}</p>
-    </div>
-    <div>
-      <span className="text-green-700">EMI Amount:</span>
-      <p className="font-semibold">₹{newLoanData.emiAmount || '0'}</p>
-    </div>
-    <div>
-      <span className="text-green-700">Duration:</span>
-      <p className="font-semibold">
-        {newLoanData.loanDays || '0'} 
-        {newLoanData.loanType === 'Daily' ? ' days' : 
-         newLoanData.loanType === 'Weekly' ? ' weeks' : ' months'}
-      </p>
-    </div>
-    <div>
-      <span className="text-green-700">Total Loan:</span>
-      <p className="font-semibold">
-        ₹{(Number(newLoanData.emiAmount || 0) * Number(newLoanData.loanDays || 0)).toLocaleString()}
-      </p>
-    </div>
-  </div>
-</div>
           </div>
-          
-          <div className="flex justify-end space-x-3 mt-6">
-            <button 
-              onClick={() => setShowAddLoanModal(false)}
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-              disabled={isLoading}
-            >
-              Cancel
-            </button>
-            <button 
-              onClick={handleAddNewLoan}
-              disabled={isLoading || !newLoanData.amount || !newLoanData.emiAmount || !newLoanData.loanDays}
-              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-            >
-              {isLoading ? 'Adding...' : 'Submit Loan Addition Request'}
-            </button>
-          </div>
+        </div>
+        
+        <div className="flex justify-end space-x-3 mt-6">
+          <button 
+            onClick={() => setShowAddLoanModal(false)}
+            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+            disabled={isLoading}
+          >
+            Cancel
+          </button>
+          <button 
+            onClick={handleAddNewLoan}
+            disabled={isLoading || !newLoanData.loanAmount || !newLoanData.emiAmount || !newLoanData.loanDays}
+            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            {isLoading ? 'Adding...' : 'Submit Loan Addition Request'}
+          </button>
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 
   const renderEditLoanModal = () => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">

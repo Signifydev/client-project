@@ -360,7 +360,7 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
   
   const requestedData = requestDoc.requestedData;
   
-  if (!requestedData.amount || !requestedData.emiAmount || !requestedData.loanType) {
+  if (!requestedData.loanAmount || !requestedData.emiAmount || !requestedData.loanType) {
     return NextResponse.json({ 
       success: false,
       error: 'Missing required loan data' 
@@ -407,15 +407,26 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
     emiStartDate = new Date();
   }
 
-  // Fix date handling for dateApplied
-  let dateApplied;
+  // Fix date handling for loanDate
+  let loanDate;
   try {
-    dateApplied = requestedData.dateApplied ? new Date(requestedData.dateApplied) : new Date();
-    if (isNaN(dateApplied.getTime())) {
-      dateApplied = new Date();
+    loanDate = requestedData.loanDate ? new Date(requestedData.loanDate) : new Date();
+    if (isNaN(loanDate.getTime())) {
+      loanDate = new Date();
     }
   } catch (error) {
-    dateApplied = new Date();
+    loanDate = new Date();
+  }
+
+  // Calculate total loan amount based on EMI type
+  let totalLoanAmount;
+  if (requestedData.emiType === 'custom' && requestedData.loanType !== 'Daily') {
+    const fixedPeriods = Number(requestedData.loanDays) - 1;
+    const fixedAmount = Number(requestedData.emiAmount) * fixedPeriods;
+    const lastAmount = Number(requestedData.customEmiAmount || requestedData.emiAmount);
+    totalLoanAmount = fixedAmount + lastAmount;
+  } else {
+    totalLoanAmount = Number(requestedData.emiAmount) * Number(requestedData.loanDays);
   }
 
   const loanData = {
@@ -423,34 +434,35 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
     customerName: customer.name,
     customerNumber: customer.customerNumber,
     loanNumber: nextLoanNumber,
-    amount: Number(requestedData.amount),
+    amount: Number(requestedData.loanAmount),
     emiAmount: Number(requestedData.emiAmount),
     loanType: requestedData.loanType,
-    dateApplied: dateApplied,
+    dateApplied: loanDate,
     loanDays: Number(requestedData.loanDays) || 30,
     emiType: requestedData.emiType || 'fixed',
-    customEmiAmount: requestedData.customEmiAmount || null,
+    customEmiAmount: requestedData.customEmiAmount ? Number(requestedData.customEmiAmount) : null,
     emiStartDate: emiStartDate,
     totalEmiCount: Number(requestedData.loanDays) || 30,
     emiPaidCount: 0,
     lastEmiDate: null,
     nextEmiDate: calculateNextEmiDate(emiStartDate, requestedData.loanType),
     totalPaidAmount: 0,
-    remainingAmount: Number(requestedData.amount),
+    remainingAmount: Number(requestedData.loanAmount),
     status: 'active',
-    createdBy: requestDoc.createdBy
+    createdBy: requestDoc.createdBy,
+    totalLoanAmount: totalLoanAmount // Store calculated total
   };
 
   const newLoan = new Loan(loanData);
   await newLoan.save();
-  console.log('✅ Additional loan created');
+  console.log('✅ Additional loan created with enhanced details');
 
   // Update request
   requestDoc.status = 'Approved';
   requestDoc.reviewedBy = processedBy;
   requestDoc.reviewedByRole = 'admin';
   requestDoc.reviewNotes = reason || 'Loan addition approved by admin';
-  requestDoc.actionTaken = `Additional loan created: ${nextLoanNumber}`;
+  requestDoc.actionTaken = `Additional loan created: ${nextLoanNumber} with ${requestedData.loanType} EMI`;
   requestDoc.reviewedAt = new Date();
   requestDoc.approvedAt = new Date();
   requestDoc.completedAt = new Date();
@@ -465,7 +477,10 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
     data: {
       loanId: newLoan._id,
       loanNumber: newLoan.loanNumber,
-      customerName: customer.name
+      customerName: customer.name,
+      loanType: newLoan.loanType,
+      emiType: newLoan.emiType,
+      totalAmount: totalLoanAmount
     }
   });
 }
