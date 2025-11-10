@@ -45,6 +45,7 @@ interface Loan {
   emiAmount: number;
   loanType: string;
   dateApplied: string;
+  emiStartDate?: string; // ADD THIS LINE
   loanDays: number;
   status?: string;
   createdBy?: string;
@@ -420,21 +421,25 @@ export default function DataEntryDashboard() {
   });
 
   const calculateEMICompletion = (loan: Loan) => {
-    const totalLoanAmount = loan.emiAmount * loan.totalEmiCount;
-    const completionPercentage = (loan.emiPaidCount / loan.totalEmiCount) * 100;
-    const isCompleted = loan.emiPaidCount >= loan.totalEmiCount;
-    const remainingEmis = loan.totalEmiCount - loan.emiPaidCount;
-    const totalPaid = loan.totalPaidAmount;
-    const remainingAmount = totalLoanAmount - totalPaid;
-    
-    return {
-      completionPercentage,
-      isCompleted,
-      remainingEmis,
-      totalPaid,
-      remainingAmount
-    };
+  // Use actual values from the loan object
+  const totalEmiCount = loan.totalEmiCount || loan.loanDays || 30;
+  const emiPaidCount = loan.emiPaidCount || 0;
+  const totalPaidAmount = loan.totalPaidAmount || 0;
+  const totalLoanAmount = loan.amount || (loan.emiAmount * totalEmiCount);
+  
+  const completionPercentage = (emiPaidCount / totalEmiCount) * 100;
+  const isCompleted = emiPaidCount >= totalEmiCount;
+  const remainingEmis = Math.max(totalEmiCount - emiPaidCount, 0);
+  const remainingAmount = Math.max(totalLoanAmount - totalPaidAmount, 0);
+  
+  return {
+    completionPercentage: Math.min(completionPercentage, 100), // Cap at 100%
+    isCompleted,
+    remainingEmis,
+    totalPaid: totalPaidAmount,
+    remainingAmount
   };
+};
 
   const calculateTotalLoanAmount = (loan: Loan): number => {
     return loan.emiAmount * loan.totalEmiCount;
@@ -486,107 +491,161 @@ export default function DataEntryDashboard() {
   };
 
   const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory[], loanFilter: string = 'all'): CalendarDay[] => {
-    const days: CalendarDay[] = [];
-    const year = month.getFullYear();
-    const monthIndex = month.getMonth();
-    
-    const firstDay = new Date(year, monthIndex, 1);
-    const lastDay = new Date(year, monthIndex + 1, 0);
-    
-    const filteredLoans = loanFilter === 'all' 
-      ? loans 
-      : loans.filter(loan => loan._id === loanFilter || loan.loanNumber === loanFilter);
-    
-    const filteredPaymentHistory = loanFilter === 'all'
-      ? paymentHistory
-      : paymentHistory.filter(payment => 
-          payment.loanId === loanFilter || payment.loanNumber === loanFilter
-        );
+  const days: CalendarDay[] = [];
+  const year = month.getFullYear();
+  const monthIndex = month.getMonth();
+  
+  const firstDay = new Date(year, monthIndex, 1);
+  const lastDay = new Date(year, monthIndex + 1, 0);
+  
+  const filteredLoans = loanFilter === 'all' 
+    ? loans 
+    : loans.filter(loan => loan._id === loanFilter || loan.loanNumber === loanFilter);
+  
+  const filteredPaymentHistory = loanFilter === 'all'
+    ? paymentHistory
+    : paymentHistory.filter(payment => 
+        payment.loanId === loanFilter || payment.loanNumber === loanFilter
+      );
 
-    const startingDayOfWeek = firstDay.getDay();
-    for (let i = startingDayOfWeek - 1; i >= 0; i--) {
-      const date = new Date(year, monthIndex, -i);
-      days.push({
-        date,
-        isCurrentMonth: false,
-        isToday: false,
-        emiStatus: 'none'
-      });
-    }
+  const startingDayOfWeek = firstDay.getDay();
+  for (let i = startingDayOfWeek - 1; i >= 0; i--) {
+    const date = new Date(year, monthIndex, -i);
+    days.push({
+      date,
+      isCurrentMonth: false,
+      isToday: false,
+      emiStatus: 'none'
+    });
+  }
+  
+  // Calculate all EMI due dates for filtered loans
+  const allEmiDueDates: { [key: string]: { loans: Loan[], amount: number } } = {};
+  
+  filteredLoans.forEach(loan => {
+    if (loan.emiPaidCount >= loan.totalEmiCount) return; // Skip completed loans
     
-    for (let day = 1; day <= lastDay.getDate(); day++) {
-      const date = new Date(year, monthIndex, day);
-      const isToday = date.toDateString() === new Date().toDateString();
+    // Use emiStartDate if available, otherwise fallback to dateApplied
+    const startDate = loan.emiStartDate || loan.dateApplied;
+    let currentDate = new Date(startDate);
+    const loanType = loan.loanType;
+    
+    // Generate EMI due dates for the calendar month
+    for (let i = 0; i < loan.totalEmiCount; i++) {
+      const dateStr = currentDate.toISOString().split('T')[0];
       
-      const dateStr = date.toISOString().split('T')[0];
-      const datePayments = filteredPaymentHistory.filter(payment => 
-        payment.paymentDate === dateStr
-      );
-      
-      const dueLoans = filteredLoans.filter(loan => 
-        loan.nextEmiDate === dateStr && loan.emiPaidCount < loan.totalEmiCount
-      );
-      
-      let emiStatus: CalendarDay['emiStatus'] = 'none';
-      let emiAmount = 0;
-      const loanNumbers: string[] = [];
-      
-      if (datePayments.length > 0) {
-        emiStatus = datePayments.every(p => p.status === 'Paid') ? 'paid' : 'partial';
-        emiAmount = datePayments.reduce((sum, p) => sum + p.amount, 0);
-        datePayments.forEach(p => {
-          if (p.loanNumber && !loanNumbers.includes(p.loanNumber)) {
-            loanNumbers.push(p.loanNumber);
-          }
-        });
-      } else if (dueLoans.length > 0) {
-        const today = new Date();
-        if (date < today) {
-          emiStatus = 'overdue';
-        } else {
-          emiStatus = 'due';
+      // Only consider dates within the calendar month
+      const calendarDate = new Date(dateStr);
+      if (calendarDate.getMonth() === monthIndex && calendarDate.getFullYear() === year) {
+        if (!allEmiDueDates[dateStr]) {
+          allEmiDueDates[dateStr] = { loans: [], amount: 0 };
         }
-        emiAmount = dueLoans.reduce((sum, loan) => sum + loan.emiAmount, 0);
-        dueLoans.forEach(loan => loanNumbers.push(loan.loanNumber));
-      } else if (date > new Date()) {
-        const upcomingLoans = filteredLoans.filter(loan => {
-          const emiDate = new Date(loan.nextEmiDate);
-          const diffTime = emiDate.getTime() - date.getTime();
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-          return diffDays >= 0 && diffDays <= 3;
-        });
         
-        if (upcomingLoans.length > 0) {
-          emiStatus = 'upcoming';
-          emiAmount = upcomingLoans.reduce((sum, loan) => sum + loan.emiAmount, 0);
-          upcomingLoans.forEach(loan => loanNumbers.push(loan.loanNumber));
+        // Only add if this EMI hasn't been paid yet
+        if (i >= loan.emiPaidCount) {
+          allEmiDueDates[dateStr].loans.push(loan);
+          allEmiDueDates[dateStr].amount += loan.emiAmount;
         }
       }
       
-      days.push({
-        date,
-        isCurrentMonth: true,
-        isToday,
-        emiStatus,
-        emiAmount,
-        loanNumbers,
-        paymentHistory: datePayments
+      // Calculate next EMI date based on loan type
+      switch(loanType) {
+        case 'Daily':
+          currentDate.setDate(currentDate.getDate() + 1);
+          break;
+        case 'Weekly':
+          currentDate.setDate(currentDate.getDate() + 7);
+          break;
+        case 'Monthly':
+          currentDate.setMonth(currentDate.getMonth() + 1);
+          break;
+        default:
+          currentDate.setDate(currentDate.getDate() + 1);
+      }
+      
+      // Stop if we've gone beyond the calendar month
+      if (currentDate > new Date(year, monthIndex + 1, 0)) {
+        break;
+      }
+    }
+  });
+  
+  for (let day = 1; day <= lastDay.getDate(); day++) {
+    const date = new Date(year, monthIndex, day);
+    const isToday = date.toDateString() === new Date().toDateString();
+    
+    const dateStr = date.toISOString().split('T')[0];
+    const datePayments = filteredPaymentHistory.filter(payment => 
+      payment.paymentDate === dateStr
+    );
+    
+    const dueLoans = allEmiDueDates[dateStr]?.loans || [];
+    const dueAmount = allEmiDueDates[dateStr]?.amount || 0;
+    
+    let emiStatus: CalendarDay['emiStatus'] = 'none';
+    let emiAmount = 0;
+    const loanNumbers: string[] = [];
+    
+    if (datePayments.length > 0) {
+      // Check if all due EMIs for this date are paid
+      const paidAmount = datePayments.reduce((sum, p) => sum + p.amount, 0);
+      const expectedAmount = dueAmount;
+      
+      if (paidAmount >= expectedAmount) {
+        emiStatus = 'paid';
+      } else if (paidAmount > 0) {
+        emiStatus = 'partial';
+      } else {
+        emiStatus = 'due';
+      }
+      
+      emiAmount = paidAmount;
+      datePayments.forEach(p => {
+        if (p.loanNumber && !loanNumbers.includes(p.loanNumber)) {
+          loanNumbers.push(p.loanNumber);
+        }
       });
+    } else if (dueLoans.length > 0) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const calendarDate = new Date(date);
+      calendarDate.setHours(0, 0, 0, 0);
+      
+      if (calendarDate < today) {
+        emiStatus = 'overdue';
+      } else if (calendarDate.getTime() === today.getTime()) {
+        emiStatus = 'due';
+      } else {
+        emiStatus = 'upcoming';
+      }
+      emiAmount = dueAmount;
+      dueLoans.forEach(loan => loanNumbers.push(loan.loanNumber));
     }
     
-    const endingDayOfWeek = lastDay.getDay();
-    for (let i = 1; i < 7 - endingDayOfWeek; i++) {
-      const date = new Date(year, monthIndex + 1, i);
-      days.push({
-        date,
-        isCurrentMonth: false,
-        isToday: false,
-        emiStatus: 'none'
-      });
-    }
-    
-    return days;
-  };
+    days.push({
+      date,
+      isCurrentMonth: true,
+      isToday,
+      emiStatus,
+      emiAmount,
+      loanNumbers,
+      paymentHistory: datePayments
+    });
+  }
+  
+  const endingDayOfWeek = lastDay.getDay();
+  for (let i = 1; i < 7 - endingDayOfWeek; i++) {
+    const date = new Date(year, monthIndex + 1, i);
+    days.push({
+      date,
+      isCurrentMonth: false,
+      isToday: false,
+      emiStatus: 'none'
+    });
+  }
+  
+  return days;
+};
 
   const getStatusColor = (status: CalendarDay['emiStatus']) => {
     switch (status) {
@@ -1952,106 +2011,155 @@ export default function DataEntryDashboard() {
 };
 
   const handleUpdateEMI = async () => {
-    if (!selectedCustomer || !selectedLoanForPayment) {
-      alert('Please select a customer and loan first');
+  if (!selectedCustomer || !selectedLoanForPayment) {
+    alert('Please select a customer and loan first');
+    return;
+  }
+
+  setIsLoading(true);
+  try {
+    console.log('🟡 Starting EMI update for customer:', selectedCustomer.name);
+    console.log('📦 Selected loan for payment:', selectedLoanForPayment);
+    console.log('📋 EMI update data:', emiUpdate);
+    
+    if (!emiUpdate.amount || !emiUpdate.paymentDate) {
+      alert('Please fill all required fields');
+      setIsLoading(false);
       return;
     }
 
-    setIsLoading(true);
-    try {
-      console.log('🟡 Starting EMI update for customer:', selectedCustomer.name);
-      console.log('📦 Selected loan for payment:', selectedLoanForPayment);
-      console.log('📋 EMI update data:', emiUpdate);
-      
-      if (!emiUpdate.amount || !emiUpdate.paymentDate) {
-        alert('Please fill all required fields');
-        setIsLoading(false);
-        return;
-      }
+    // Validate that we're not duplicating payment for the same date
+    const paymentDate = new Date(emiUpdate.paymentDate).toISOString().split('T')[0];
+    const existingPayment = selectedLoanForPayment.emiHistory?.find(
+      (payment: EMIHistory) => payment.paymentDate === paymentDate
+    );
 
-      const emiPaymentData = {
-        customerId: selectedCustomer._id,
-        customerName: selectedCustomer.name,
-        customerNumber: selectedCustomer.customerNumber,
-        loanId: selectedLoanForPayment._id,
-        loanNumber: selectedLoanForPayment.loanNumber,
-        paymentDate: emiUpdate.paymentDate,
-        amount: Number(emiUpdate.amount),
-        status: emiUpdate.status,
-        collectedBy: emiUpdate.collectedBy,
-        paymentMethod: 'Cash',
-        notes: emiUpdate.notes || `EMI payment recorded for ${selectedCustomer.name} - Customer ${selectedCustomer.customerNumber}`
-      };
-
-      console.log('📦 Sending EMI payment data:', emiPaymentData);
-
-      const response = await fetch('/api/data-entry/emi-payments', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(emiPaymentData),
-      });
-
-      const responseText = await response.text();
-      console.log('📄 Raw API response:', responseText);
-
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('❌ Failed to parse response as JSON:', parseError);
-        throw new Error('Server returned invalid response');
-      }
-
-      if (!response.ok) {
-        console.error('❌ API error response:', data);
-        
-        if (response.status === 404) {
-          throw new Error('Loan not found. Please refresh and try again.');
-        } else if (response.status === 400) {
-          throw new Error(data.error || 'Invalid loan data provided');
-        } else {
-          throw new Error(data.error || `HTTP error! status: ${response.status}`);
-        }
-      }
-
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to update EMI');
-      }
-
-      alert(data.message || 'EMI payment recorded successfully!');
-      
-      setShowPaymentForm(false);
-      setSelectedLoanForPayment(null);
-      setShowUpdateEMI(false);
-      setSelectedCustomer(null);
-      setSearchQuery('');
-      setFilters({
-        customerNumber: '',
-        loanType: '',
-        status: '',
-        officeCategory: ''
-      });
-      setShowFilters(false);
-      setEmiUpdate({
-        customerId: '',
-        customerName: '',
-        paymentDate: new Date().toISOString().split('T')[0],
-        amount: '',
-        status: 'Paid',
-        collectedBy: 'Operator 1'
-      });
-      
-      fetchDashboardData();
-      
-    } catch (error: any) {
-      console.error('💥 Error updating EMI:', error);
-      alert('Error: ' + error.message);
-    } finally {
+    if (existingPayment) {
+      alert(`EMI payment for ${paymentDate} already exists. Please use a different date or edit the existing payment.`);
       setIsLoading(false);
+      return;
     }
-  };
+
+    const emiPaymentData = {
+      customerId: selectedCustomer._id,
+      customerName: selectedCustomer.name,
+      customerNumber: selectedCustomer.customerNumber,
+      loanId: selectedLoanForPayment._id,
+      loanNumber: selectedLoanForPayment.loanNumber,
+      paymentDate: paymentDate,
+      amount: Number(emiUpdate.amount),
+      status: emiUpdate.status,
+      collectedBy: emiUpdate.collectedBy,
+      paymentMethod: 'Cash',
+      notes: emiUpdate.notes || `EMI payment recorded for ${selectedCustomer.name} - Customer ${selectedCustomer.customerNumber}`
+    };
+
+    console.log('📦 Sending EMI payment data:', emiPaymentData);
+
+    const response = await fetch('/api/data-entry/emi-payments', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(emiPaymentData),
+    });
+
+    const responseText = await response.text();
+    console.log('📄 Raw API response:', responseText);
+
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('❌ Failed to parse response as JSON:', parseError);
+      throw new Error('Server returned invalid response');
+    }
+
+    if (!response.ok) {
+      console.error('❌ API error response:', data);
+      
+      if (response.status === 409) {
+        throw new Error('EMI payment for this date already exists');
+      } else if (response.status === 404) {
+        throw new Error('Loan not found. Please refresh and try again.');
+      } else if (response.status === 400) {
+        throw new Error(data.error || 'Invalid loan data provided');
+      } else {
+        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+      }
+    }
+
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to update EMI');
+    }
+
+    alert(data.message || 'EMI payment recorded successfully!');
+    
+    // Refresh customer data to reflect changes - FIXED: Using the function correctly
+    if (selectedCustomer._id) {
+      await refreshCustomerData(selectedCustomer._id);
+      await fetchCustomers(); // Refresh the customers list
+    }
+    
+    setShowPaymentForm(false);
+    setSelectedLoanForPayment(null);
+    setShowUpdateEMI(false);
+    setSelectedCustomer(null);
+    setSearchQuery('');
+    setFilters({
+      customerNumber: '',
+      loanType: '',
+      status: '',
+      officeCategory: ''
+    });
+    setShowFilters(false);
+    setEmiUpdate({
+      customerId: '',
+      customerName: '',
+      paymentDate: new Date().toISOString().split('T')[0],
+      amount: '',
+      status: 'Paid',
+      collectedBy: 'Operator 1'
+    });
+    
+    fetchDashboardData();
+    
+  } catch (error: any) {
+    console.error('💥 Error updating EMI:', error);
+    alert('Error: ' + error.message);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+const refreshCustomerData = async (customerId: string) => {
+  try {
+    console.log('🔄 Refreshing customer data for:', customerId);
+    
+    const response = await fetch(`/api/data-entry/customers/${customerId}`);
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success) {
+        console.log('✅ Customer data refreshed successfully');
+        
+        // Update customer details if the modal is open
+        if (showCustomerDetails && customerDetails && customerDetails._id === customerId) {
+          setCustomerDetails(data.data);
+        }
+        
+        // Update selected customer if it's the same customer
+        if (selectedCustomer && selectedCustomer._id === customerId) {
+          setSelectedCustomer(data.data);
+        }
+        
+        return data.data;
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error refreshing customer data:', error);
+  }
+  return null;
+};
 
   const handleSearchCustomer = (customer: Customer) => {
     console.log('🔍 Customer selected for EMI:', customer);

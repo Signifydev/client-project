@@ -142,7 +142,7 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     hasRequestedData: !!requestDoc.requestedData
   });
 
-  // Validate step data - be more flexible in validation
+  // Validate step data
   if (!step1Data && !requestDoc.requestedData) {
     return NextResponse.json({ 
       success: false,
@@ -197,7 +197,7 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
   // Hash password
   const hashedPassword = await bcrypt.hash(loginData.password, 12);
 
-  // Create customer with proper data extraction and file handling
+  // Create customer WITHOUT loanNumber field
   const customerDataToSave = {
     name: customerData.name,
     phone: Array.isArray(customerData.phone) ? customerData.phone : [customerData.phone],
@@ -209,7 +209,7 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     category: customerData.category || 'A',
     officeCategory: customerData.officeCategory || 'Office 1',
     
-    // FIXED: Match the Customer schema structure for file fields
+    // File fields
     profilePicture: {
       filename: null,
       url: null,
@@ -231,6 +231,7 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
       }
     },
     
+    // Loan-related fields (but NOT loanNumber)
     loanAmount: parseFloat(loanData.loanAmount),
     emiAmount: parseFloat(loanData.emiAmount),
     loanType: loanData.loanType,
@@ -239,8 +240,12 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     emiType: loanData.emiType || 'fixed',
     customEmiAmount: loanData.customEmiAmount ? parseFloat(loanData.customEmiAmount) : null,
     emiStartDate: new Date(loanData.emiStartDate || loanData.loanDate || new Date()),
+    
+    // Login credentials
     loginId: loginData.loginId,
     password: hashedPassword,
+    
+    // Status and metadata
     status: 'active',
     isActive: true,
     createdBy: requestDoc.createdBy,
@@ -250,14 +255,15 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     updatedAt: new Date()
   };
 
+  // REMOVE loanNumber from customer data if it exists
+  delete customerDataToSave.loanNumber;
+
   console.log('💾 Creating customer with data:', {
     name: customerDataToSave.name,
     customerNumber: customerDataToSave.customerNumber,
     phone: customerDataToSave.phone,
     loanAmount: customerDataToSave.loanAmount,
-    emiAmount: customerDataToSave.emiAmount,
-    profilePicture: customerDataToSave.profilePicture,
-    fiDocuments: customerDataToSave.fiDocuments
+    emiAmount: customerDataToSave.emiAmount
   });
 
   const customer = new Customer(customerDataToSave);
@@ -282,7 +288,7 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     // Continue even if user creation fails
   }
 
-  // Create main loan
+  // Create main loan with proper loan number
   const calculateNextEmiDate = (emiStartDate, loanType) => {
     const date = new Date(emiStartDate);
     switch(loanType) {
@@ -301,11 +307,15 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     return date;
   };
 
+  // Generate unique loan number for this customer
+  const existingLoans = await Loan.find({ customerId: customer._id });
+  const loanNumber = `L${existingLoans.length + 1}`;
+
   const loanDataToSave = {
     customerId: customer._id,
     customerName: customer.name,
     customerNumber: customer.customerNumber,
-    loanNumber: 'L1',
+    loanNumber: loanNumber, // This should be unique per customer, not globally
     amount: parseFloat(loanData.loanAmount),
     emiAmount: parseFloat(loanData.emiAmount),
     loanType: loanData.loanType,
@@ -326,7 +336,7 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
 
   const mainLoan = new Loan(loanDataToSave);
   await mainLoan.save();
-  console.log('✅ Main loan created');
+  console.log('✅ Main loan created:', loanNumber);
 
   // Update request
   requestDoc.status = 'Approved';
@@ -334,7 +344,7 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
   requestDoc.reviewedBy = processedBy;
   requestDoc.reviewedByRole = 'admin';
   requestDoc.reviewNotes = reason || 'Customer approved by admin';
-  requestDoc.actionTaken = 'Customer account created with loan L1';
+  requestDoc.actionTaken = `Customer account created with loan ${loanNumber}`;
   requestDoc.reviewedAt = new Date();
   requestDoc.approvedAt = new Date();
   requestDoc.completedAt = new Date();
@@ -350,7 +360,7 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
       customerId: customer._id,
       customerName: customer.name,
       customerNumber: customer.customerNumber,
-      loanNumber: 'L1'
+      loanNumber: loanNumber
     }
   });
 }
