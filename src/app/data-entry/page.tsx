@@ -527,7 +527,7 @@ export default function DataEntryDashboard() {
     
     // Use emiStartDate if available, otherwise fallback to dateApplied
     const startDate = loan.emiStartDate || loan.dateApplied;
-    let currentDate = new Date(startDate);
+    const currentDate = new Date(startDate);
     const loanType = loan.loanType;
     
     // Generate EMI due dates for the calendar month
