@@ -255,6 +255,31 @@ const formatDateToDDMMYYYY = (dateString: string): string => {
   return `${day}/${month}/${year}`;
 };
 
+// Collection section state
+const [collectionDate, setCollectionDate] = useState(new Date().toISOString().split('T')[0]);
+const [collectionData, setCollectionData] = useState<{
+  date: string;
+  customers: Array<{
+    customerId: string;
+    customerNumber: string;
+    customerName: string;
+    totalCollection: number;
+    officeCategory: string;
+    loans: Array<{
+      loanNumber: string;
+      emiAmount: number;
+      collectedAmount: number;
+    }>;
+  }>;
+  summary: {
+    totalCollection: number;
+    office1Collection: number;
+    office2Collection: number;
+    totalCustomers: number;
+  };
+} | null>(null);
+const [isLoadingCollection, setIsLoadingCollection] = useState(false);
+
 const formatDateForInput = (dateString: string): string => {
   if (!dateString) return '';
   const date = new Date(dateString);
@@ -845,10 +870,11 @@ export default function DataEntryDashboard() {
   // This was causing the duplicate L1 issue
   
   // If no loans found but customer has loan data, create one (only as fallback)
+  // BUT use the actual customer._id instead of creating a custom ID
   if (loans.length === 0 && customer.loanAmount) {
     console.log('⚠️ No loans found in customerDetails, creating default loan from customer data');
     const defaultLoan: Loan = {
-      _id: customer._id + '_default', // Use a different ID to avoid conflicts
+      _id: customer._id, // Use the actual customer ID instead of custom string
       customerId: customer._id,
       customerName: customer.name,
       customerNumber: customer.customerNumber || `CN${customer._id}`,
@@ -1137,6 +1163,7 @@ export default function DataEntryDashboard() {
     fetchDashboardData();
     if (activeTab === 'customers') fetchCustomers();
     if (activeTab === 'requests') fetchPendingRequests();
+    if (activeTab === 'collection') fetchCollectionData(collectionDate);
   }, [activeTab]);
 
   useEffect(() => {
@@ -1768,6 +1795,91 @@ export default function DataEntryDashboard() {
       setIsLoading(false);
     }
   };
+
+  const fetchCollectionData = async (date: string) => {
+  setIsLoadingCollection(true);
+  try {
+    console.log('🔄 Fetching collection data for date:', date);
+    
+    const response = await fetch(`/api/data-entry/collection?date=${date}`);
+    if (response.ok) {
+      const data = await response.json();
+      console.log('📊 Collection data:', data);
+      
+      if (data.success) {
+        setCollectionData(data.data);
+      } else {
+        // If no API, generate mock data from existing customers and EMI history
+        await generateMockCollectionData(date);
+      }
+    } else {
+      // Fallback to mock data if API fails
+      await generateMockCollectionData(date);
+    }
+  } catch (error) {
+    console.error('❌ Error fetching collection data:', error);
+    // Fallback to mock data
+    await generateMockCollectionData(date);
+  } finally {
+    setIsLoadingCollection(false);
+  }
+};
+
+const generateMockCollectionData = async (date: string) => {
+  console.log('📋 Generating mock collection data for:', date);
+  
+  // Use existing customers and their EMI history to generate collection data
+  const collectionCustomers = customers.map(customer => {
+    const customerLoans = getAllCustomerLoans(customer, null);
+    
+    // Calculate total collection for this customer on the selected date
+    let totalCustomerCollection = 0;
+    const loanDetails = customerLoans.map(loan => {
+      // Find EMI payments for this loan on the selected date
+      const datePayments = (loan.emiHistory || []).filter(
+        payment => payment.paymentDate === date
+      );
+      
+      const collectedAmount = datePayments.reduce((sum, payment) => sum + payment.amount, 0);
+      totalCustomerCollection += collectedAmount;
+      
+      return {
+        loanNumber: loan.loanNumber,
+        emiAmount: loan.emiAmount,
+        collectedAmount: collectedAmount
+      };
+    }).filter(loan => loan.collectedAmount > 0); // Only include loans with collections
+
+    return {
+      customerId: customer._id,
+      customerNumber: customer.customerNumber || 'N/A',
+      customerName: customer.name,
+      totalCollection: totalCustomerCollection,
+      officeCategory: customer.officeCategory || 'Office 1',
+      loans: loanDetails
+    };
+  }).filter(customer => customer.totalCollection > 0); // Only include customers with collections
+
+  // Calculate summary
+  const totalCollection = collectionCustomers.reduce((sum, customer) => sum + customer.totalCollection, 0);
+  const office1Collection = collectionCustomers
+    .filter(customer => customer.officeCategory === 'Office 1')
+    .reduce((sum, customer) => sum + customer.totalCollection, 0);
+  const office2Collection = collectionCustomers
+    .filter(customer => customer.officeCategory === 'Office 2')
+    .reduce((sum, customer) => sum + customer.totalCollection, 0);
+
+  setCollectionData({
+    date: date,
+    customers: collectionCustomers,
+    summary: {
+      totalCollection,
+      office1Collection,
+      office2Collection,
+      totalCustomers: collectionCustomers.length
+    }
+  });
+};
 
   const handleAddCustomer = async () => {
   if (!validateStep3()) return;
@@ -5186,6 +5298,182 @@ const refreshCustomerData = async (customerId: string) => {
   );
 };
 
+const renderCollection = () => {
+  return (
+    <div className="px-4 py-6 sm:px-0">
+      <div className="bg-white shadow rounded-lg">
+        <div className="px-4 py-5 sm:px-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h3 className="text-lg leading-6 font-medium text-gray-900">Daily Collection Report</h3>
+              <p className="mt-1 max-w-2xl text-sm text-gray-500">View EMI collections by date</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Date
+                </label>
+                <input 
+                  type="date"
+                  className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={collectionDate}
+                  onChange={(e) => {
+                    setCollectionDate(e.target.value);
+                    fetchCollectionData(e.target.value);
+                  }}
+                />
+              </div>
+              <button
+                onClick={() => fetchCollectionData(collectionDate)}
+                disabled={isLoadingCollection}
+                className="mt-6 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400"
+              >
+                {isLoadingCollection ? 'Loading...' : 'Refresh'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-gray-200">
+          {/* Summary Cards */}
+          {collectionData && (
+            <div className="px-4 py-5 sm:p-6 bg-gray-50">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div className="bg-white p-4 rounded-lg shadow-sm border">
+                  <dt className="text-sm font-medium text-gray-500 truncate">Total Collection</dt>
+                  <dd className="mt-1 text-2xl font-semibold text-green-600">
+                    ₹{collectionData.summary.totalCollection.toLocaleString()}
+                  </dd>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow-sm border">
+                  <dt className="text-sm font-medium text-gray-500 truncate">Office 1 Collection</dt>
+                  <dd className="mt-1 text-2xl font-semibold text-blue-600">
+                    ₹{collectionData.summary.office1Collection.toLocaleString()}
+                  </dd>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow-sm border">
+                  <dt className="text-sm font-medium text-gray-500 truncate">Office 2 Collection</dt>
+                  <dd className="mt-1 text-2xl font-semibold text-purple-600">
+                    ₹{collectionData.summary.office2Collection.toLocaleString()}
+                  </dd>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow-sm border">
+                  <dt className="text-sm font-medium text-gray-500 truncate">Customers Paid</dt>
+                  <dd className="mt-1 text-2xl font-semibold text-orange-600">
+                    {collectionData.summary.totalCustomers}
+                  </dd>
+                </div>
+              </div>
+
+              {/* Collection Table */}
+              <div className="bg-white rounded-lg shadow-sm border">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Customer Number
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Customer Name
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          EMI Collection
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Office
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Loan Details
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {collectionData.customers.length > 0 ? (
+                        collectionData.customers.map((customer, index) => (
+                          <tr key={customer.customerId} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                              {customer.customerNumber}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              {customer.customerName}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">
+                              ₹{customer.totalCollection.toLocaleString()}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                customer.officeCategory === 'Office 1' 
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : 'bg-purple-100 text-purple-800'
+                              }`}>
+                                {customer.officeCategory}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-500">
+                              <div className="space-y-1">
+                                {customer.loans.map((loan, loanIndex) => (
+                                  <div key={loanIndex} className="flex justify-between text-xs">
+                                    <span>{loan.loanNumber}:</span>
+                                    <span className="font-medium">
+                                      ₹{loan.collectedAmount} of ₹{loan.emiAmount}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="px-6 py-8 text-center">
+                            <div className="text-gray-400 text-4xl mb-4">💰</div>
+                            <p className="text-gray-500 text-lg">No collections found for {collectionDate}</p>
+                            <p className="text-sm text-gray-400 mt-2">
+                              No EMI payments were recorded on this date
+                            </p>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Date Information */}
+              <div className="mt-4 text-center">
+                <p className="text-sm text-gray-500">
+                  Showing collections for: <strong>{new Date(collectionDate).toLocaleDateString('en-IN')}</strong>
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  Last updated: {new Date().toLocaleString('en-IN')}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {!collectionData && !isLoadingCollection && (
+            <div className="px-6 py-8 text-center">
+              <div className="text-gray-400 text-4xl mb-4">📅</div>
+              <p className="text-gray-500 text-lg">Select a date to view collection report</p>
+              <p className="text-sm text-gray-400 mt-2">
+                Choose a date and click Refresh to see EMI collections
+              </p>
+            </div>
+          )}
+
+          {isLoadingCollection && (
+            <div className="px-6 py-8 text-center">
+              <div className="animate-spin text-4xl mb-4">⏳</div>
+              <p className="text-gray-500">Loading collection data...</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
   const renderDashboard = () => (
     <div className="px-4 py-6 sm:px-0">
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -6226,12 +6514,13 @@ const refreshCustomerData = async (customerId: string) => {
       <div className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <nav className="flex space-x-8">
-            {[
-              { id: 'dashboard', label: 'Dashboard' },
-              { id: 'customers', label: 'Customers' },
-              { id: 'emi', label: 'EMI' },
-              { id: 'requests', label: 'Requests' }
-            ].map((tab) => (
+  {[
+    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'customers', label: 'Customers' },
+    { id: 'emi', label: 'EMI' },
+    { id: 'collection', label: 'Collection' },
+    { id: 'requests', label: 'Requests' }
+  ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
@@ -6249,11 +6538,12 @@ const refreshCustomerData = async (customerId: string) => {
       </div>
 
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        {activeTab === 'dashboard' && renderDashboard()}
-        {activeTab === 'customers' && renderCustomers()}
-        {activeTab === 'emi' && renderEMI()}
-        {activeTab === 'requests' && renderRequests()}
-      </main>
+  {activeTab === 'dashboard' && renderDashboard()}
+  {activeTab === 'customers' && renderCustomers()}
+  {activeTab === 'emi' && renderEMI()}
+  {activeTab === 'collection' && renderCollection()}
+  {activeTab === 'requests' && renderRequests()}
+</main>
 
       {showAddCustomer && renderAddCustomerForm()}
       {showUpdateEMI && renderUpdateEMIForm()}

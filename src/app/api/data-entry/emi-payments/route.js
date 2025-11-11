@@ -3,6 +3,7 @@ import EMIPayment from '@/lib/models/EMIPayment';
 import Customer from '@/lib/models/Customer';
 import Loan from '@/lib/models/Loan';
 import { connectDB } from '@/lib/db';
+import mongoose from 'mongoose';
 
 export async function POST(request) {
   try {
@@ -33,12 +34,56 @@ export async function POST(request) {
       }, { status: 400 });
     }
 
+    // Validate ObjectId format for customerId
+    if (!mongoose.Types.ObjectId.isValid(customerId)) {
+      return NextResponse.json({ 
+        success: false,
+        error: 'Invalid customer ID format'
+      }, { status: 400 });
+    }
+
+    // Validate ObjectId format for loanId if provided
+    if (loanId && !mongoose.Types.ObjectId.isValid(loanId)) {
+      return NextResponse.json({ 
+        success: false,
+        error: 'Invalid loan ID format'
+      }, { status: 400 });
+    }
+
     // Validate amount
     if (amount <= 0) {
       return NextResponse.json({ 
         success: false,
         error: 'Payment amount must be greater than 0'
       }, { status: 400 });
+    }
+
+    // Format payment date to YYYY-MM-DD for comparison
+    const formattedPaymentDate = new Date(paymentDate).toISOString().split('T')[0];
+
+    // Check if EMI payment already exists for this loan and date
+    if (loanId) {
+      const existingPayment = await EMIPayment.findOne({
+        loanId: loanId,
+        paymentDate: {
+          $gte: new Date(formattedPaymentDate + 'T00:00:00.000Z'),
+          $lt: new Date(formattedPaymentDate + 'T23:59:59.999Z')
+        },
+        status: { $ne: 'cancelled' }
+      });
+
+      if (existingPayment) {
+        return NextResponse.json({ 
+          success: false,
+          error: `EMI payment for date ${formattedPaymentDate} already exists. Please use a different date or edit the existing payment.`,
+          existingPayment: {
+            id: existingPayment._id,
+            amount: existingPayment.amount,
+            date: existingPayment.paymentDate,
+            status: existingPayment.status
+          }
+        }, { status: 409 });
+      }
     }
 
     // Check if customer exists
@@ -185,13 +230,32 @@ export async function POST(request) {
 
     // Update loan statistics with proper error handling
     try {
+      // Calculate new EMI paid count and total paid amount
+      const loanPayments = await EMIPayment.find({
+        loanId: finalLoanId,
+        status: { $in: ['Paid', 'Partial'] }
+      });
+      
+      const totalPaidAmount = loanPayments.reduce((sum, p) => sum + p.amount, 0);
+      const emiPaidCount = loanPayments.length;
+
       await Loan.findByIdAndUpdate(finalLoanId, {
-        $inc: {
-          emiPaid: 1, // Count of EMI payments
-          totalPaid: parseFloat(amount) // Total amount paid
-        },
+        emiPaidCount: emiPaidCount,
+        totalPaidAmount: totalPaidAmount,
+        remainingAmount: loan.amount - totalPaidAmount,
         lastPaymentDate: new Date(paymentDate),
-        updatedAt: new Date()
+        updatedAt: new Date(),
+        $push: {
+          emiHistory: {
+            _id: payment._id,
+            paymentDate: payment.paymentDate,
+            amount: payment.amount,
+            status: payment.status,
+            collectedBy: payment.collectedBy,
+            notes: payment.notes,
+            createdAt: new Date()
+          }
+        }
       });
       console.log('✅ Loan statistics updated successfully');
     } catch (loanUpdateError) {
@@ -211,7 +275,9 @@ export async function POST(request) {
         loanNumber: finalLoanNumber,
         paymentDate: payment.paymentDate,
         loanId: finalLoanId,
-        collectedBy: collectedBy
+        collectedBy: collectedBy,
+        emiPaidCount: loan.emiPaidCount + 1,
+        totalPaidAmount: loan.totalPaidAmount + parseFloat(amount)
       }
     });
     
@@ -266,7 +332,7 @@ export async function GET(request) {
 
     const payments = await EMIPayment.find(query)
       .populate('customerId', 'name phone businessName area loanNumber')
-      .populate('loanId', 'loanNumber loanType emiAmount amount')
+      .populate('loanId', 'loanNumber loanType emiAmount amount emiPaidCount totalPaidAmount')
       .sort({ paymentDate: -1, createdAt: -1 })
       .limit(limit);
 
