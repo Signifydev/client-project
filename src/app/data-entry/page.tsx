@@ -547,32 +547,48 @@ export default function DataEntryDashboard() {
     });
   }
   
-  // Calculate all EMI due dates for filtered loans
-  const allEmiDueDates: { [key: string]: { loans: Loan[], amount: number } } = {};
+  // Create a map of all payment dates with their amounts and status
+  const paymentMap: { [key: string]: { amount: number; status: string; loans: string[] } } = {};
+  
+  // Process all payments for the month
+  filteredPaymentHistory.forEach(payment => {
+    const paymentDate = new Date(payment.paymentDate);
+    if (paymentDate.getMonth() === monthIndex && paymentDate.getFullYear() === year) {
+      const dateStr = payment.paymentDate;
+      if (!paymentMap[dateStr]) {
+        paymentMap[dateStr] = { amount: 0, status: 'paid', loans: [] };
+      }
+      paymentMap[dateStr].amount += payment.amount;
+      if (payment.loanNumber && !paymentMap[dateStr].loans.includes(payment.loanNumber)) {
+        paymentMap[dateStr].loans.push(payment.loanNumber);
+      }
+    }
+  });
+
+  // Calculate EMI due dates for all filtered loans
+  const emiDueDates: { [key: string]: { expectedAmount: number; loans: Loan[] } } = {};
   
   filteredLoans.forEach(loan => {
     if (loan.emiPaidCount >= loan.totalEmiCount) return; // Skip completed loans
     
-    // Use emiStartDate if available, otherwise fallback to dateApplied
-    const startDate = loan.emiStartDate || loan.dateApplied;
-    const currentDate = new Date(startDate);
+    const startDate = new Date(loan.emiStartDate || loan.dateApplied);
     const loanType = loan.loanType;
+    let currentDate = new Date(startDate);
     
-    // Generate EMI due dates for the calendar month
+    // Generate all EMI due dates for this loan
     for (let i = 0; i < loan.totalEmiCount; i++) {
       const dateStr = currentDate.toISOString().split('T')[0];
       
       // Only consider dates within the calendar month
-      const calendarDate = new Date(dateStr);
-      if (calendarDate.getMonth() === monthIndex && calendarDate.getFullYear() === year) {
-        if (!allEmiDueDates[dateStr]) {
-          allEmiDueDates[dateStr] = { loans: [], amount: 0 };
+      if (currentDate.getMonth() === monthIndex && currentDate.getFullYear() === year) {
+        if (!emiDueDates[dateStr]) {
+          emiDueDates[dateStr] = { expectedAmount: 0, loans: [] };
         }
         
         // Only add if this EMI hasn't been paid yet
         if (i >= loan.emiPaidCount) {
-          allEmiDueDates[dateStr].loans.push(loan);
-          allEmiDueDates[dateStr].amount += loan.emiAmount;
+          emiDueDates[dateStr].expectedAmount += loan.emiAmount;
+          emiDueDates[dateStr].loans.push(loan);
         }
       }
       
@@ -598,42 +614,35 @@ export default function DataEntryDashboard() {
     }
   });
   
+  // Generate calendar days for the current month
   for (let day = 1; day <= lastDay.getDate(); day++) {
     const date = new Date(year, monthIndex, day);
     const isToday = date.toDateString() === new Date().toDateString();
-    
     const dateStr = date.toISOString().split('T')[0];
-    const datePayments = filteredPaymentHistory.filter(payment => 
-      payment.paymentDate === dateStr
-    );
     
-    const dueLoans = allEmiDueDates[dateStr]?.loans || [];
-    const dueAmount = allEmiDueDates[dateStr]?.amount || 0;
+    const paymentInfo = paymentMap[dateStr];
+    const dueInfo = emiDueDates[dateStr];
     
     let emiStatus: CalendarDay['emiStatus'] = 'none';
     let emiAmount = 0;
     const loanNumbers: string[] = [];
+    const datePayments = filteredPaymentHistory.filter(payment => payment.paymentDate === dateStr);
     
-    if (datePayments.length > 0) {
-      // Check if all due EMIs for this date are paid
-      const paidAmount = datePayments.reduce((sum, p) => sum + p.amount, 0);
-      const expectedAmount = dueAmount;
+    // Priority 1: Check if there are payments on this date
+    if (paymentInfo) {
+      emiAmount = paymentInfo.amount;
+      loanNumbers.push(...paymentInfo.loans);
       
-      if (paidAmount >= expectedAmount) {
+      // If payment exists, it should be green (paid)
+      if (paymentInfo.amount > 0) {
         emiStatus = 'paid';
-      } else if (paidAmount > 0) {
-        emiStatus = 'partial';
-      } else {
-        emiStatus = 'due';
       }
+    }
+    // Priority 2: Check if there are due EMIs on this date
+    else if (dueInfo) {
+      emiAmount = dueInfo.expectedAmount;
+      dueInfo.loans.forEach(loan => loanNumbers.push(loan.loanNumber));
       
-      emiAmount = paidAmount;
-      datePayments.forEach(p => {
-        if (p.loanNumber && !loanNumbers.includes(p.loanNumber)) {
-          loanNumbers.push(p.loanNumber);
-        }
-      });
-    } else if (dueLoans.length > 0) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const calendarDate = new Date(date);
@@ -646,8 +655,17 @@ export default function DataEntryDashboard() {
       } else {
         emiStatus = 'upcoming';
       }
-      emiAmount = dueAmount;
-      dueLoans.forEach(loan => loanNumbers.push(loan.loanNumber));
+    }
+    // Priority 3: Check for partial payments or other status
+    else if (datePayments.length > 0) {
+      const paidAmount = datePayments.reduce((sum, p) => sum + p.amount, 0);
+      emiAmount = paidAmount;
+      datePayments.forEach(p => {
+        if (p.loanNumber && !loanNumbers.includes(p.loanNumber)) {
+          loanNumbers.push(p.loanNumber);
+        }
+      });
+      emiStatus = 'paid'; // If there are payments, show as paid
     }
     
     days.push({
@@ -676,15 +694,21 @@ export default function DataEntryDashboard() {
 };
 
   const getStatusColor = (status: CalendarDay['emiStatus']) => {
-    switch (status) {
-      case 'paid': return 'bg-green-100 border-green-300 text-green-800';
-      case 'due': return 'bg-blue-100 border-blue-300 text-blue-800';
-      case 'overdue': return 'bg-red-100 border-red-300 text-red-800';
-      case 'partial': return 'bg-yellow-100 border-yellow-300 text-yellow-800';
-      case 'upcoming': return 'bg-purple-100 border-purple-300 text-purple-800';
-      default: return 'bg-gray-50 border-gray-200 text-gray-600';
-    }
-  };
+  switch (status) {
+    case 'paid': 
+      return 'bg-green-100 border-green-300 text-green-800 hover:bg-green-200';
+    case 'due': 
+      return 'bg-blue-100 border-blue-300 text-blue-800 hover:bg-blue-200';
+    case 'overdue': 
+      return 'bg-red-100 border-red-300 text-red-800 hover:bg-red-200';
+    case 'partial': 
+      return 'bg-yellow-100 border-yellow-300 text-yellow-800 hover:bg-yellow-200';
+    case 'upcoming': 
+      return 'bg-purple-100 border-purple-300 text-purple-800 hover:bg-purple-200';
+    default: 
+      return 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100';
+  }
+};
 
   const getStatusIcon = (status: CalendarDay['emiStatus']) => {
     switch (status) {
