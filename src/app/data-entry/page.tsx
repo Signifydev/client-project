@@ -1831,73 +1831,94 @@ export default function DataEntryDashboard() {
   try {
     console.log('🔄 Fetching collection data for date:', date);
     
+    // First, try to fetch from API
     const response = await fetch(`/api/data-entry/collection?date=${date}`);
+    
     if (response.ok) {
       const data = await response.json();
-      console.log('📊 Collection data:', data);
+      console.log('📊 Collection API response:', data);
       
-      if (data.success) {
+      if (data.success && data.data) {
         setCollectionData(data.data);
-      } else {
-        // If no API, generate mock data from existing customers and EMI history
-        await generateMockCollectionData(date);
+        return;
       }
-    } else {
-      // Fallback to mock data if API fails
-      await generateMockCollectionData(date);
     }
+    
+    // If API fails or returns no data, generate from existing data
+    console.log('📋 Generating collection data from existing customers and EMI history');
+    await generateCollectionDataFromEMIHistory(date);
+    
   } catch (error) {
     console.error('❌ Error fetching collection data:', error);
-    // Fallback to mock data
-    await generateMockCollectionData(date);
+    // Fallback to generating data from existing EMI history
+    await generateCollectionDataFromEMIHistory(date);
   } finally {
     setIsLoadingCollection(false);
   }
 };
 
-const generateMockCollectionData = async (date: string) => {
-  console.log('📋 Generating mock collection data for:', date);
+const generateCollectionDataFromEMIHistory = async (date: string) => {
+  console.log('🔍 Generating collection data for:', date);
   
-  // Use existing customers and their EMI history to generate collection data
-  const collectionCustomers = customers.map(customer => {
+  const collectionCustomers = [];
+  let totalCollection = 0;
+  let office1Collection = 0;
+  let office2Collection = 0;
+
+  for (const customer of customers) {
     const customerLoans = getAllCustomerLoans(customer, null);
+    let customerTotalCollection = 0;
+    const loanDetails: { loanNumber: string; emiAmount: number; collectedAmount: number }[] = [];
     
-    // Calculate total collection for this customer on the selected date
-    let totalCustomerCollection = 0;
-    const loanDetails = customerLoans.map(loan => {
-      // Find EMI payments for this loan on the selected date
-      const datePayments = (loan.emiHistory || []).filter(
-        payment => payment.paymentDate === date
-      );
+    for (const loan of customerLoans) {
+      if (loan.emiHistory && Array.isArray(loan.emiHistory)) {
+        const datePayments = loan.emiHistory.filter(
+          payment => payment.paymentDate === date
+        );
+        
+        if (datePayments.length > 0) {
+          const collectedAmount = datePayments.reduce((sum, payment) => sum + payment.amount, 0);
+          customerTotalCollection += collectedAmount;
+          
+          loanDetails.push({
+            loanNumber: loan.loanNumber,
+            emiAmount: loan.emiAmount,
+            collectedAmount: collectedAmount
+          });
+        }
+      }
+    }
+    
+    if (customerTotalCollection > 0) {
+      collectionCustomers.push({
+        customerId: customer._id,
+        customerNumber: customer.customerNumber || `CN${customer._id}`,
+        customerName: customer.name,
+        totalCollection: customerTotalCollection,
+        officeCategory: customer.officeCategory || 'Office 1',
+        loans: loanDetails // Include loans array
+      });
       
-      const collectedAmount = datePayments.reduce((sum, payment) => sum + payment.amount, 0);
-      totalCustomerCollection += collectedAmount;
+      totalCollection += customerTotalCollection;
       
-      return {
-        loanNumber: loan.loanNumber,
-        emiAmount: loan.emiAmount,
-        collectedAmount: collectedAmount
-      };
-    }).filter(loan => loan.collectedAmount > 0); // Only include loans with collections
+      if (customer.officeCategory === 'Office 1') {
+        office1Collection += customerTotalCollection;
+      } else if (customer.officeCategory === 'Office 2') {
+        office2Collection += customerTotalCollection;
+      }
+    }
+  }
 
-    return {
-      customerId: customer._id,
-      customerNumber: customer.customerNumber || 'N/A',
-      customerName: customer.name,
-      totalCollection: totalCustomerCollection,
-      officeCategory: customer.officeCategory || 'Office 1',
-      loans: loanDetails
-    };
-  }).filter(customer => customer.totalCollection > 0); // Only include customers with collections
-
-  // Calculate summary
-  const totalCollection = collectionCustomers.reduce((sum, customer) => sum + customer.totalCollection, 0);
-  const office1Collection = collectionCustomers
-    .filter(customer => customer.officeCategory === 'Office 1')
-    .reduce((sum, customer) => sum + customer.totalCollection, 0);
-  const office2Collection = collectionCustomers
-    .filter(customer => customer.officeCategory === 'Office 2')
-    .reduce((sum, customer) => sum + customer.totalCollection, 0);
+  console.log('📊 Generated collection data:', {
+    date,
+    customers: collectionCustomers,
+    summary: {
+      totalCollection,
+      office1Collection,
+      office2Collection,
+      totalCustomers: collectionCustomers.length
+    }
+  });
 
   setCollectionData({
     date: date,
