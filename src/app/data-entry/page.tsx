@@ -573,7 +573,7 @@ export default function DataEntryDashboard() {
     
     const startDate = new Date(loan.emiStartDate || loan.dateApplied);
     const loanType = loan.loanType;
-    let currentDate = new Date(startDate);
+    const currentDate = new Date(startDate); // Changed to const
     
     // Generate all EMI due dates for this loan
     for (let i = 0; i < loan.totalEmiCount; i++) {
@@ -593,19 +593,23 @@ export default function DataEntryDashboard() {
       }
       
       // Calculate next EMI date based on loan type
+      const nextDate = new Date(currentDate); // Create new date for calculation
       switch(loanType) {
         case 'Daily':
-          currentDate.setDate(currentDate.getDate() + 1);
+          nextDate.setDate(nextDate.getDate() + 1);
           break;
         case 'Weekly':
-          currentDate.setDate(currentDate.getDate() + 7);
+          nextDate.setDate(nextDate.getDate() + 7);
           break;
         case 'Monthly':
-          currentDate.setMonth(currentDate.getMonth() + 1);
+          nextDate.setMonth(nextDate.getMonth() + 1);
           break;
         default:
-          currentDate.setDate(currentDate.getDate() + 1);
+          nextDate.setDate(nextDate.getDate() + 1);
       }
+      
+      // Use the next date for next iteration
+      currentDate.setTime(nextDate.getTime());
       
       // Stop if we've gone beyond the calendar month
       if (currentDate > new Date(year, monthIndex + 1, 0)) {
