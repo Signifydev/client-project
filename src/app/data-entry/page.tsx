@@ -2181,7 +2181,7 @@ const generateMockCollectionData = async (date: string) => {
     const cleanCustomerId = selectedCustomer._id?.replace?.(/_default$/, '') || selectedCustomer._id;
     
     // For loanId, we need to be more careful - it might be a temporary ID
-    let cleanLoanId = selectedLoanForPayment._id?.replace?.(/_default$/, '') || selectedLoanForPayment._id;
+    const cleanLoanId = selectedLoanForPayment._id?.replace?.(/_default$/, '') || selectedLoanForPayment._id;
     
     console.log('🔧 Cleaned IDs:', {
       originalCustomerId: selectedCustomer._id,
