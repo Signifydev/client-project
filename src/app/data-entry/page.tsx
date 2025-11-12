@@ -255,31 +255,6 @@ const formatDateToDDMMYYYY = (dateString: string): string => {
   return `${day}/${month}/${year}`;
 };
 
-// Collection section state
-const [collectionDate, setCollectionDate] = useState(new Date().toISOString().split('T')[0]);
-const [collectionData, setCollectionData] = useState<{
-  date: string;
-  customers: Array<{
-    customerId: string;
-    customerNumber: string;
-    customerName: string;
-    totalCollection: number;
-    officeCategory: string;
-    loans: Array<{
-      loanNumber: string;
-      emiAmount: number;
-      collectedAmount: number;
-    }>;
-  }>;
-  summary: {
-    totalCollection: number;
-    office1Collection: number;
-    office2Collection: number;
-    totalCustomers: number;
-  };
-} | null>(null);
-const [isLoadingCollection, setIsLoadingCollection] = useState(false);
-
 const formatDateForInput = (dateString: string): string => {
   if (!dateString) return '';
   const date = new Date(dateString);
@@ -331,7 +306,29 @@ export default function DataEntryDashboard() {
     category: 'A',
     officeCategory: 'Office 1'
   });
-  
+    const [collectionDate, setCollectionDate] = useState(new Date().toISOString().split('T')[0]);
+  const [collectionData, setCollectionData] = useState<{
+    date: string;
+    customers: Array<{
+      customerId: string;
+      customerNumber: string;
+      customerName: string;
+      totalCollection: number;
+      officeCategory: string;
+      loans: Array<{
+        loanNumber: string;
+        emiAmount: number;
+        collectedAmount: number;
+      }>;
+    }>;
+    summary: {
+      totalCollection: number;
+      office1Collection: number;
+      office2Collection: number;
+      totalCustomers: number;
+    };
+  } | null>(null);
+  const [isLoadingCollection, setIsLoadingCollection] = useState(false);
   const [editLoanData, setEditLoanData] = useState<EditLoanData>({
     loanId: '',
     customerId: '',
