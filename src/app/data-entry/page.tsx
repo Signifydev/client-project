@@ -849,8 +849,12 @@ export default function DataEntryDashboard() {
   if (customerDetails?.loans && Array.isArray(customerDetails.loans)) {
     console.log(`📊 Processing ${customerDetails.loans.length} loans from customerDetails`);
     customerDetails.loans.forEach((loan, index) => {
+      // FIX: Clean the loan ID to remove any suffixes
+      const cleanLoanId = loan._id?.replace?.(/_default$/, '') || loan._id;
+      
       const enhancedLoan: Loan = {
         ...loan,
+        _id: cleanLoanId, // Use cleaned ID
         loanNumber: loan.loanNumber || `L${index + 1}`,
         totalEmiCount: (loan as any).totalEmiCount || loan.loanDays || 30,
         emiPaidCount: (loan as any).emiPaidCount || 0,
@@ -866,18 +870,17 @@ export default function DataEntryDashboard() {
     });
   }
   
-  // REMOVED: Don't create loan from customer direct data if we already have loans from customerDetails
-  // This was causing the duplicate L1 issue
-  
   // If no loans found but customer has loan data, create one (only as fallback)
-  // BUT use the actual customer._id instead of creating a custom ID
+  // Use the actual customer._id but clean it first
   if (loans.length === 0 && customer.loanAmount) {
     console.log('⚠️ No loans found in customerDetails, creating default loan from customer data');
+    const cleanCustomerId = customer._id?.replace?.(/_default$/, '') || customer._id;
+    
     const defaultLoan: Loan = {
-      _id: customer._id, // Use the actual customer ID instead of custom string
-      customerId: customer._id,
+      _id: cleanCustomerId, // Use cleaned customer ID
+      customerId: cleanCustomerId,
       customerName: customer.name,
-      customerNumber: customer.customerNumber || `CN${customer._id}`,
+      customerNumber: customer.customerNumber || `CN${cleanCustomerId}`,
       loanNumber: 'L1',
       amount: customer.loanAmount || 0,
       emiAmount: customer.emiAmount || 0,
@@ -2152,11 +2155,22 @@ const generateMockCollectionData = async (date: string) => {
       return;
     }
 
+    // FIX: Clean the customerId and loanId to remove any suffixes like "_default"
+    const cleanCustomerId = selectedCustomer._id?.replace?.(/_default$/, '') || selectedCustomer._id;
+    const cleanLoanId = selectedLoanForPayment._id?.replace?.(/_default$/, '') || selectedLoanForPayment._id;
+
+    console.log('🔧 Cleaned IDs:', {
+      originalCustomerId: selectedCustomer._id,
+      cleanCustomerId,
+      originalLoanId: selectedLoanForPayment._id,
+      cleanLoanId
+    });
+
     const emiPaymentData = {
-      customerId: selectedCustomer._id,
+      customerId: cleanCustomerId,
       customerName: selectedCustomer.name,
       customerNumber: selectedCustomer.customerNumber,
-      loanId: selectedLoanForPayment._id,
+      loanId: cleanLoanId,
       loanNumber: selectedLoanForPayment.loanNumber,
       paymentDate: paymentDate,
       amount: Number(emiUpdate.amount),
@@ -2207,7 +2221,7 @@ const generateMockCollectionData = async (date: string) => {
 
     alert(data.message || 'EMI payment recorded successfully!');
     
-    // Refresh customer data to reflect changes - FIXED: Using the function correctly
+    // Refresh customer data to reflect changes
     if (selectedCustomer._id) {
       await refreshCustomerData(selectedCustomer._id);
       await fetchCustomers(); // Refresh the customers list
@@ -2274,55 +2288,63 @@ const refreshCustomerData = async (customerId: string) => {
 };
 
   const handleSearchCustomer = (customer: Customer) => {
-    console.log('🔍 Customer selected for EMI:', customer);
-    setSelectedCustomer(customer);
-    setEmiUpdate(prev => ({
-      ...prev,
-      customerId: customer._id || customer.id || '',
-      customerName: customer.name,
-      customerNumber: customer.customerNumber,
-      paymentDate: new Date().toISOString().split('T')[0]
-    }));
-    
-    setSearchQuery('');
-  };
+  console.log('🔍 Customer selected for EMI:', customer);
+  
+  // FIX: Clean the customer ID
+  const cleanCustomerId = customer._id?.replace?.(/_default$/, '') || customer._id;
+  
+  setSelectedCustomer(customer);
+  setEmiUpdate(prev => ({
+    ...prev,
+    customerId: cleanCustomerId || '',
+    customerName: customer.name,
+    customerNumber: customer.customerNumber,
+    paymentDate: new Date().toISOString().split('T')[0]
+  }));
+  
+  setSearchQuery('');
+};
 
   const handlePayNow = (loan: Loan) => {
-    console.log('💰 Pay Now clicked for loan:', loan);
-    console.log('📋 Loan details:', {
-      id: loan._id,
-      loanNumber: loan.loanNumber,
-      customerId: loan.customerId,
-      customerNumber: loan.customerNumber,
-      amount: loan.amount,
-      emiAmount: loan.emiAmount
-    });
-    
-    if (!loan._id) {
-      console.error('❌ No loan ID found for loan:', loan);
-      alert('Error: Loan ID not found. Please refresh and try again.');
-      return;
-    }
+  console.log('💰 Pay Now clicked for loan:', loan);
+  console.log('📋 Loan details:', {
+    id: loan._id,
+    loanNumber: loan.loanNumber,
+    customerId: loan.customerId,
+    customerNumber: loan.customerNumber,
+    amount: loan.amount,
+    emiAmount: loan.emiAmount
+  });
+  
+  if (!loan._id) {
+    console.error('❌ No loan ID found for loan:', loan);
+    alert('Error: Loan ID not found. Please refresh and try again.');
+    return;
+  }
 
-    if (!selectedCustomer?._id) {
-      console.error('❌ No customer selected');
-      alert('Error: No customer selected. Please select a customer first.');
-      return;
-    }
+  if (!selectedCustomer?._id) {
+    console.error('❌ No customer selected');
+    alert('Error: No customer selected. Please select a customer first.');
+    return;
+  }
 
-    setSelectedLoanForPayment(loan);
-    setEmiUpdate(prev => ({
-      ...prev,
-      customerId: selectedCustomer._id || '',
-      customerName: selectedCustomer.name || '',
-      customerNumber: selectedCustomer.customerNumber || '',
-      loanId: loan._id,
-      loanNumber: loan.loanNumber || '',
-      amount: loan.emiAmount ? loan.emiAmount.toString() : '',
-      paymentDate: new Date().toISOString().split('T')[0]
-    }));
-    setShowPaymentForm(true);
-  };
+  // FIX: Clean the IDs before using them
+  const cleanCustomerId = selectedCustomer._id?.replace?.(/_default$/, '') || selectedCustomer._id;
+  const cleanLoanId = loan._id?.replace?.(/_default$/, '') || loan._id;
+
+  setSelectedLoanForPayment(loan);
+  setEmiUpdate(prev => ({
+    ...prev,
+    customerId: cleanCustomerId || '',
+    customerName: selectedCustomer.name || '',
+    customerNumber: selectedCustomer.customerNumber || '',
+    loanId: cleanLoanId,
+    loanNumber: loan.loanNumber || '',
+    amount: loan.emiAmount ? loan.emiAmount.toString() : '',
+    paymentDate: new Date().toISOString().split('T')[0]
+  }));
+  setShowPaymentForm(true);
+};
 
   const handleLogout = () => {
     router.push('/auth');

@@ -5,6 +5,36 @@ import Loan from '@/lib/models/Loan';
 import { connectDB } from '@/lib/db';
 import mongoose from 'mongoose';
 
+// Helper function to clean IDs by removing suffixes
+function cleanId(id) {
+  if (!id) return id;
+  // Remove common suffixes like "_default", "_temp", etc.
+  return id.replace(/(_default|_temp|_new)$/, '');
+}
+
+// Helper function to validate and clean ObjectId
+function validateAndCleanObjectId(id, fieldName = 'ID') {
+  if (!id) {
+    return { isValid: false, error: `${fieldName} is required` };
+  }
+
+  const cleanedId = cleanId(id);
+  
+  if (!mongoose.Types.ObjectId.isValid(cleanedId)) {
+    return { 
+      isValid: false, 
+      error: `Invalid ${fieldName} format: ${id} (cleaned to: ${cleanedId})` 
+    };
+  }
+
+  return { 
+    isValid: true, 
+    cleanedId: new mongoose.Types.ObjectId(cleanedId),
+    originalId: id,
+    cleanedIdString: cleanedId
+  };
+}
+
 export async function POST(request) {
   try {
     await connectDB();
@@ -34,20 +64,28 @@ export async function POST(request) {
       }, { status: 400 });
     }
 
-    // Validate ObjectId format for customerId
-    if (!mongoose.Types.ObjectId.isValid(customerId)) {
+    // Validate and clean customerId
+    const customerIdValidation = validateAndCleanObjectId(customerId, 'Customer ID');
+    if (!customerIdValidation.isValid) {
       return NextResponse.json({ 
         success: false,
-        error: 'Invalid customer ID format'
+        error: customerIdValidation.error
       }, { status: 400 });
     }
 
-    // Validate ObjectId format for loanId if provided
-    if (loanId && !mongoose.Types.ObjectId.isValid(loanId)) {
-      return NextResponse.json({ 
-        success: false,
-        error: 'Invalid loan ID format'
-      }, { status: 400 });
+    const cleanedCustomerId = customerIdValidation.cleanedId;
+
+    // Validate and clean loanId if provided
+    let cleanedLoanId = null;
+    if (loanId) {
+      const loanIdValidation = validateAndCleanObjectId(loanId, 'Loan ID');
+      if (!loanIdValidation.isValid) {
+        return NextResponse.json({ 
+          success: false,
+          error: loanIdValidation.error
+        }, { status: 400 });
+      }
+      cleanedLoanId = loanIdValidation.cleanedId;
     }
 
     // Validate amount
@@ -62,9 +100,9 @@ export async function POST(request) {
     const formattedPaymentDate = new Date(paymentDate).toISOString().split('T')[0];
 
     // Check if EMI payment already exists for this loan and date
-    if (loanId) {
+    if (cleanedLoanId) {
       const existingPayment = await EMIPayment.findOne({
-        loanId: loanId,
+        loanId: cleanedLoanId,
         paymentDate: {
           $gte: new Date(formattedPaymentDate + 'T00:00:00.000Z'),
           $lt: new Date(formattedPaymentDate + 'T23:59:59.999Z')
@@ -87,11 +125,11 @@ export async function POST(request) {
     }
 
     // Check if customer exists
-    const customer = await Customer.findById(customerId);
+    const customer = await Customer.findById(cleanedCustomerId);
     if (!customer) {
       return NextResponse.json({ 
         success: false,
-        error: 'Customer not found'
+        error: `Customer not found with ID: ${cleanedCustomerId} (original: ${customerId})`
       }, { status: 404 });
     }
 
@@ -99,34 +137,39 @@ export async function POST(request) {
     let finalLoanId = null;
     let finalLoanNumber = 'N/A';
 
-    console.log('🔍 Loan search parameters:', { loanId, loanNumber, customerId });
+    console.log('🔍 Loan search parameters:', { 
+      originalLoanId: loanId,
+      cleanedLoanId: cleanedLoanId?.toString(),
+      loanNumber, 
+      customerId: cleanedCustomerId.toString() 
+    });
 
-    // If loanId is provided, verify the loan exists and belongs to customer
-    if (loanId) {
-      console.log('🔍 Searching for loan by ID:', loanId);
+    // If cleanedLoanId is provided, verify the loan exists and belongs to customer
+    if (cleanedLoanId) {
+      console.log('🔍 Searching for loan by cleaned ID:', cleanedLoanId.toString());
       loan = await Loan.findOne({ 
-        _id: loanId, 
-        customerId: customerId 
+        _id: cleanedLoanId, 
+        customerId: cleanedCustomerId 
       });
       
       if (!loan) {
-        console.log('❌ Loan not found by ID, trying broader search...');
+        console.log('❌ Loan not found by cleaned ID, trying broader search...');
         // Try without customerId constraint (in case there's a data mismatch)
-        loan = await Loan.findById(loanId);
+        loan = await Loan.findById(cleanedLoanId);
         
         if (!loan) {
-          console.log('❌ Loan not found in database with ID:', loanId);
+          console.log('❌ Loan not found in database with cleaned ID:', cleanedLoanId.toString());
           return NextResponse.json({ 
             success: false,
-            error: 'Loan not found. Please refresh and try again.'
+            error: `Loan not found with ID: ${cleanedLoanId} (original: ${loanId}). Please refresh and try again.`
           }, { status: 404 });
         }
         
         // Verify loan belongs to customer (security check)
-        if (loan.customerId.toString() !== customerId.toString()) {
+        if (loan.customerId.toString() !== cleanedCustomerId.toString()) {
           console.log('❌ Loan does not belong to customer:', {
-            loanCustomerId: loan.customerId,
-            requestCustomerId: customerId
+            loanCustomerId: loan.customerId.toString(),
+            requestCustomerId: cleanedCustomerId.toString()
           });
           return NextResponse.json({ 
             success: false,
@@ -137,18 +180,18 @@ export async function POST(request) {
       
       finalLoanId = loan._id;
       finalLoanNumber = loan.loanNumber;
-      console.log('✅ Found loan by ID:', { 
-        loanId: finalLoanId, 
+      console.log('✅ Found loan by cleaned ID:', { 
+        loanId: finalLoanId.toString(), 
         loanNumber: finalLoanNumber,
         customerName: loan.customerName 
       });
     } else {
       // AUTO-FIND: Find the main/active loan for this customer
-      console.log('🔍 Auto-finding loan for customer:', customerId);
+      console.log('🔍 Auto-finding loan for customer:', cleanedCustomerId.toString());
       
       // Strategy 1: Find main loan (isMainLoan: true)
       loan = await Loan.findOne({ 
-        customerId, 
+        customerId: cleanedCustomerId, 
         isMainLoan: true,
         status: 'active' 
       });
@@ -157,7 +200,7 @@ export async function POST(request) {
       if (!loan) {
         console.log('⚠️ No main loan found, searching for any active loan...');
         loan = await Loan.findOne({ 
-          customerId, 
+          customerId: cleanedCustomerId, 
           status: 'active' 
         }).sort({ createdAt: -1 });
       }
@@ -165,12 +208,12 @@ export async function POST(request) {
       // Strategy 3: Find any loan for this customer (even inactive)
       if (!loan) {
         console.log('⚠️ No active loan found, searching for any loan...');
-        loan = await Loan.findOne({ customerId }).sort({ createdAt: -1 });
+        loan = await Loan.findOne({ customerId: cleanedCustomerId }).sort({ createdAt: -1 });
       }
 
       // If still no loan found, we cannot proceed
       if (!loan) {
-        console.log('❌ No loan found for customer:', customerId);
+        console.log('❌ No loan found for customer:', cleanedCustomerId.toString());
         return NextResponse.json({ 
           success: false,
           error: 'No loan found for this customer. Please ensure the customer has an approved loan before recording EMI payments.'
@@ -180,7 +223,7 @@ export async function POST(request) {
       finalLoanId = loan._id;
       finalLoanNumber = loan.loanNumber;
       console.log('✅ Auto-found loan:', { 
-        loanId: finalLoanId, 
+        loanId: finalLoanId.toString(), 
         loanNumber: finalLoanNumber,
         customerName: loan.customerName,
         isMainLoan: loan.isMainLoan,
@@ -202,7 +245,7 @@ export async function POST(request) {
 
     // Create EMI payment record
     const paymentData = {
-      customerId,
+      customerId: cleanedCustomerId,
       customerName,
       loanId: finalLoanId,
       loanNumber: finalLoanNumber,
@@ -216,13 +259,13 @@ export async function POST(request) {
       isVerified: false
     };
 
-    console.log('💾 Creating EMI payment:', paymentData);
+    console.log('💾 Creating EMI payment with cleaned IDs:', paymentData);
 
     const payment = new EMIPayment(paymentData);
     await payment.save();
 
     // Update customer's last payment date and total paid
-    await Customer.findByIdAndUpdate(customerId, {
+    await Customer.findByIdAndUpdate(cleanedCustomerId, {
       lastPaymentDate: new Date(paymentDate),
       $inc: { totalPaid: parseFloat(amount) },
       updatedAt: new Date()
@@ -274,7 +317,7 @@ export async function POST(request) {
         amount: amount,
         loanNumber: finalLoanNumber,
         paymentDate: payment.paymentDate,
-        loanId: finalLoanId,
+        loanId: finalLoanId.toString(),
         collectedBy: collectedBy,
         emiPaidCount: loan.emiPaidCount + 1,
         totalPaidAmount: loan.totalPaidAmount + parseFloat(amount)
@@ -285,7 +328,8 @@ export async function POST(request) {
     console.error('❌ Error recording EMI payment:', error);
     return NextResponse.json({ 
       success: false, 
-      error: error.message 
+      error: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     }, { status: 500 });
   }
 }
@@ -303,14 +347,30 @@ export async function GET(request) {
 
     let query = {};
 
-    // Filter by customer ID
+    // Filter by customer ID (with cleaning)
     if (customerId) {
-      query.customerId = customerId;
+      const cleanedCustomerId = cleanId(customerId);
+      if (mongoose.Types.ObjectId.isValid(cleanedCustomerId)) {
+        query.customerId = new mongoose.Types.ObjectId(cleanedCustomerId);
+      } else {
+        return NextResponse.json({ 
+          success: false,
+          error: 'Invalid customer ID format'
+        }, { status: 400 });
+      }
     }
 
-    // Filter by loan ID
+    // Filter by loan ID (with cleaning)
     if (loanId) {
-      query.loanId = loanId;
+      const cleanedLoanId = cleanId(loanId);
+      if (mongoose.Types.ObjectId.isValid(cleanedLoanId)) {
+        query.loanId = new mongoose.Types.ObjectId(cleanedLoanId);
+      } else {
+        return NextResponse.json({ 
+          success: false,
+          error: 'Invalid loan ID format'
+        }, { status: 400 });
+      }
     }
 
     // Filter by collection date
@@ -437,9 +497,18 @@ export async function PUT(request) {
       }, { status: 400 });
     }
 
-    console.log('🟡 Updating EMI payment:', paymentId);
+    // Clean payment ID
+    const cleanedPaymentId = cleanId(paymentId);
+    if (!mongoose.Types.ObjectId.isValid(cleanedPaymentId)) {
+      return NextResponse.json({ 
+        success: false,
+        error: 'Invalid payment ID format'
+      }, { status: 400 });
+    }
 
-    const payment = await EMIPayment.findById(paymentId);
+    console.log('🟡 Updating EMI payment:', cleanedPaymentId);
+
+    const payment = await EMIPayment.findById(cleanedPaymentId);
     if (!payment) {
       return NextResponse.json({ 
         success: false,
@@ -447,17 +516,26 @@ export async function PUT(request) {
       }, { status: 404 });
     }
 
+    // Clean any IDs in the update data
+    const cleanedData = { ...data };
+    if (cleanedData.customerId) {
+      cleanedData.customerId = cleanId(cleanedData.customerId);
+    }
+    if (cleanedData.loanId) {
+      cleanedData.loanId = cleanId(cleanedData.loanId);
+    }
+
     // Update allowed fields
     const allowedUpdates = ['amount', 'status', 'paymentDate', 'collectedBy', 'paymentMethod', 'notes', 'isVerified'];
     allowedUpdates.forEach(field => {
-      if (data[field] !== undefined) {
-        payment[field] = data[field];
+      if (cleanedData[field] !== undefined) {
+        payment[field] = cleanedData[field];
       }
     });
 
     await payment.save();
 
-    console.log('✅ EMI payment updated successfully:', paymentId);
+    console.log('✅ EMI payment updated successfully:', cleanedPaymentId);
 
     return NextResponse.json({ 
       success: true,
