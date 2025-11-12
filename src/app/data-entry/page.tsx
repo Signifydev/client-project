@@ -57,6 +57,7 @@ interface Loan {
   totalPaidAmount: number;
   remainingAmount: number;
   emiHistory: EMIHistory[];
+  isFallback?: boolean; 
 }
 
 interface EMIHistory {
@@ -842,39 +843,62 @@ export default function DataEntryDashboard() {
     } : 'null'
   });
 
-  // Only use loans from customerDetails if available
+  // Only use loans from customerDetails if available and they have real database IDs
   if (customerDetails?.loans && Array.isArray(customerDetails.loans)) {
     console.log(`📊 Processing ${customerDetails.loans.length} loans from customerDetails`);
+    
     customerDetails.loans.forEach((loan, index) => {
-      // FIX: Clean the loan ID to remove any suffixes
-      const cleanLoanId = loan._id?.replace?.(/_default$/, '') || loan._id;
-      
-      const enhancedLoan: Loan = {
-        ...loan,
-        _id: cleanLoanId, // Use cleaned ID
-        loanNumber: loan.loanNumber || `L${index + 1}`,
-        totalEmiCount: (loan as any).totalEmiCount || loan.loanDays || 30,
-        emiPaidCount: (loan as any).emiPaidCount || 0,
-        lastEmiDate: (loan as any).lastEmiDate || loan.dateApplied,
-        nextEmiDate: (loan as any).nextEmiDate || calculateNextEmiDate(loan.dateApplied, loan.loanType),
-        totalPaidAmount: (loan as any).totalPaidAmount || 0,
-        remainingAmount: (loan as any).remainingAmount || loan.amount,
-        emiHistory: (loan as any).emiHistory || [],
-        status: (loan as any).status || 'active'
-      };
-      loans.push(enhancedLoan);
-      console.log(`📋 Added loan ${index + 1}:`, enhancedLoan);
+      // Only include loans that have valid database IDs (not temporary ones)
+      if (loan._id && loan._id.length === 24 && /^[0-9a-fA-F]{24}$/.test(loan._id.replace(/_default$/, ''))) {
+        const cleanLoanId = loan._id.replace(/_default$/, '');
+        
+        const enhancedLoan: Loan = {
+          ...loan,
+          _id: cleanLoanId, // Use cleaned ID
+          loanNumber: loan.loanNumber || `L${index + 1}`,
+          totalEmiCount: (loan as any).totalEmiCount || loan.loanDays || 30,
+          emiPaidCount: (loan as any).emiPaidCount || 0,
+          lastEmiDate: (loan as any).lastEmiDate || loan.dateApplied,
+          nextEmiDate: (loan as any).nextEmiDate || calculateNextEmiDate(loan.dateApplied, loan.loanType),
+          totalPaidAmount: (loan as any).totalPaidAmount || 0,
+          remainingAmount: (loan as any).remainingAmount || loan.amount,
+          emiHistory: (loan as any).emiHistory || [],
+          status: (loan as any).status || 'active'
+        };
+        loans.push(enhancedLoan);
+        console.log(`📋 Added database loan ${index + 1}:`, enhancedLoan);
+      } else {
+        console.log(`⚠️ Skipping loan ${index + 1} - invalid or temporary ID:`, loan._id);
+      }
     });
   }
   
-  // If no loans found but customer has loan data, create one (only as fallback)
-  // Use the actual customer._id but clean it first
+  // If no valid database loans found but customer has loan data, create a fallback loan
+  // BUT mark it clearly as a fallback so we know it might not exist in the database
   if (loans.length === 0 && customer.loanAmount) {
-    console.log('⚠️ No loans found in customerDetails, creating default loan from customer data');
+    console.log('⚠️ No valid database loans found, creating fallback loan from customer data');
     const cleanCustomerId = customer._id?.replace?.(/_default$/, '') || customer._id;
     
-    const defaultLoan: Loan = {
-      _id: cleanCustomerId, // Use cleaned customer ID
+    const refreshCustomerLoans = async (customerId: string): Promise<Loan[]> => {
+  try {
+    console.log('🔄 Refreshing customer loans for:', customerId);
+    
+    const response = await fetch(`/api/data-entry/customers/${customerId}`);
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success && data.data) {
+        console.log('✅ Customer loans refreshed:', data.data.loans);
+        return data.data.loans || [];
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error refreshing customer loans:', error);
+  }
+  return [];
+};
+
+    const fallbackLoan: Loan = {
+      _id: `fallback_${cleanCustomerId}`, // Mark as fallback
       customerId: cleanCustomerId,
       customerName: customer.name,
       customerNumber: customer.customerNumber || `CN${cleanCustomerId}`,
@@ -891,10 +915,11 @@ export default function DataEntryDashboard() {
       totalPaidAmount: 0,
       remainingAmount: customer.loanAmount || 0,
       emiHistory: [],
-      status: customer.status || 'active'
+      status: customer.status || 'active',
+      isFallback: true // Mark as fallback
     };
-    loans.push(defaultLoan);
-    console.log('📝 Created default loan:', defaultLoan);
+    loans.push(fallbackLoan);
+    console.log('📝 Created fallback loan (may not exist in database):', fallbackLoan);
   }
   
   console.log(`🎯 Final loans count: ${loans.length}`, loans);
@@ -2154,21 +2179,24 @@ const generateMockCollectionData = async (date: string) => {
 
     // FIX: Clean the customerId and loanId to remove any suffixes like "_default"
     const cleanCustomerId = selectedCustomer._id?.replace?.(/_default$/, '') || selectedCustomer._id;
-    const cleanLoanId = selectedLoanForPayment._id?.replace?.(/_default$/, '') || selectedLoanForPayment._id;
-
+    
+    // For loanId, we need to be more careful - it might be a temporary ID
+    let cleanLoanId = selectedLoanForPayment._id?.replace?.(/_default$/, '') || selectedLoanForPayment._id;
+    
     console.log('🔧 Cleaned IDs:', {
       originalCustomerId: selectedCustomer._id,
       cleanCustomerId,
       originalLoanId: selectedLoanForPayment._id,
-      cleanLoanId
+      cleanLoanId,
+      customerNumber: selectedCustomer.customerNumber,
+      loanNumber: selectedLoanForPayment.loanNumber
     });
 
-    const emiPaymentData = {
+    // Enhanced EMI payment data with fallback options
+    const emiPaymentData: any = {
       customerId: cleanCustomerId,
       customerName: selectedCustomer.name,
       customerNumber: selectedCustomer.customerNumber,
-      loanId: cleanLoanId,
-      loanNumber: selectedLoanForPayment.loanNumber,
       paymentDate: paymentDate,
       amount: Number(emiUpdate.amount),
       status: emiUpdate.status,
@@ -2176,6 +2204,18 @@ const generateMockCollectionData = async (date: string) => {
       paymentMethod: 'Cash',
       notes: emiUpdate.notes || `EMI payment recorded for ${selectedCustomer.name} - Customer ${selectedCustomer.customerNumber}`
     };
+
+    // Only include loanId if it's a valid MongoDB-like ID
+    // If the loanId looks like a temporary ID, let the backend auto-find the loan
+    if (cleanLoanId && cleanLoanId.length === 24 && /^[0-9a-fA-F]{24}$/.test(cleanLoanId)) {
+      emiPaymentData.loanId = cleanLoanId;
+      emiPaymentData.loanNumber = selectedLoanForPayment.loanNumber;
+      console.log('✅ Using valid loan ID:', cleanLoanId);
+    } else {
+      console.log('⚠️ Loan ID appears to be temporary, letting backend auto-find loan');
+      // Don't include loanId - backend will auto-find the customer's loan
+      emiPaymentData.loanNumber = selectedLoanForPayment.loanNumber;
+    }
 
     console.log('📦 Sending EMI payment data:', emiPaymentData);
 
@@ -2204,7 +2244,11 @@ const generateMockCollectionData = async (date: string) => {
       if (response.status === 409) {
         throw new Error('EMI payment for this date already exists');
       } else if (response.status === 404) {
-        throw new Error('Loan not found. Please refresh and try again.');
+        // Enhanced loan not found error handling
+        if (data.error?.includes('Loan not found') || data.error?.includes('No loan found')) {
+          throw new Error(`Loan not found for customer. Please ensure the customer has an approved loan in the system. ${data.error}`);
+        }
+        throw new Error(data.error || 'Loan not found. Please refresh and try again.');
       } else if (response.status === 400) {
         throw new Error(data.error || 'Invalid loan data provided');
       } else {
@@ -2249,7 +2293,13 @@ const generateMockCollectionData = async (date: string) => {
     
   } catch (error: any) {
     console.error('💥 Error updating EMI:', error);
-    alert('Error: ' + error.message);
+    
+    // More user-friendly error messages
+    if (error.message.includes('Loan not found')) {
+      alert(`❌ Loan Issue: ${error.message}\n\nPlease ensure:\n• The customer has an approved loan\n• The loan exists in the system\n• Contact admin if this persists`);
+    } else {
+      alert('Error: ' + error.message);
+    }
   } finally {
     setIsLoading(false);
   }
@@ -2310,7 +2360,8 @@ const refreshCustomerData = async (customerId: string) => {
     customerId: loan.customerId,
     customerNumber: loan.customerNumber,
     amount: loan.amount,
-    emiAmount: loan.emiAmount
+    emiAmount: loan.emiAmount,
+    isFallback: loan.isFallback
   });
   
   if (!loan._id) {
@@ -2323,6 +2374,19 @@ const refreshCustomerData = async (customerId: string) => {
     console.error('❌ No customer selected');
     alert('Error: No customer selected. Please select a customer first.');
     return;
+  }
+
+  // Check if this is a fallback loan (may not exist in database)
+  if ((loan as any).isFallback) {
+    const confirmProceed = confirm(
+      '⚠️ This loan appears to be a system-generated fallback loan and may not exist in the database.\n\n' +
+      'The system will attempt to find the customer\'s actual loan, but if no loan is found, the payment may fail.\n\n' +
+      'Do you want to proceed?'
+    );
+    
+    if (!confirmProceed) {
+      return;
+    }
   }
 
   // FIX: Clean the IDs before using them
