@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import Request from '@/lib/models/Request';
+import Customer from '@/lib/models/Customer';
 import { connectDB } from '@/lib/db';
 
 export async function POST(request) {
@@ -32,17 +33,21 @@ export async function POST(request) {
         { status: 400 }
       );
     }
-    // Validate phone number format
-    const phoneRegex = /^[0-9]{10}$/;
-    if (!phoneRegex.test(phone)) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          error: 'Please enter a valid 10-digit phone number',
-          field: 'phone'
-        },
-        { status: 400 }
-      );
+
+    // Validate phone numbers
+    if (phone && Array.isArray(phone)) {
+      for (const phoneNum of phone) {
+        if (phoneNum && !/^[0-9]{10}$/.test(phoneNum)) {
+          return NextResponse.json(
+            { 
+              success: false, 
+              error: 'Please enter valid 10-digit phone numbers',
+              field: 'phone'
+            },
+            { status: 400 }
+          );
+        }
+      }
     }
 
     // Validate numeric fields
@@ -82,40 +87,44 @@ export async function POST(request) {
 
     console.log('✅ Existing customer found:', existingCustomer.name);
 
-    // Check for duplicate phone number (if phone is being changed)
-    if (phone !== existingCustomer.phone) {
-      const customerWithSamePhone = await Customer.findOne({
-        phone: phone,
-        _id: { $ne: customerId }, // Exclude current customer
-        status: { $in: ['active', 'pending'] }
-      });
-      
-      if (customerWithSamePhone) {
-        return NextResponse.json(
-          { 
-            success: false, 
-            error: 'Another customer with this phone number already exists',
-            field: 'phone'
-          },
-          { status: 409 }
-        );
+    // Check for duplicate phone numbers (if phone is being changed)
+    if (phone && Array.isArray(phone)) {
+      for (const phoneNum of phone) {
+        if (phoneNum && phoneNum !== existingCustomer.phone) {
+          const customerWithSamePhone = await Customer.findOne({
+            phone: phoneNum,
+            _id: { $ne: customerId },
+            status: { $in: ['active', 'pending'] }
+          });
+          
+          if (customerWithSamePhone) {
+            return NextResponse.json(
+              { 
+                success: false, 
+                error: 'Another customer with this phone number already exists',
+                field: 'phone'
+              },
+              { status: 409 }
+            );
+          }
+        }
       }
     }
 
-    // Check for duplicate loan number (if loan number is being changed)
-    if (loanNumber !== existingCustomer.loanNumber) {
-      const customerWithSameLoanNumber = await Customer.findOne({
-        loanNumber: loanNumber,
-        _id: { $ne: customerId }, // Exclude current customer
+    // Check for duplicate customer number (if customer number is being changed)
+    if (customerNumber !== existingCustomer.customerNumber) {
+      const customerWithSameCustomerNumber = await Customer.findOne({
+        customerNumber: customerNumber,
+        _id: { $ne: customerId },
         status: { $in: ['active', 'pending'] }
       });
       
-      if (customerWithSameLoanNumber) {
+      if (customerWithSameCustomerNumber) {
         return NextResponse.json(
           { 
             success: false, 
-            error: 'Another customer with this loan number already exists',
-            field: 'loanNumber'
+            error: 'Another customer with this customer number already exists',
+            field: 'customerNumber'
           },
           { status: 409 }
         );
@@ -152,10 +161,10 @@ export async function POST(request) {
     };
 
     // Auto-generate description if not provided
-    const autoDescription = description || generateEditDescription(currentData, requestedData);
+    const autoDescription = generateEditDescription(currentData, requestedData);
 
     // Determine priority based on changes
-    const calculatedPriority = calculatePriority(currentData, requestedData, priority);
+    const calculatedPriority = calculatePriority(currentData, requestedData);
 
     // Create edit request using the enhanced Request model
     const editRequest = new Request({
@@ -178,7 +187,7 @@ export async function POST(request) {
         officeCategory: officeCategory
       },
       description: `Customer profile edit request for ${name} - Customer: ${customerNumber}`,
-      priority: 'Medium',
+      priority: calculatedPriority,
       status: 'Pending',
       createdBy: requestedBy || 'data_entry_operator_1',
       createdByRole: 'data_entry'

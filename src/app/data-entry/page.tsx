@@ -448,11 +448,15 @@ export default function DataEntryDashboard() {
   const totalEmiCount = loan.totalEmiCount || loan.loanDays || 30;
   const emiPaidCount = loan.emiPaidCount || 0;
   const totalPaidAmount = loan.totalPaidAmount || 0;
-  const totalLoanAmount = loan.amount || (loan.emiAmount * totalEmiCount);
+  
+  // Calculate total loan amount (EMI amount × total EMI count)
+  const totalLoanAmount = loan.emiAmount * totalEmiCount;
   
   const completionPercentage = (emiPaidCount / totalEmiCount) * 100;
   const isCompleted = emiPaidCount >= totalEmiCount;
   const remainingEmis = Math.max(totalEmiCount - emiPaidCount, 0);
+  
+  // Calculate remaining amount based on total loan amount
   const remainingAmount = Math.max(totalLoanAmount - totalPaidAmount, 0);
   
   return {
@@ -460,7 +464,8 @@ export default function DataEntryDashboard() {
     isCompleted,
     remainingEmis,
     totalPaid: totalPaidAmount,
-    remainingAmount
+    remainingAmount,
+    totalLoanAmount // Return total loan amount for display
   };
 };
 
@@ -5425,25 +5430,25 @@ const renderCollection = () => {
                 <div className="bg-white p-4 rounded-lg shadow-sm border">
                   <dt className="text-sm font-medium text-gray-500 truncate">Total Collection</dt>
                   <dd className="mt-1 text-2xl font-semibold text-green-600">
-                    ₹{collectionData.summary.totalCollection.toLocaleString()}
+                    ₹{collectionData.summary?.totalCollection?.toLocaleString() || '0'}
                   </dd>
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow-sm border">
                   <dt className="text-sm font-medium text-gray-500 truncate">Office 1 Collection</dt>
                   <dd className="mt-1 text-2xl font-semibold text-blue-600">
-                    ₹{collectionData.summary.office1Collection.toLocaleString()}
+                    ₹{collectionData.summary?.office1Collection?.toLocaleString() || '0'}
                   </dd>
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow-sm border">
                   <dt className="text-sm font-medium text-gray-500 truncate">Office 2 Collection</dt>
                   <dd className="mt-1 text-2xl font-semibold text-purple-600">
-                    ₹{collectionData.summary.office2Collection.toLocaleString()}
+                    ₹{collectionData.summary?.office2Collection?.toLocaleString() || '0'}
                   </dd>
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow-sm border">
                   <dt className="text-sm font-medium text-gray-500 truncate">Customers Paid</dt>
                   <dd className="mt-1 text-2xl font-semibold text-orange-600">
-                    {collectionData.summary.totalCustomers}
+                    {collectionData.summary?.totalCustomers || 0}
                   </dd>
                 </div>
               </div>
@@ -5466,23 +5471,20 @@ const renderCollection = () => {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Office
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Loan Details
-                        </th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {collectionData.customers.length > 0 ? (
+                      {collectionData.customers && collectionData.customers.length > 0 ? (
                         collectionData.customers.map((customer, index) => (
-                          <tr key={customer.customerId} className="hover:bg-gray-50">
+                          <tr key={customer.customerId || index} className="hover:bg-gray-50">
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                              {customer.customerNumber}
+                              {customer.customerNumber || 'N/A'}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {customer.customerName}
+                              {customer.customerName || 'N/A'}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">
-                              ₹{customer.totalCollection.toLocaleString()}
+                              ₹{(customer.totalCollection || 0).toLocaleString()}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -5490,26 +5492,14 @@ const renderCollection = () => {
                                   ? 'bg-blue-100 text-blue-800'
                                   : 'bg-purple-100 text-purple-800'
                               }`}>
-                                {customer.officeCategory}
+                                {customer.officeCategory || 'N/A'}
                               </span>
-                            </td>
-                            <td className="px-6 py-4 text-sm text-gray-500">
-                              <div className="space-y-1">
-                                {customer.loans.map((loan, loanIndex) => (
-                                  <div key={loanIndex} className="flex justify-between text-xs">
-                                    <span>{loan.loanNumber}:</span>
-                                    <span className="font-medium">
-                                      ₹{loan.collectedAmount} of ₹{loan.emiAmount}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
                             </td>
                           </tr>
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={5} className="px-6 py-8 text-center">
+                          <td colSpan={4} className="px-6 py-8 text-center">
                             <div className="text-gray-400 text-4xl mb-4">💰</div>
                             <p className="text-gray-500 text-lg">No collections found for {collectionDate}</p>
                             <p className="text-sm text-gray-400 mt-2">
@@ -6097,9 +6087,9 @@ const renderCollection = () => {
                 ></div>
               </div>
               <div className="flex justify-between text-xs text-gray-500 mt-1">
-                <span>Paid: ₹{completion.totalPaid}</span>
-                <span>Remaining: ₹{completion.remainingAmount}</span>
-              </div>
+  <span>Paid: ₹{completion.totalPaid}</span>
+  <span>Remaining: ₹{completion.remainingAmount} of ₹{completion.totalLoanAmount || calculateTotalLoanAmount(loan)}</span>
+</div>
             </div>
 
             {/* Loan Details Grid */}
@@ -6468,9 +6458,9 @@ const renderCollection = () => {
                             ></div>
                           </div>
                           <div className="flex justify-between text-xs text-gray-500 mt-1">
-                            <span>Paid: ₹{completion.totalPaid}</span>
-                            <span>Remaining: ₹{completion.remainingAmount}</span>
-                          </div>
+  <span>Paid: ₹{completion.totalPaid}</span>
+  <span>Remaining: ₹{completion.remainingAmount} of ₹{completion.totalLoanAmount || calculateTotalLoanAmount(loan)}</span>
+</div>
                         </div>
 
                         {/* Loan Details Grid */}
