@@ -536,6 +536,20 @@ export default function DataEntryDashboard() {
         payment.loanId === loanFilter || payment.loanNumber === loanFilter
       );
 
+  // Create a map of all payments for quick lookup
+  const paymentMap: { [key: string]: EMIHistory[] } = {};
+  filteredPaymentHistory.forEach(payment => {
+    const paymentDate = new Date(payment.paymentDate);
+    if (paymentDate.getMonth() === monthIndex && paymentDate.getFullYear() === year) {
+      const dateStr = payment.paymentDate;
+      if (!paymentMap[dateStr]) {
+        paymentMap[dateStr] = [];
+      }
+      paymentMap[dateStr].push(payment);
+    }
+  });
+
+  // Generate calendar grid
   const startingDayOfWeek = firstDay.getDay();
   for (let i = startingDayOfWeek - 1; i >= 0; i--) {
     const date = new Date(year, monthIndex, -i);
@@ -547,131 +561,91 @@ export default function DataEntryDashboard() {
     });
   }
   
-  // Create a map of all payment dates with their amounts and status
-  const paymentMap: { [key: string]: { amount: number; status: string; loans: string[] } } = {};
-  
-  // Process all payments for the month
-  filteredPaymentHistory.forEach(payment => {
-    const paymentDate = new Date(payment.paymentDate);
-    if (paymentDate.getMonth() === monthIndex && paymentDate.getFullYear() === year) {
-      const dateStr = payment.paymentDate;
-      if (!paymentMap[dateStr]) {
-        paymentMap[dateStr] = { amount: 0, status: 'paid', loans: [] };
-      }
-      paymentMap[dateStr].amount += payment.amount;
-      if (payment.loanNumber && !paymentMap[dateStr].loans.includes(payment.loanNumber)) {
-        paymentMap[dateStr].loans.push(payment.loanNumber);
-      }
-    }
-  });
-
-  // Calculate EMI due dates for all filtered loans
-  const emiDueDates: { [key: string]: { expectedAmount: number; loans: Loan[] } } = {};
-  
-  filteredLoans.forEach(loan => {
-    if (loan.emiPaidCount >= loan.totalEmiCount) return; // Skip completed loans
-    
-    const startDate = new Date(loan.emiStartDate || loan.dateApplied);
-    const loanType = loan.loanType;
-    const currentDate = new Date(startDate); // Changed to const
-    
-    // Generate all EMI due dates for this loan
-    for (let i = 0; i < loan.totalEmiCount; i++) {
-      const dateStr = currentDate.toISOString().split('T')[0];
-      
-      // Only consider dates within the calendar month
-      if (currentDate.getMonth() === monthIndex && currentDate.getFullYear() === year) {
-        if (!emiDueDates[dateStr]) {
-          emiDueDates[dateStr] = { expectedAmount: 0, loans: [] };
-        }
-        
-        // Only add if this EMI hasn't been paid yet
-        if (i >= loan.emiPaidCount) {
-          emiDueDates[dateStr].expectedAmount += loan.emiAmount;
-          emiDueDates[dateStr].loans.push(loan);
-        }
-      }
-      
-      // Calculate next EMI date based on loan type
-      const nextDate = new Date(currentDate); // Create new date for calculation
-      switch(loanType) {
-        case 'Daily':
-          nextDate.setDate(nextDate.getDate() + 1);
-          break;
-        case 'Weekly':
-          nextDate.setDate(nextDate.getDate() + 7);
-          break;
-        case 'Monthly':
-          nextDate.setMonth(nextDate.getMonth() + 1);
-          break;
-        default:
-          nextDate.setDate(nextDate.getDate() + 1);
-      }
-      
-      // Use the next date for next iteration
-      currentDate.setTime(nextDate.getTime());
-      
-      // Stop if we've gone beyond the calendar month
-      if (currentDate > new Date(year, monthIndex + 1, 0)) {
-        break;
-      }
-    }
-  });
-  
-  // Generate calendar days for the current month
+  // Generate days for current month
   for (let day = 1; day <= lastDay.getDate(); day++) {
     const date = new Date(year, monthIndex, day);
     const isToday = date.toDateString() === new Date().toDateString();
     const dateStr = date.toISOString().split('T')[0];
     
-    const paymentInfo = paymentMap[dateStr];
-    const dueInfo = emiDueDates[dateStr];
-    
+    const datePayments = paymentMap[dateStr] || [];
     let emiStatus: CalendarDay['emiStatus'] = 'none';
     let emiAmount = 0;
     const loanNumbers: string[] = [];
-    const datePayments = filteredPaymentHistory.filter(payment => payment.paymentDate === dateStr);
-    
-    // Priority 1: Check if there are payments on this date
-    if (paymentInfo) {
-      emiAmount = paymentInfo.amount;
-      loanNumbers.push(...paymentInfo.loans);
-      
-      // If payment exists, it should be green (paid)
-      if (paymentInfo.amount > 0) {
-        emiStatus = 'paid';
-      }
-    }
-    // Priority 2: Check if there are due EMIs on this date
-    else if (dueInfo) {
-      emiAmount = dueInfo.expectedAmount;
-      dueInfo.loans.forEach(loan => loanNumbers.push(loan.loanNumber));
-      
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const calendarDate = new Date(date);
-      calendarDate.setHours(0, 0, 0, 0);
-      
-      if (calendarDate < today) {
-        emiStatus = 'overdue';
-      } else if (calendarDate.getTime() === today.getTime()) {
-        emiStatus = 'due';
-      } else {
-        emiStatus = 'upcoming';
-      }
-    }
-    // Priority 3: Check for partial payments or other status
-    else if (datePayments.length > 0) {
-      const paidAmount = datePayments.reduce((sum, p) => sum + p.amount, 0);
-      emiAmount = paidAmount;
-      datePayments.forEach(p => {
-        if (p.loanNumber && !loanNumbers.includes(p.loanNumber)) {
-          loanNumbers.push(p.loanNumber);
+
+    // Check if there are payments for this date
+    if (datePayments.length > 0) {
+      emiAmount = datePayments.reduce((sum, payment) => sum + payment.amount, 0);
+      datePayments.forEach(payment => {
+        if (payment.loanNumber && !loanNumbers.includes(payment.loanNumber)) {
+          loanNumbers.push(payment.loanNumber);
         }
       });
-      emiStatus = 'paid'; // If there are payments, show as paid
+      emiStatus = 'paid'; // Always show as paid if there are payments
+    } else {
+      // Check if any loan has EMI due on this date
+      let hasDueEMI = false;
+      let totalDueAmount = 0;
+      const dueLoanNumbers: string[] = [];
+
+      filteredLoans.forEach(loan => {
+        if (loan.emiPaidCount >= loan.totalEmiCount) return;
+
+        const startDate = new Date(loan.emiStartDate || loan.dateApplied);
+        let currentDate = new Date(startDate);
+        const loanType = loan.loanType;
+
+        // Generate EMI schedule for this loan
+        for (let i = 0; i < loan.totalEmiCount; i++) {
+          const emiDateStr = currentDate.toISOString().split('T')[0];
+          
+          if (emiDateStr === dateStr) {
+            hasDueEMI = true;
+            totalDueAmount += loan.emiAmount;
+            dueLoanNumbers.push(loan.loanNumber);
+            break;
+          }
+
+          // Calculate next EMI date
+          switch(loanType) {
+            case 'Daily':
+              currentDate.setDate(currentDate.getDate() + 1);
+              break;
+            case 'Weekly':
+              currentDate.setDate(currentDate.getDate() + 7);
+              break;
+            case 'Monthly':
+              currentDate.setMonth(currentDate.getMonth() + 1);
+              break;
+            default:
+              currentDate.setDate(currentDate.getDate() + 1);
+          }
+
+          // Stop if beyond current month
+          if (currentDate.getMonth() !== monthIndex || currentDate.getFullYear() !== year) {
+            break;
+          }
+        }
+      });
+
+      if (hasDueEMI) {
+        emiAmount = totalDueAmount;
+        loanNumbers.push(...dueLoanNumbers);
+        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const calendarDate = new Date(date);
+        calendarDate.setHours(0, 0, 0, 0);
+        
+        if (calendarDate < today) {
+          emiStatus = 'overdue';
+        } else if (calendarDate.getTime() === today.getTime()) {
+          emiStatus = 'due';
+        } else {
+          emiStatus = 'upcoming';
+        }
+      }
     }
-    
+
     days.push({
       date,
       isCurrentMonth: true,
@@ -682,7 +656,7 @@ export default function DataEntryDashboard() {
       paymentHistory: datePayments
     });
   }
-  
+
   const endingDayOfWeek = lastDay.getDay();
   for (let i = 1; i < 7 - endingDayOfWeek; i++) {
     const date = new Date(year, monthIndex + 1, i);
@@ -2474,9 +2448,17 @@ const refreshCustomerData = async (customerId: string) => {
   calendarData.paymentHistory,
   calendarFilter.loanFilter
 );
-    const filteredDays = calendarFilter.emiStatus === 'all' 
-  ? calendarDays 
-  : calendarDays.filter(day => day.emiStatus === calendarFilter.emiStatus);
+    const filteredDays = calendarDays.filter(day => {
+  if (calendarFilter.emiStatus === 'all') return true;
+  
+  // For 'paid' filter, include both 'paid' and days with payments
+  if (calendarFilter.emiStatus === 'paid') {
+    return day.emiStatus === 'paid' || (day.paymentHistory && day.paymentHistory.length > 0);
+  }
+  
+  // For other statuses, match exactly
+  return day.emiStatus === calendarFilter.emiStatus;
+});
 
     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -2585,49 +2567,53 @@ const refreshCustomerData = async (customerId: string) => {
             </div>
 
             <div className="grid grid-cols-7 gap-1">
-              {filteredDays.map((day, index) => (
-                <div
-                  key={index}
-                  onClick={() => handleCalendarDateClick(day)}
-                  className={`min-h-24 p-2 border rounded-md cursor-pointer transition-all hover:shadow-md ${
-                    getStatusColor(day.emiStatus)
-                  } ${!day.isCurrentMonth ? 'opacity-40' : ''} ${
-                    day.isToday ? 'ring-2 ring-blue-500' : ''
-                  }`}
-                >
-                  <div className="flex justify-between items-start">
-                    <span className={`text-sm font-medium ${
-                      day.isToday ? 'text-blue-600' : ''
-                    }`}>
-                      {day.date.getDate()}
-                    </span>
-                    {day.emiStatus && day.emiStatus !== 'none' && (
-                      <span className="text-xs">{getStatusIcon(day.emiStatus)}</span>
-                    )}
-                  </div>
-                  
-                  {day.emiAmount && day.emiAmount > 0 && (
-                    <div className="mt-1">
-                      <div className="text-xs font-semibold">
-                        ₹{day.emiAmount}
-                      </div>
-                      {day.loanNumbers && day.loanNumbers.length > 0 && (
-                        <div className="text-xs text-gray-600 mt-1">
-                          {day.loanNumbers.slice(0, 2).join(', ')}
-                          {day.loanNumbers.length > 2 && ` +${day.loanNumbers.length - 2}`}
-                        </div>
-                      )}
-                    </div>
-                  )}
+              // In the calendar grid rendering, ensure this logic:
+{filteredDays.map((day, index) => (
+  <div
+    key={index}
+    onClick={() => handleCalendarDateClick(day)}
+    className={`min-h-24 p-2 border rounded-md cursor-pointer transition-all hover:shadow-md ${
+      getStatusColor(day.emiStatus)
+    } ${!day.isCurrentMonth ? 'opacity-40' : ''} ${
+      day.isToday ? 'ring-2 ring-blue-500' : ''
+    }`}
+  >
+    <div className="flex justify-between items-start">
+      <span className={`text-sm font-medium ${
+        day.isToday ? 'text-blue-600' : ''
+      }`}>
+        {day.date.getDate()}
+      </span>
+      {day.emiStatus && day.emiStatus !== 'none' && (
+        <span className="text-xs">{getStatusIcon(day.emiStatus)}</span>
+      )}
+    </div>
+    
+    {/* Show payment amount if exists */}
+    {(day.emiAmount && day.emiAmount > 0) && (
+      <div className="mt-1">
+        <div className={`text-xs font-semibold ${
+          day.emiStatus === 'paid' ? 'text-green-700' : 'text-gray-700'
+        }`}>
+          ₹{day.emiAmount}
+        </div>
+        {day.loanNumbers && day.loanNumbers.length > 0 && (
+          <div className="text-xs text-gray-600 mt-1">
+            {day.loanNumbers.slice(0, 2).join(', ')}
+            {day.loanNumbers.length > 2 && ` +${day.loanNumbers.length - 2}`}
+          </div>
+        )}
+      </div>
+    )}
 
-                  {day.paymentHistory && day.paymentHistory.length > 0 && (
-                    <div className="mt-1 text-xs text-gray-500">
-                      {day.paymentHistory.length} payment(s)
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+    {/* Show payment count */}
+    {day.paymentHistory && day.paymentHistory.length > 0 && (
+      <div className="mt-1 text-xs text-green-600 font-semibold">
+        ✅ {day.paymentHistory.length} payment(s)
+      </div>
+    )}
+  </div>
+))}
 
             <div className="mt-6 p-4 bg-gray-50 rounded-lg">
               <h5 className="font-semibold mb-3">Payment Behavior Summary</h5>
