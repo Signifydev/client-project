@@ -5634,47 +5634,17 @@ const renderCollection = () => {
               </button>
             </div>
           </div>
-          <div className="flex gap-2 mt-4">
-            <button
-              onClick={() => debugEMIPayments()}
-              className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 text-sm"
-            >
-              Debug EMI Payments
-            </button>
-            <button
-              onClick={() => {
-                console.log('Current customers:', customers);
-                console.log('Collection data:', collectionData);
-              }}
-              className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 text-sm"
-            >
-              Debug State
-            </button>
-          </div>
         </div>
-        {/* REMOVED THE EXTRA </div> TAG THAT WAS HERE */}
 
         <div className="border-t border-gray-200">
           {/* Summary Cards */}
           {collectionData && (
             <div className="px-4 py-5 sm:p-6 bg-gray-50">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div className="bg-white p-4 rounded-lg shadow-sm border">
                   <dt className="text-sm font-medium text-gray-500 truncate">Total Collection</dt>
                   <dd className="mt-1 text-2xl font-semibold text-green-600">
                     ₹{collectionData.summary?.totalCollection?.toLocaleString() || '0'}
-                  </dd>
-                </div>
-                <div className="bg-white p-4 rounded-lg shadow-sm border">
-                  <dt className="text-sm font-medium text-gray-500 truncate">Office 1 Collection</dt>
-                  <dd className="mt-1 text-2xl font-semibold text-blue-600">
-                    ₹{collectionData.summary?.office1Collection?.toLocaleString() || '0'}
-                  </dd>
-                </div>
-                <div className="bg-white p-4 rounded-lg shadow-sm border">
-                  <dt className="text-sm font-medium text-gray-500 truncate">Office 2 Collection</dt>
-                  <dd className="mt-1 text-2xl font-semibold text-purple-600">
-                    ₹{collectionData.summary?.office2Collection?.toLocaleString() || '0'}
                   </dd>
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow-sm border">

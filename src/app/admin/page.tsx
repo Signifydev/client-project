@@ -2,6 +2,270 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
+// Collection Component for Admin
+function CollectionView({ onBack }: { onBack: () => void }) {
+  const [collectionDate, setCollectionDate] = useState(new Date().toISOString().split('T')[0]);
+  const [collectionData, setCollectionData] = useState<{
+    date: string;
+    customers: Array<{
+      customerId: string;
+      customerNumber: string;
+      customerName: string;
+      totalCollection: number;
+      officeCategory: string;
+      loans: Array<{
+        loanNumber: string;
+        emiAmount: number;
+        collectedAmount: number;
+      }>;
+    }>;
+    summary: {
+      totalCollection: number;
+      office1Collection: number;
+      office2Collection: number;
+      totalCustomers: number;
+    };
+  } | null>(null);
+  const [isLoadingCollection, setIsLoadingCollection] = useState(false);
+
+  const fetchCollectionData = async (date: string) => {
+    setIsLoadingCollection(true);
+    try {
+      console.log('🔄 Admin - Fetching collection data for date:', date);
+      
+      const response = await fetch(`/api/admin/collection?date=${date}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('📊 Admin Collection API response:', data);
+        
+        if (data.success && data.data) {
+          setCollectionData(data.data);
+          return;
+        }
+      }
+      
+      // Fallback to data-entry API if admin API fails
+      console.log('📋 Falling back to data-entry collection API');
+      const fallbackResponse = await fetch(`/api/data-entry/collection?date=${date}`);
+      if (fallbackResponse.ok) {
+        const fallbackData = await fallbackResponse.json();
+        if (fallbackData.success && fallbackData.data) {
+          setCollectionData(fallbackData.data);
+          return;
+        }
+      }
+      
+      // If both APIs fail, set empty data
+      setCollectionData({
+        date: date,
+        customers: [],
+        summary: {
+          totalCollection: 0,
+          office1Collection: 0,
+          office2Collection: 0,
+          totalCustomers: 0
+        }
+      });
+      
+    } catch (error) {
+      console.error('❌ Error fetching collection data:', error);
+      setCollectionData({
+        date: date,
+        customers: [],
+        summary: {
+          totalCollection: 0,
+          office1Collection: 0,
+          office2Collection: 0,
+          totalCustomers: 0
+        }
+      });
+    } finally {
+      setIsLoadingCollection(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCollectionData(collectionDate);
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <button 
+            onClick={onBack}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <span className="text-gray-600">← Back</span>
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Collection Report</h1>
+            <p className="text-gray-600">View EMI collections by date across all offices</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Collection Section */}
+      <div className="bg-white shadow rounded-lg">
+        <div className="px-4 py-5 sm:px-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h3 className="text-lg leading-6 font-medium text-gray-900">Daily Collection Report</h3>
+              <p className="mt-1 max-w-2xl text-sm text-gray-500">View EMI collections by date across all offices</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Date
+                </label>
+                <input 
+                  type="date"
+                  className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={collectionDate}
+                  onChange={(e) => {
+                    setCollectionDate(e.target.value);
+                    fetchCollectionData(e.target.value);
+                  }}
+                />
+              </div>
+              <button
+                onClick={() => fetchCollectionData(collectionDate)}
+                disabled={isLoadingCollection}
+                className="mt-6 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400"
+              >
+                {isLoadingCollection ? 'Loading...' : 'Refresh'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-gray-200">
+          {/* Summary Cards */}
+          {collectionData && (
+            <div className="px-4 py-5 sm:p-6 bg-gray-50">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div className="bg-white p-4 rounded-lg shadow-sm border">
+                  <dt className="text-sm font-medium text-gray-500 truncate">Total Collection</dt>
+                  <dd className="mt-1 text-2xl font-semibold text-green-600">
+                    ₹{collectionData.summary?.totalCollection?.toLocaleString() || '0'}
+                  </dd>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow-sm border">
+                  <dt className="text-sm font-medium text-gray-500 truncate">Office 1 Collection</dt>
+                  <dd className="mt-1 text-2xl font-semibold text-blue-600">
+                    ₹{collectionData.summary?.office1Collection?.toLocaleString() || '0'}
+                  </dd>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow-sm border">
+                  <dt className="text-sm font-medium text-gray-500 truncate">Office 2 Collection</dt>
+                  <dd className="mt-1 text-2xl font-semibold text-purple-600">
+                    ₹{collectionData.summary?.office2Collection?.toLocaleString() || '0'}
+                  </dd>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow-sm border">
+                  <dt className="text-sm font-medium text-gray-500 truncate">Customers Paid</dt>
+                  <dd className="mt-1 text-2xl font-semibold text-orange-600">
+                    {collectionData.summary?.totalCustomers || 0}
+                  </dd>
+                </div>
+              </div>
+
+              {/* Collection Table */}
+              <div className="bg-white rounded-lg shadow-sm border">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Customer Number
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Customer Name
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          EMI Collection
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Office
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {collectionData.customers && collectionData.customers.length > 0 ? (
+                        collectionData.customers.map((customer, index) => (
+                          <tr key={customer.customerId || index} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                              {customer.customerNumber || 'N/A'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              {customer.customerName || 'N/A'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">
+                              ₹{(customer.totalCollection || 0).toLocaleString()}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                customer.officeCategory === 'Office 1' 
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : 'bg-purple-100 text-purple-800'
+                              }`}>
+                                {customer.officeCategory || 'N/A'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={4} className="px-6 py-8 text-center">
+                            <div className="text-gray-400 text-4xl mb-4">💰</div>
+                            <p className="text-gray-500 text-lg">No collections found for {collectionDate}</p>
+                            <p className="text-sm text-gray-400 mt-2">
+                              No EMI payments were recorded on this date
+                            </p>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Date Information */}
+              <div className="mt-4 text-center">
+                <p className="text-sm text-gray-500">
+                  Showing collections for: <strong>{new Date(collectionDate).toLocaleDateString('en-IN')}</strong>
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  Last updated: {new Date().toLocaleString('en-IN')}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {!collectionData && !isLoadingCollection && (
+            <div className="px-6 py-8 text-center">
+              <div className="text-gray-400 text-4xl mb-4">📅</div>
+              <p className="text-gray-500 text-lg">Select a date to view collection report</p>
+              <p className="text-sm text-gray-400 mt-2">
+                Choose a date and click Refresh to see EMI collections
+              </p>
+            </div>
+          )}
+
+          {isLoadingCollection && (
+            <div className="px-6 py-8 text-center">
+              <div className="animate-spin text-4xl mb-4">⏳</div>
+              <p className="text-gray-500">Loading collection data...</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Loan Details Modal Component
 function LoanDetailsModal({ stats, onClose }: { 
   stats: any;
@@ -1308,7 +1572,6 @@ function CustomerDetailsView({ customer, onBack, onDelete }: {
 }
 
 // Enhanced Pending Requests Component with proper data extraction
-// Enhanced Pending Requests Component with proper data extraction
 function PendingRequestsView({ 
   requests, 
   onApprove, 
@@ -1930,48 +2193,45 @@ export default function DashboardPage() {
   }, [activeTab])
 
   // Handle request approval - FIXED VERSION
-  // Handle request approval - UPDATED VERSION to fix "Customer not found" error
-// Handle request approval - UPDATED to use the new POST endpoint
-// REPLACE your current handleApproveRequest with this version
-const handleApproveRequest = async (request: any) => {
-  try {
-    console.log('🟡 Approving request:', request._id);
-    console.log('📊 Request type:', request.type);
-    
-    // For both NEW and EDIT requests, just call the approve endpoint
-    // The backend will handle customer creation/activation automatically
-    console.log('📨 Sending approval request to backend...');
-    
-    const approveResponse = await fetch('/api/admin/approve-request', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        requestId: request._id,
-        action: 'approve'
-      }),
-    });
+  const handleApproveRequest = async (request: any) => {
+    try {
+      console.log('🟡 Approving request:', request._id);
+      console.log('📊 Request type:', request.type);
+      
+      // For both NEW and EDIT requests, just call the approve endpoint
+      // The backend will handle customer creation/activation automatically
+      console.log('📨 Sending approval request to backend...');
+      
+      const approveResponse = await fetch('/api/admin/approve-request', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          requestId: request._id,
+          action: 'approve'
+        }),
+      });
 
-    const approveData = await approveResponse.json();
-    console.log('🔵 Approve request response:', approveData);
-    
-    if (approveResponse.ok && approveData.success) {
-      alert('Request approved successfully!');
-      await Promise.all([
-        fetchDashboardData(),
-        fetchCustomers(),
-        fetchPendingRequests()
-      ]);
-    } else {
-      alert(`Error approving request: ${approveData.error || 'Unknown error'}`);
-      console.log('❌ Approval failed details:', approveData);
+      const approveData = await approveResponse.json();
+      console.log('🔵 Approve request response:', approveData);
+      
+      if (approveResponse.ok && approveData.success) {
+        alert('Request approved successfully!');
+        await Promise.all([
+          fetchDashboardData(),
+          fetchCustomers(),
+          fetchPendingRequests()
+        ]);
+      } else {
+        alert(`Error approving request: ${approveData.error || 'Unknown error'}`);
+        console.log('❌ Approval failed details:', approveData);
+      }
+    } catch (error: any) {
+      console.error('❌ Error approving request:', error);
+      alert('Error approving request: ' + (error.message || 'Check console for details'));
     }
-  } catch (error: any) {
-    console.error('❌ Error approving request:', error);
-    alert('Error approving request: ' + (error.message || 'Check console for details'));
-  }
-};
+  };
 
   // Handle request rejection - FIXED VERSION
   const handleRejectRequest = async (request: any) => {
@@ -2304,7 +2564,8 @@ const handleApproveRequest = async (request: any) => {
                   { id: 'customers', label: 'Customers' },
                   { id: 'requests', label: 'Requests' },
                   { id: 'reports', label: 'Reports' },
-                  { id: 'team', label: 'Team' }
+                  { id: 'team', label: 'Team' },
+                  { id: 'collection', label: 'Collection' }
                 ].map((tab) => (
                   <button
                     key={tab.id}
@@ -2340,7 +2601,8 @@ const handleApproveRequest = async (request: any) => {
             { id: 'customers', label: 'Customers' },
             { id: 'requests', label: 'Requests' },
             { id: 'reports', label: 'Reports' },
-            { id: 'team', label: 'Team' }
+            { id: 'team', label: 'Team' },
+            { id: 'collection', label: 'Collection' }
           ].map((tab) => (
             <button
               key={tab.id}
@@ -2609,6 +2871,15 @@ const handleApproveRequest = async (request: any) => {
       <div className="min-h-screen bg-gray-50 p-6">
         {renderNavigation()}
         <TeamManagementView onBack={() => setActiveTab('dashboard')} />
+      </div>
+    )
+  }
+
+  if (activeTab === 'collection') {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6">
+        {renderNavigation()}
+        <CollectionView onBack={() => setActiveTab('dashboard')} />
       </div>
     )
   }
