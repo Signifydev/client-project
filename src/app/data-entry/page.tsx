@@ -591,7 +591,7 @@ export default function DataEntryDashboard() {
         if (loan.emiPaidCount >= loan.totalEmiCount) return;
 
         const startDate = new Date(loan.emiStartDate || loan.dateApplied);
-        let currentDate = new Date(startDate);
+        const currentDate = new Date(startDate); // Changed to const
         const loanType = loan.loanType;
 
         // Generate EMI schedule for this loan
@@ -605,20 +605,24 @@ export default function DataEntryDashboard() {
             break;
           }
 
-          // Calculate next EMI date
+          // Calculate next EMI date using a new variable
+          const nextDate = new Date(currentDate);
           switch(loanType) {
             case 'Daily':
-              currentDate.setDate(currentDate.getDate() + 1);
+              nextDate.setDate(nextDate.getDate() + 1);
               break;
             case 'Weekly':
-              currentDate.setDate(currentDate.getDate() + 7);
+              nextDate.setDate(nextDate.getDate() + 7);
               break;
             case 'Monthly':
-              currentDate.setMonth(currentDate.getMonth() + 1);
+              nextDate.setMonth(nextDate.getMonth() + 1);
               break;
             default:
-              currentDate.setDate(currentDate.getDate() + 1);
+              nextDate.setDate(nextDate.getDate() + 1);
           }
+
+          // Update currentDate for next iteration
+          currentDate.setTime(nextDate.getTime());
 
           // Stop if beyond current month
           if (currentDate.getMonth() !== monthIndex || currentDate.getFullYear() !== year) {
