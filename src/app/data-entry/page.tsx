@@ -2439,26 +2439,27 @@ const refreshCustomerData = async (customerId: string) => {
     router.push('/auth');
   };
 
-  const renderEMICalendar = () => {
+    const renderEMICalendar = () => {
     if (!calendarData) return null;
 
     const calendarDays = generateCalendar(
-  currentMonth, 
-  calendarData.loans, 
-  calendarData.paymentHistory,
-  calendarFilter.loanFilter
-);
+      currentMonth, 
+      calendarData.loans, 
+      calendarData.paymentHistory,
+      calendarFilter.loanFilter
+    );
+    
     const filteredDays = calendarDays.filter(day => {
-  if (calendarFilter.emiStatus === 'all') return true;
-  
-  // For 'paid' filter, include both 'paid' and days with payments
-  if (calendarFilter.emiStatus === 'paid') {
-    return day.emiStatus === 'paid' || (day.paymentHistory && day.paymentHistory.length > 0);
-  }
-  
-  // For other statuses, match exactly
-  return day.emiStatus === calendarFilter.emiStatus;
-});
+      if (calendarFilter.emiStatus === 'all') return true;
+      
+      // For 'paid' filter, include both 'paid' and days with payments
+      if (calendarFilter.emiStatus === 'paid') {
+        return day.emiStatus === 'paid' || (day.paymentHistory && day.paymentHistory.length > 0);
+      }
+      
+      // For other statuses, match exactly
+      return day.emiStatus === calendarFilter.emiStatus;
+    });
 
     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -2500,40 +2501,40 @@ const refreshCustomerData = async (customerId: string) => {
               </div>
 
               <select
-      value={calendarFilter.loanFilter}
-      onChange={(e) => setCalendarFilter(prev => ({
-        ...prev,
-        loanFilter: e.target.value
-      }))}
-      className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-    >
-      <option value="all">All Loans</option>
-      {calendarData.loans.map((loan, index) => (
-        <option key={loan._id} value={loan._id}>
-          {loan.loanNumber} - {loan.customerNumber}
-        </option>
-      ))}
-    </select>
-  </div>
+                value={calendarFilter.loanFilter}
+                onChange={(e) => setCalendarFilter(prev => ({
+                  ...prev,
+                  loanFilter: e.target.value
+                }))}
+                className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              >
+                <option value="all">All Loans</option>
+                {calendarData.loans.map((loan, index) => (
+                  <option key={loan._id} value={loan._id}>
+                    {loan.loanNumber} - {loan.customerNumber}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-  <div className="flex items-center space-x-2">
-    <label className="text-sm font-medium text-gray-700">EMI Status:</label>
-    <select
-      value={calendarFilter.emiStatus}
-      onChange={(e) => setCalendarFilter(prev => ({
-        ...prev,
-        emiStatus: e.target.value as 'all' | 'paid' | 'due' | 'overdue' | 'partial' | 'upcoming'
-      }))}
-      className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-    >
-      <option value="all">All EMI</option>
-      <option value="paid">Paid Only</option>
-      <option value="due">Due</option>
-      <option value="overdue">Overdue</option>
-      <option value="partial">Partial</option>
-      <option value="upcoming">Upcoming</option>
-    </select>
-  </div>
+            <div className="flex items-center space-x-2">
+              <label className="text-sm font-medium text-gray-700">EMI Status:</label>
+              <select
+                value={calendarFilter.emiStatus}
+                onChange={(e) => setCalendarFilter(prev => ({
+                  ...prev,
+                  emiStatus: e.target.value as 'all' | 'paid' | 'due' | 'overdue' | 'partial' | 'upcoming'
+                }))}
+                className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              >
+                <option value="all">All EMI</option>
+                <option value="paid">Paid Only</option>
+                <option value="due">Due</option>
+                <option value="overdue">Overdue</option>
+                <option value="partial">Partial</option>
+                <option value="upcoming">Upcoming</option>
+              </select>
+            </div>
 
             <div className="flex flex-wrap gap-4 mb-4 p-3 bg-gray-50 rounded-md">
               <div className="flex items-center">
@@ -2567,53 +2568,53 @@ const refreshCustomerData = async (customerId: string) => {
             </div>
 
             <div className="grid grid-cols-7 gap-1">
-              // In the calendar grid rendering, ensure this logic:
-{filteredDays.map((day, index) => (
-  <div
-    key={index}
-    onClick={() => handleCalendarDateClick(day)}
-    className={`min-h-24 p-2 border rounded-md cursor-pointer transition-all hover:shadow-md ${
-      getStatusColor(day.emiStatus)
-    } ${!day.isCurrentMonth ? 'opacity-40' : ''} ${
-      day.isToday ? 'ring-2 ring-blue-500' : ''
-    }`}
-  >
-    <div className="flex justify-between items-start">
-      <span className={`text-sm font-medium ${
-        day.isToday ? 'text-blue-600' : ''
-      }`}>
-        {day.date.getDate()}
-      </span>
-      {day.emiStatus && day.emiStatus !== 'none' && (
-        <span className="text-xs">{getStatusIcon(day.emiStatus)}</span>
-      )}
-    </div>
-    
-    {/* Show payment amount if exists */}
-    {(day.emiAmount && day.emiAmount > 0) && (
-      <div className="mt-1">
-        <div className={`text-xs font-semibold ${
-          day.emiStatus === 'paid' ? 'text-green-700' : 'text-gray-700'
-        }`}>
-          ₹{day.emiAmount}
-        </div>
-        {day.loanNumbers && day.loanNumbers.length > 0 && (
-          <div className="text-xs text-gray-600 mt-1">
-            {day.loanNumbers.slice(0, 2).join(', ')}
-            {day.loanNumbers.length > 2 && ` +${day.loanNumbers.length - 2}`}
-          </div>
-        )}
-      </div>
-    )}
+              {filteredDays.map((day, index) => (
+                <div
+                  key={index}
+                  onClick={() => handleCalendarDateClick(day)}
+                  className={`min-h-24 p-2 border rounded-md cursor-pointer transition-all hover:shadow-md ${
+                    getStatusColor(day.emiStatus)
+                  } ${!day.isCurrentMonth ? 'opacity-40' : ''} ${
+                    day.isToday ? 'ring-2 ring-blue-500' : ''
+                  }`}
+                >
+                  <div className="flex justify-between items-start">
+                    <span className={`text-sm font-medium ${
+                      day.isToday ? 'text-blue-600' : ''
+                    }`}>
+                      {day.date.getDate()}
+                    </span>
+                    {day.emiStatus && day.emiStatus !== 'none' && (
+                      <span className="text-xs">{getStatusIcon(day.emiStatus)}</span>
+                    )}
+                  </div>
+                  
+                  {/* Show payment amount if exists */}
+                  {(day.emiAmount && day.emiAmount > 0) && (
+                    <div className="mt-1">
+                      <div className={`text-xs font-semibold ${
+                        day.emiStatus === 'paid' ? 'text-green-700' : 'text-gray-700'
+                      }`}>
+                        ₹{day.emiAmount}
+                      </div>
+                      {day.loanNumbers && day.loanNumbers.length > 0 && (
+                        <div className="text-xs text-gray-600 mt-1">
+                          {day.loanNumbers.slice(0, 2).join(', ')}
+                          {day.loanNumbers.length > 2 && ` +${day.loanNumbers.length - 2}`}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
-    {/* Show payment count */}
-    {day.paymentHistory && day.paymentHistory.length > 0 && (
-      <div className="mt-1 text-xs text-green-600 font-semibold">
-        ✅ {day.paymentHistory.length} payment(s)
-      </div>
-    )}
-  </div>
-))}
+                  {/* Show payment count */}
+                  {day.paymentHistory && day.paymentHistory.length > 0 && (
+                    <div className="mt-1 text-xs text-green-600 font-semibold">
+                      ✅ {day.paymentHistory.length} payment(s)
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
 
             <div className="mt-6 p-4 bg-gray-50 rounded-lg">
               <h5 className="font-semibold mb-3">Payment Behavior Summary</h5>
@@ -2647,7 +2648,7 @@ const refreshCustomerData = async (customerId: string) => {
         </div>
       </div>
     );
-  };
+  }; // <-- This closing brace was likely missing
 
   const renderDatePaymentHistory = () => {
     if (!selectedCalendarDate || !calendarData) return null;
