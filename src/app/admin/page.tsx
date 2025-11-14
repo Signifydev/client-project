@@ -267,11 +267,12 @@ function CollectionView({ onBack }: { onBack: () => void }) {
 }
 
 // Loan Details Modal Component
+// Loan Details Modal Component - UPDATED
 function LoanDetailsModal({ stats, onClose }: { 
   stats: any;
   onClose: () => void;
 }) {
-  const [timeRange, setTimeRange] = useState('monthly');
+  const [timeRange, setTimeRange] = useState('daily');
   const [loanData, setLoanData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -301,12 +302,29 @@ function LoanDetailsModal({ stats, onClose }: {
     setTimeRange(range);
   };
 
+  // Calculate totals for the selected time range
+  const calculateTotals = () => {
+    const totalLoanAmount = loanData.reduce((sum, item) => sum + (item.totalAmount || 0), 0);
+    const totalRecoveredAmount = loanData.reduce((sum, item) => sum + (item.recoveredAmount || 0), 0);
+    const totalAmountToRecover = totalLoanAmount - totalRecoveredAmount;
+    const totalLoans = loanData.reduce((sum, item) => sum + (item.newLoans || 0), 0);
+
+    return {
+      totalLoanAmount,
+      totalRecoveredAmount,
+      totalAmountToRecover,
+      totalLoans
+    };
+  };
+
+  const totals = calculateTotals();
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">Loan Details</h2>
+            <h2 className="text-2xl font-bold text-gray-900">Total Loan Amount Details</h2>
             <button 
               onClick={onClose}
               className="text-gray-400 hover:text-gray-600 text-2xl"
@@ -315,9 +333,9 @@ function LoanDetailsModal({ stats, onClose }: {
             </button>
           </div>
 
-          {/* Time Range Filter */}
+          {/* Time Range Filter - UPDATED */}
           <div className="flex space-x-2 mb-6">
-            {['monthly', 'quarterly', 'yearly'].map((range) => (
+            {['daily', 'weekly', 'monthly'].map((range) => (
               <button
                 key={range}
                 onClick={() => handleTimeRangeChange(range)}
@@ -332,19 +350,23 @@ function LoanDetailsModal({ stats, onClose }: {
             ))}
           </div>
 
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <p className="text-sm font-medium text-blue-600">Total Loans</p>
-              <p className="text-2xl font-bold text-blue-900">{stats.totalLoans}</p>
+          {/* Summary Cards - UPDATED */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+              <p className="text-sm font-medium text-blue-600">Total {timeRange.charAt(0).toUpperCase() + timeRange.slice(1)} Loans</p>
+              <p className="text-2xl font-bold text-blue-900">{totals.totalLoans}</p>
             </div>
-            <div className="bg-green-50 p-4 rounded-lg">
-              <p className="text-sm font-medium text-green-600">Total Amount</p>
-              <p className="text-2xl font-bold text-green-900">₹{(stats.totalAmount / 100000).toFixed(1)}L</p>
+            <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+              <p className="text-sm font-medium text-green-600">Total Loan Amount</p>
+              <p className="text-2xl font-bold text-green-900">₹{(totals.totalLoanAmount / 100000).toFixed(1)}L</p>
             </div>
-            <div className="bg-purple-50 p-4 rounded-lg">
-              <p className="text-sm font-medium text-purple-600">Active Loans</p>
-              <p className="text-2xl font-bold text-purple-900">{stats.totalLoans - (loanData.reduce((sum, item) => sum + (item.pending || 0), 0))}</p>
+            <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+              <p className="text-sm font-medium text-purple-600">Total Recovered</p>
+              <p className="text-2xl font-bold text-purple-900">₹{(totals.totalRecoveredAmount / 100000).toFixed(1)}L</p>
+            </div>
+            <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
+              <p className="text-sm font-medium text-orange-600">Amount to Recover</p>
+              <p className="text-2xl font-bold text-orange-900">₹{(totals.totalAmountToRecover / 100000).toFixed(1)}L</p>
             </div>
           </div>
 
@@ -375,31 +397,38 @@ function LoanDetailsModal({ stats, onClose }: {
                         Total Amount
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                        Approved
+                        Recovered Amount
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                        Pending
+                        Amount to Recover
                       </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {loanData.map((item: any, index: number) => (
-                      <tr key={index}>
-                        <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                          {item.month || item.quarter || item.year}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-900">{item.newLoans}</td>
-                        <td className="px-6-6 py-4 text-sm text-gray-900">
-                          ₹{(item.totalAmount / 100000).toFixed(1)}L
-                        </td>
-                        <td className="px-6 py-4 text-sm text-green-600">{item.approved}</td>
-                        <td className="px-6 py-4 text-sm text-orange-600">{item.pending}</td>
-                      </tr>
-                    ))}
+                    {loanData.map((item: any, index: number) => {
+                      const amountToRecover = (item.totalAmount || 0) - (item.recoveredAmount || 0);
+                      return (
+                        <tr key={index}>
+                          <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                            {item.date || item.week || item.month || 'N/A'}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-900">{item.newLoans || 0}</td>
+                          <td className="px-6 py-4 text-sm text-gray-900">
+                            ₹{((item.totalAmount || 0) / 100000).toFixed(1)}L
+                          </td>
+                          <td className="px-6 py-4 text-sm text-green-600">
+                            ₹{((item.recoveredAmount || 0) / 100000).toFixed(1)}L
+                          </td>
+                          <td className="px-6 py-4 text-sm text-orange-600">
+                            ₹{(amountToRecover / 100000).toFixed(1)}L
+                          </td>
+                        </tr>
+                      );
+                    })}
                     {loanData.length === 0 && (
                       <tr>
                         <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
-                          No loan data available
+                          No loan data available for {timeRange} range
                         </td>
                       </tr>
                     )}
@@ -2051,11 +2080,12 @@ export default function DashboardPage() {
   const [customers, setCustomers] = useState<any[]>([])
   const [pendingRequests, setPendingRequests] = useState<any[]>([])
   const [dashboardStats, setDashboardStats] = useState({
-    totalLoans: 0,
-    totalAmount: 0,
-    totalCustomers: 0,
-    pendingRequests: 0
-  })
+  totalLoans: 0,
+  totalAmount: 0,
+  totalCustomers: 0,
+  totalTeamMembers: 0, // ADD THIS LINE
+  pendingRequests: 0
+})
   
   // Filter states
   const [showFilters, setShowFilters] = useState(false);
@@ -2627,137 +2657,138 @@ export default function DashboardPage() {
   )
 
   // Dashboard Section
-  const renderDashboard = () => (
-    <div className="space-y-6">
-      {/* Welcome Banner */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg p-6 text-white">
-        <h1 className="text-2xl font-bold mb-2">Welcome to Super Admin Dashboard</h1>
-        <p className="opacity-90">Manage your loan business efficiently and effectively</p>
-      </div>
-
-      {/* Stats Grid - UPDATED WITH TOTAL CUSTOMERS INSTEAD OF PENDING EMIS */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Total Loans Card - Clickable */}
-        <div 
-          onClick={() => setShowLoanDetails(true)}
-          className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Total Active Loans</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">{dashboardStats.totalLoans.toLocaleString()}</p>
-              <p className="text-xs text-gray-500 mt-1">Currently active loans</p>
-            </div>
-            <div className="bg-blue-50 p-3 rounded-lg">
-              <span className="text-blue-600 text-xl font-semibold">📊</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Total Amount Card - Clickable */}
-        <div 
-          onClick={() => setShowLoanDetails(true)}
-          className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Total Amount</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">₹{(dashboardStats.totalAmount / 100000).toFixed(1)}L</p>
-              <p className="text-xs text-gray-500 mt-1">Active loans amount</p>
-            </div>
-            <div className="bg-green-50 p-3 rounded-lg">
-              <span className="text-green-600 text-xl font-semibold">💰</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Total Customer Card - Clickable */}
-        <div 
-          onClick={() => setActiveTab('customers')}
-          className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Total Active Customers</p>
-              <p className="text-3xl font-bold text-gray-900 mt-2">{dashboardStats.totalCustomers?.toLocaleString() || '0'}</p>
-              <p className="text-xs text-gray-500 mt-1">Currently active customers</p>
-            </div>
-            <div className="bg-purple-50 p-3 rounded-lg">
-              <span className="text-purple-600 text-xl font-semibold">👥</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Pending Requests Card - Clickable */}
-        <div 
-          onClick={() => setActiveTab('requests')}
-          className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Pending Requests</p>
-              <p className="text-3xl font-bold text-orange-600 mt-2">{dashboardStats.pendingRequests}</p>
-              <p className="text-xs text-gray-500 mt-1">Awaiting approval</p>
-            </div>
-            <div className="bg-orange-50 p-3 rounded-lg">
-              <span className="text-orange-600 text-xl font-semibold">📋</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Quick Actions */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <button 
-          onClick={() => setActiveTab('customers')}
-          className="p-4 bg-blue-50 rounded-lg text-center hover:bg-blue-100 transition-colors border border-blue-200"
-        >
-          <div className="text-blue-600 text-lg mb-2">👥</div>
-          <span className="text-sm font-medium text-blue-900">Manage Customers</span>
-        </button>
-        
-        <button 
-          onClick={() => setActiveTab('requests')}
-          className="p-4 bg-orange-50 rounded-lg text-center hover:bg-orange-100 transition-colors border border-orange-200"
-        >
-          <div className="text-orange-600 text-lg mb-2">📋</div>
-          <span className="text-sm font-medium text-orange-900">Pending Requests</span>
-          {pendingRequests.length > 0 && (
-            <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-              {pendingRequests.length}
-            </span>
-          )}
-        </button>
-        
-        <button 
-          onClick={() => setActiveTab('reports')}
-          className="p-4 bg-purple-50 rounded-lg text-center hover:bg-purple-100 transition-colors border border-purple-200"
-        >
-          <div className="text-purple-600 text-lg mb-2">📊</div>
-          <span className="text-sm font-medium text-purple-900">View Reports</span>
-        </button>
-        
-        <button 
-          onClick={() => setActiveTab('team')}
-          className="p-4 bg-green-50 rounded-lg text-center hover:bg-green-100 transition-colors border border-green-200"
-        >
-          <div className="text-green-600 text-lg mb-2">👨‍💼</div>
-          <span className="text-sm font-medium text-green-900">Team Management</span>
-        </button>
-      </div>
-
-      {/* Recent Activities */}
-      <RecentActivities />
-
-      {/* Loan Details Modal */}
-      {showLoanDetails && (
-        <LoanDetailsModal 
-          stats={dashboardStats}
-          onClose={() => setShowLoanDetails(false)}
-        />
-      )}
+  // Dashboard Section - UPDATED
+const renderDashboard = () => (
+  <div className="space-y-6">
+    {/* Welcome Banner */}
+    <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg p-6 text-white">
+      <h1 className="text-2xl font-bold mb-2">Welcome to Super Admin Dashboard</h1>
+      <p className="opacity-90">Manage your loan business efficiently and effectively</p>
     </div>
-  )
+
+    {/* Stats Grid - UPDATED ORDER AND ADDED TEAM MEMBER CARD */}
+    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Total Active Customers Card - FIRST POSITION */}
+      <div 
+        onClick={() => setActiveTab('customers')}
+        className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Total Active Customers</p>
+            <p className="text-3xl font-bold text-gray-900 mt-2">{dashboardStats.totalCustomers?.toLocaleString() || '0'}</p>
+            <p className="text-xs text-gray-500 mt-1">Currently active customers</p>
+          </div>
+          <div className="bg-blue-50 p-3 rounded-lg">
+            <span className="text-blue-600 text-xl font-semibold">👥</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Total Loan Amount Card - SECOND POSITION */}
+      <div 
+        onClick={() => setShowLoanDetails(true)}
+        className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Total Loan Amount</p>
+            <p className="text-3xl font-bold text-gray-900 mt-2">₹{(dashboardStats.totalAmount / 100000).toFixed(1)}L</p>
+            <p className="text-xs text-gray-500 mt-1">Active loans amount</p>
+          </div>
+          <div className="bg-green-50 p-3 rounded-lg">
+            <span className="text-green-600 text-xl font-semibold">💰</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Total Team Member Card - THIRD POSITION */}
+      <div 
+        onClick={() => setActiveTab('team')}
+        className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Total Team Members</p>
+            <p className="text-3xl font-bold text-gray-900 mt-2">{dashboardStats.totalTeamMembers || '0'}</p>
+            <p className="text-xs text-gray-500 mt-1">Active team members</p>
+          </div>
+          <div className="bg-purple-50 p-3 rounded-lg">
+            <span className="text-purple-600 text-xl font-semibold">👨‍💼</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Pending Requests Card - FOURTH POSITION */}
+      <div 
+        onClick={() => setActiveTab('requests')}
+        className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Pending Requests</p>
+            <p className="text-3xl font-bold text-orange-600 mt-2">{dashboardStats.pendingRequests}</p>
+            <p className="text-xs text-gray-500 mt-1">Awaiting approval</p>
+          </div>
+          <div className="bg-orange-50 p-3 rounded-lg">
+            <span className="text-orange-600 text-xl font-semibold">📋</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* Quick Actions */}
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <button 
+        onClick={() => setActiveTab('customers')}
+        className="p-4 bg-blue-50 rounded-lg text-center hover:bg-blue-100 transition-colors border border-blue-200"
+      >
+        <div className="text-blue-600 text-lg mb-2">👥</div>
+        <span className="text-sm font-medium text-blue-900">Manage Customers</span>
+      </button>
+      
+      <button 
+        onClick={() => setActiveTab('requests')}
+        className="p-4 bg-orange-50 rounded-lg text-center hover:bg-orange-100 transition-colors border border-orange-200"
+      >
+        <div className="text-orange-600 text-lg mb-2">📋</div>
+        <span className="text-sm font-medium text-orange-900">Pending Requests</span>
+        {pendingRequests.length > 0 && (
+          <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+            {pendingRequests.length}
+          </span>
+        )}
+      </button>
+      
+      <button 
+        onClick={() => setActiveTab('reports')}
+        className="p-4 bg-purple-50 rounded-lg text-center hover:bg-purple-100 transition-colors border border-purple-200"
+      >
+        <div className="text-purple-600 text-lg mb-2">📊</div>
+        <span className="text-sm font-medium text-purple-900">View Reports</span>
+      </button>
+      
+      <button 
+        onClick={() => setActiveTab('team')}
+        className="p-4 bg-green-50 rounded-lg text-center hover:bg-green-100 transition-colors border border-green-200"
+      >
+        <div className="text-green-600 text-lg mb-2">👨‍💼</div>
+        <span className="text-sm font-medium text-green-900">Team Management</span>
+      </button>
+    </div>
+
+    {/* Recent Activities */}
+    <RecentActivities />
+
+    {/* Loan Details Modal */}
+    {showLoanDetails && (
+      <LoanDetailsModal 
+        stats={dashboardStats}
+        onClose={() => setShowLoanDetails(false)}
+      />
+    )}
+  </div>
+)
 
   // Customers Section with Enhanced Filters
   const renderCustomers = () => (
