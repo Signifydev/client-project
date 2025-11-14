@@ -182,6 +182,12 @@ interface EMIUpdate {
   customerNumber?: string;
   loanNumber?: string;
   notes?: string;
+  // Add these new fields for advance EMI
+  paymentType: 'single' | 'advance';
+  advanceFromDate?: string;
+  advanceToDate?: string;
+  advanceEmiCount?: string;
+  advanceTotalAmount?: string;
 }
 
 interface EditCustomerData {
@@ -418,13 +424,14 @@ export default function DataEntryDashboard() {
   const [step3Errors, setStep3Errors] = useState<{[key: string]: string}>({});
 
   const [emiUpdate, setEmiUpdate] = useState<EMIUpdate>({
-    customerId: '',
-    customerName: '',
-    paymentDate: new Date().toISOString().split('T')[0],
-    amount: '',
-    status: 'Paid',
-    collectedBy: 'Operator 1'
-  }); 
+  customerId: '',
+  customerName: '',
+  paymentDate: new Date().toISOString().split('T')[0],
+  amount: '',
+  status: 'Paid',
+  collectedBy: 'Operator 1',
+  paymentType: 'single' // Add this default
+});
 
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [selectedLoanForPayment, setSelectedLoanForPayment] = useState<Loan | null>(null);
@@ -472,6 +479,41 @@ export default function DataEntryDashboard() {
   const calculateTotalLoanAmount = (loan: Loan): number => {
     return loan.emiAmount * loan.totalEmiCount;
   };
+
+  // Helper function to calculate EMI count based on dates and loan type
+const calculateEmiCount = (fromDate: string, toDate: string, loanType?: string): string => {
+  if (!fromDate || !toDate) return '1';
+  
+  const start = new Date(fromDate);
+  const end = new Date(toDate);
+  
+  if (start > end) return '1';
+  
+  const diffTime = Math.abs(end.getTime() - start.getTime());
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  switch(loanType) {
+    case 'Daily':
+      return Math.max(diffDays + 1, 1).toString();
+    case 'Weekly':
+      return Math.max(Math.ceil((diffDays + 1) / 7), 1).toString();
+    case 'Monthly':
+      // Approximate month calculation
+      const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+      return Math.max(months + 1, 1).toString();
+    default:
+      return Math.max(diffDays + 1, 1).toString();
+  }
+};
+
+// Helper function to calculate total amount with proper type handling
+const calculateTotalAmount = (emiAmount: string | number, emiCount: string | number): string => {
+  const amount = typeof emiAmount === 'string' ? parseFloat(emiAmount) || 0 : emiAmount;
+  const count = typeof emiCount === 'string' ? parseInt(emiCount) || 1 : emiCount;
+  return (amount * count).toFixed(2);
+};
+
+
 
   const calculateNextEmiDate = (currentDate: string, loanType: string): string => {
     const date = new Date(currentDate);
@@ -2294,22 +2336,36 @@ const debugEMIPayments = () => {
     console.log('📦 Selected loan for payment:', selectedLoanForPayment);
     console.log('📋 EMI update data:', emiUpdate);
     
-    if (!emiUpdate.amount || !emiUpdate.paymentDate) {
-      alert('Please fill all required fields');
+    // Validation for single payment
+    if (emiUpdate.paymentType === 'single' && (!emiUpdate.amount || !emiUpdate.paymentDate)) {
+      alert('Please fill all required fields for single payment');
       setIsLoading(false);
       return;
     }
 
-    // Validate that we're not duplicating payment for the same date
-    const paymentDate = new Date(emiUpdate.paymentDate).toISOString().split('T')[0];
-    const existingPayment = selectedLoanForPayment.emiHistory?.find(
-      (payment: EMIHistory) => payment.paymentDate === paymentDate
-    );
-
-    if (existingPayment) {
-      alert(`EMI payment for ${paymentDate} already exists. Please use a different date or edit the existing payment.`);
+    // Validation for advance payment
+    if (emiUpdate.paymentType === 'advance' && (!emiUpdate.amount || !emiUpdate.advanceFromDate || !emiUpdate.advanceToDate)) {
+      alert('Please fill all required fields for advance payment');
       setIsLoading(false);
       return;
+    }
+
+    // For advance payments, set status to 'Advance'
+    const finalStatus = emiUpdate.paymentType === 'advance' ? 'Advance' : emiUpdate.status;
+    const finalAmount = emiUpdate.paymentType === 'advance' ? emiUpdate.advanceTotalAmount || emiUpdate.amount : emiUpdate.amount;
+
+    // Validate that we're not duplicating payment for the same date (for single payments)
+    if (emiUpdate.paymentType === 'single') {
+      const paymentDate = new Date(emiUpdate.paymentDate).toISOString().split('T')[0];
+      const existingPayment = selectedLoanForPayment.emiHistory?.find(
+        (payment: EMIHistory) => payment.paymentDate === paymentDate
+      );
+
+      if (existingPayment) {
+        alert(`EMI payment for ${paymentDate} already exists. Please use a different date or edit the existing payment.`);
+        setIsLoading(false);
+        return;
+      }
     }
 
     // FIX: Clean the customerId and loanId to remove any suffixes like "_default"
@@ -2332,13 +2388,23 @@ const debugEMIPayments = () => {
       customerId: cleanCustomerId,
       customerName: selectedCustomer.name,
       customerNumber: selectedCustomer.customerNumber,
-      paymentDate: paymentDate,
-      amount: Number(emiUpdate.amount),
-      status: emiUpdate.status,
+      paymentDate: emiUpdate.paymentType === 'single' ? emiUpdate.paymentDate : emiUpdate.advanceFromDate,
+      amount: Number(finalAmount),
+      status: finalStatus,
       collectedBy: emiUpdate.collectedBy,
       paymentMethod: 'Cash',
+      paymentType: emiUpdate.paymentType,
       notes: emiUpdate.notes || `EMI payment recorded for ${selectedCustomer.name} - Customer ${selectedCustomer.customerNumber}`
     };
+
+    // Add advance payment details if applicable
+    if (emiUpdate.paymentType === 'advance') {
+      emiPaymentData.advanceFromDate = emiUpdate.advanceFromDate;
+      emiPaymentData.advanceToDate = emiUpdate.advanceToDate;
+      emiPaymentData.advanceEmiCount = parseInt(emiUpdate.advanceEmiCount || '1');
+      emiPaymentData.advanceTotalAmount = Number(finalAmount);
+      emiPaymentData.notes = `Advance EMI payment for ${emiUpdate.advanceEmiCount || '1'} periods (${emiUpdate.advanceFromDate} to ${emiUpdate.advanceToDate})${emiUpdate.notes ? ` - ${emiUpdate.notes}` : ''}`;
+    }
 
     // Only include loanId if it's a valid MongoDB-like ID
     // If the loanId looks like a temporary ID, let the backend auto-find the loan
@@ -2395,7 +2461,11 @@ const debugEMIPayments = () => {
       throw new Error(data.error || 'Failed to update EMI');
     }
 
-    alert(data.message || 'EMI payment recorded successfully!');
+    const successMessage = emiUpdate.paymentType === 'advance' 
+      ? `Advance EMI payment of ₹${finalAmount} recorded successfully for ${emiUpdate.advanceEmiCount} periods!`
+      : `EMI payment of ₹${finalAmount} recorded successfully!`;
+
+    alert(successMessage);
     
     // Refresh customer data to reflect changes
     if (selectedCustomer._id) {
@@ -2421,7 +2491,8 @@ const debugEMIPayments = () => {
       paymentDate: new Date().toISOString().split('T')[0],
       amount: '',
       status: 'Paid',
-      collectedBy: 'Operator 1'
+      collectedBy: 'Operator 1',
+      paymentType: 'single'
     });
     
     fetchDashboardData();
@@ -6129,8 +6200,8 @@ const renderCollection = () => {
                       <div className="flex items-center">
                         <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-3">
                           <span className="text-blue-600 font-semibold text-sm">
-  {selectedCustomer?.name?.split(' ').map((n: string) => n[0]).join('') || 'CU'}
-</span>
+                            {selectedCustomer?.name?.split(' ').map((n: string) => n[0]).join('') || 'CU'}
+                          </span>
                         </div>
                         <div>
                           <div className="font-medium text-blue-900">{selectedCustomer.name}</div>
@@ -6195,123 +6266,121 @@ const renderCollection = () => {
                 )}
 
                 {selectedCustomer && (
-  <div className="mt-6">
-    <h4 className="text-lg font-semibold mb-4">Customer Loans</h4>
-    <div className="space-y-4">
-      {displayLoans.map((loan, index) => {
-  const completion = calculateEMICompletion(loan);
-  const behavior = calculatePaymentBehavior(loan);
-  const totalLoanAmount = calculateTotalLoanAmount(loan);
-  
-  return (
-    <div key={loan._id} className="border border-gray-200 rounded-lg p-4 bg-white">
-      {/* Loan Header */}
-      <div className="flex justify-between items-start mb-3">
-        <div>
-          <div className="flex items-center gap-4">
-            <h5 className="font-medium text-gray-900 text-lg">
-              {loan.loanNumber}
-            </h5>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-              {loan.loanType} Loan
-            </span>
-          </div>
-          <p className="text-sm text-gray-500 mt-1">
-            Loan Date: {formatDateToDDMMYYYY(loan.dateApplied)}
-          </p>
-        </div>
-        {/* Behavior Score Section */}
-        <div className="text-right">
-          <div className="text-xs font-medium text-gray-500">Behavior Score</div>
-          <div className={`text-lg font-semibold ${
-            behavior.punctualityScore >= 90 ? 'text-green-600' :
-            behavior.punctualityScore >= 75 ? 'text-blue-600' :
-            behavior.punctualityScore >= 60 ? 'text-yellow-600' : 'text-red-600'
-          }`}>
-            {behavior.punctualityScore.toFixed(0)}%
-          </div>
-        </div>
-      </div>
-      
+                  <div className="mt-6">
+                    <h4 className="text-lg font-semibold mb-4">Customer Loans</h4>
+                    <div className="space-y-4">
+                      {displayLoans.map((loan, index) => {
+                        const completion = calculateEMICompletion(loan);
+                        const behavior = calculatePaymentBehavior(loan);
+                        const totalLoanAmount = calculateTotalLoanAmount(loan);
+                        
+                        return (
+                          <div key={loan._id} className="border border-gray-200 rounded-lg p-4 bg-white">
+                            {/* Loan Header */}
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <div className="flex items-center gap-4">
+                                  <h5 className="font-medium text-gray-900 text-lg">
+                                    {loan.loanNumber}
+                                  </h5>
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                    {loan.loanType} Loan
+                                  </span>
+                                </div>
+                                <p className="text-sm text-gray-500 mt-1">
+                                  Loan Date: {formatDateToDDMMYYYY(loan.dateApplied)}
+                                </p>
+                              </div>
+                              {/* Behavior Score Section */}
+                              <div className="text-right">
+                                <div className="text-xs font-medium text-gray-500">Behavior Score</div>
+                                <div className={`text-lg font-semibold ${
+                                  behavior.punctualityScore >= 90 ? 'text-green-600' :
+                                  behavior.punctualityScore >= 75 ? 'text-blue-600' :
+                                  behavior.punctualityScore >= 60 ? 'text-yellow-600' : 'text-red-600'
+                                }`}>
+                                  {behavior.punctualityScore.toFixed(0)}%
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Completion Progress */}
+                            <div className="mb-4">
+                              <div className="flex justify-between text-sm mb-1">
+                                <span>Completion: {completion.completionPercentage.toFixed(1)}%</span>
+                                <span>{completion.remainingEmis} EMIs remaining</span>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full h-2">
+                                <div 
+                                  className="bg-green-600 h-2 rounded-full transition-all duration-300" 
+                                  style={{width: `${Math.min(completion.completionPercentage, 100)}%`}}
+                                ></div>
+                              </div>
+                              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                                <span>Paid: ₹{completion.totalPaid}</span>
+                                <span>Remaining: ₹{completion.remainingAmount} of ₹{completion.totalLoanAmount || calculateTotalLoanAmount(loan)}</span>
+                              </div>
+                            </div>
 
-            {/* Completion Progress */}
-            <div className="mb-4">
-              <div className="flex justify-between text-sm mb-1">
-                <span>Completion: {completion.completionPercentage.toFixed(1)}%</span>
-                <span>{completion.remainingEmis} EMIs remaining</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div 
-                  className="bg-green-600 h-2 rounded-full transition-all duration-300" 
-                  style={{width: `${Math.min(completion.completionPercentage, 100)}%`}}
-                ></div>
-              </div>
-              <div className="flex justify-between text-xs text-gray-500 mt-1">
-  <span>Paid: ₹{completion.totalPaid}</span>
-  <span>Remaining: ₹{completion.remainingAmount} of ₹{completion.totalLoanAmount || calculateTotalLoanAmount(loan)}</span>
-</div>
-            </div>
-
-            {/* Loan Details Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-              <div>
-                <label className="block text-xs font-medium text-gray-500">
-                  Amount
-                </label>
-                <p className="text-gray-900">
-                  ₹{loan.amount?.toLocaleString()}
-                </p>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500">
-                  EMI Amount
-                </label>
-                <p className="text-gray-900">
-                  ₹{loan.emiAmount}
-                </p>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500">
-                  {loan.loanType === 'Daily' ? 'No. of Days' : 
-                   loan.loanType === 'Weekly' ? 'No. of Weeks' : 'No. of Months'}
-                </label>
-                <p className="text-gray-900">
-                  {loan.loanDays}
-                </p>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500">
-                  Total Loan Amount
-                </label>
-                <p className="text-gray-900 font-semibold">
-                  ₹{totalLoanAmount.toLocaleString()}
-                </p>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500">
-                  Next EMI Date
-                </label>
-                <p className="text-gray-900">
-                  {formatDateToDDMMYYYY(loan.nextEmiDate)}
-                </p>
-              </div>
-            </div>
-            
-            <div className="mt-4 flex justify-end">
-              <button 
-                onClick={() => handlePayNow(loan)}
-                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
-              >
-                Pay Now
-              </button>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  </div>
-)}
-
+                            {/* Loan Details Grid */}
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-500">
+                                  Amount
+                                </label>
+                                <p className="text-gray-900">
+                                  ₹{loan.amount?.toLocaleString()}
+                                </p>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-500">
+                                  EMI Amount
+                                </label>
+                                <p className="text-gray-900">
+                                  ₹{loan.emiAmount}
+                                </p>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-500">
+                                  {loan.loanType === 'Daily' ? 'No. of Days' : 
+                                  loan.loanType === 'Weekly' ? 'No. of Weeks' : 'No. of Months'}
+                                </label>
+                                <p className="text-gray-900">
+                                  {loan.loanDays}
+                                </p>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-500">
+                                  Total Loan Amount
+                                </label>
+                                <p className="text-gray-900 font-semibold">
+                                  ₹{totalLoanAmount.toLocaleString()}
+                                </p>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-500">
+                                  Next EMI Date
+                                </label>
+                                <p className="text-gray-900">
+                                  {formatDateToDDMMYYYY(loan.nextEmiDate)}
+                                </p>
+                              </div>
+                            </div>
+                            
+                            <div className="mt-4 flex justify-end">
+                              <button 
+                                onClick={() => handlePayNow(loan)}
+                                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
+                              >
+                                Pay Now
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {!selectedCustomer && (
                   <div className="mt-4 p-3 bg-blue-50 rounded-md border border-blue-200">
@@ -6354,83 +6423,302 @@ const renderCollection = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Payment Date *
+                {/* Payment Type Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Payment Type *
+                  </label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <label className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                      emiUpdate.paymentType === 'single' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="paymentType"
+                        value="single"
+                        checked={emiUpdate.paymentType === 'single'}
+                        onChange={(e) => setEmiUpdate({...emiUpdate, paymentType: e.target.value as 'single' | 'advance'})}
+                        className="mr-3 text-blue-600 focus:ring-blue-500"
+                      />
+                      <div>
+                        <div className="font-medium text-gray-900">Single EMI</div>
+                        <div className="text-sm text-gray-600">Payment for a single date</div>
+                      </div>
                     </label>
-                    <input 
-                      type="date" 
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      value={formatDateForInput(emiUpdate.paymentDate)}
-                      onChange={(e) => setEmiUpdate({...emiUpdate, paymentDate: e.target.value})}
-                      required
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Amount Paid (₹) *
+                    
+                    <label className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                      emiUpdate.paymentType === 'advance' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="paymentType"
+                        value="advance"
+                        checked={emiUpdate.paymentType === 'advance'}
+                        onChange={(e) => setEmiUpdate({...emiUpdate, paymentType: e.target.value as 'single' | 'advance'})}
+                        className="mr-3 text-blue-600 focus:ring-blue-500"
+                      />
+                      <div>
+                        <div className="font-medium text-gray-900">Advance EMI</div>
+                        <div className="text-sm text-gray-600">Payment for multiple future dates</div>
+                      </div>
                     </label>
-                    <input 
-                      type="number" 
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      value={emiUpdate.amount}
-                      onChange={(e) => setEmiUpdate({...emiUpdate, amount: e.target.value})}
-                      placeholder="Enter amount paid"
-                      min="0"
-                      step="0.01"
-                      required
-                    />
-                    {selectedLoanForPayment?.emiAmount && emiUpdate.amount && (
-                      <p className={`text-xs mt-1 ${
-                        Number(emiUpdate.amount) === selectedLoanForPayment.emiAmount 
-                          ? 'text-green-600' 
-                          : 'text-orange-600'
-                      }`}>
-                        {Number(emiUpdate.amount) === selectedLoanForPayment.emiAmount 
-                          ? '✓ Full EMI amount matches' 
-                          : `ℹ️ Expected EMI: ₹${selectedLoanForPayment.emiAmount}`}
-                      </p>
-                    )}
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Payment Status *
-                    </label>
-                    <select 
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      value={emiUpdate.status}
-                      onChange={(e) => setEmiUpdate({...emiUpdate, status: e.target.value})}
-                      required
-                    >
-                      <option value="Paid">Paid</option>
-                      <option value="Partial">Partial Payment</option>
-                      <option value="Due">Due</option>
-                    </select>
-                    {emiUpdate.status === 'Partial' && (
-                      <p className="text-xs text-orange-600 mt-1">
-                        Partial payments will be recorded and remaining amount will be carried forward.
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Collected By *
-                    </label>
-                    <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
-                      <p className="text-gray-900 font-medium">{currentOperator}</p>
-                      <p className="text-xs text-gray-500 mt-1">Automatically set to logged-in operator</p>
-                    </div>
-                    <input 
-                      type="hidden" 
-                      value={currentOperator}
-                      onChange={(e) => setEmiUpdate({...emiUpdate, collectedBy: currentOperator})}
-                    />
                   </div>
                 </div>
+
+                {/* Single EMI Fields */}
+                {emiUpdate.paymentType === 'single' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Payment Date *
+                      </label>
+                      <input 
+                        type="date" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={formatDateForInput(emiUpdate.paymentDate)}
+                        onChange={(e) => setEmiUpdate({...emiUpdate, paymentDate: e.target.value})}
+                        required
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Amount Paid (₹) *
+                      </label>
+                      <input 
+                        type="number" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={emiUpdate.amount}
+                        onChange={(e) => setEmiUpdate({...emiUpdate, amount: e.target.value})}
+                        placeholder="Enter amount paid"
+                        min="0"
+                        step="0.01"
+                        required
+                      />
+                      {selectedLoanForPayment?.emiAmount && emiUpdate.amount && (
+                        <p className={`text-xs mt-1 ${
+                          Number(emiUpdate.amount) === selectedLoanForPayment.emiAmount 
+                            ? 'text-green-600' 
+                            : 'text-orange-600'
+                        }`}>
+                          {Number(emiUpdate.amount) === selectedLoanForPayment.emiAmount 
+                            ? '✓ Full EMI amount matches' 
+                            : `ℹ️ Expected EMI: ₹${selectedLoanForPayment.emiAmount}`}
+                        </p>
+                      )}
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Payment Status *
+                      </label>
+                      <select 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={emiUpdate.status}
+                        onChange={(e) => setEmiUpdate({...emiUpdate, status: e.target.value})}
+                        required
+                      >
+                        <option value="Paid">Paid</option>
+                        <option value="Partial">Partial Payment</option>
+                        <option value="Due">Due</option>
+                      </select>
+                      {emiUpdate.status === 'Partial' && (
+                        <p className="text-xs text-orange-600 mt-1">
+                          Partial payments will be recorded and remaining amount will be carried forward.
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Collected By *
+                      </label>
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                        <p className="text-gray-900 font-medium">{currentOperator}</p>
+                        <p className="text-xs text-gray-500 mt-1">Automatically set to logged-in operator</p>
+                      </div>
+                      <input 
+                        type="hidden" 
+                        value={currentOperator}
+                        onChange={(e) => setEmiUpdate({...emiUpdate, collectedBy: currentOperator})}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Advance EMI Fields */}
+                {emiUpdate.paymentType === 'advance' && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          From Date *
+                        </label>
+                        <input 
+                          type="date" 
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          value={emiUpdate.advanceFromDate || new Date().toISOString().split('T')[0]}
+                          onChange={(e) => {
+                            const fromDate = e.target.value;
+                            setEmiUpdate(prev => ({
+                              ...prev, 
+                              advanceFromDate: fromDate,
+                              // Auto-set to date if not set
+                              advanceToDate: prev.advanceToDate || fromDate,
+                              // Auto-calculate EMI count
+                              advanceEmiCount: calculateEmiCount(fromDate, prev.advanceToDate || fromDate, selectedLoanForPayment?.loanType)
+                            }));
+                          }}
+                          required
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          To Date *
+                        </label>
+                        <input 
+                          type="date" 
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          value={emiUpdate.advanceToDate || emiUpdate.advanceFromDate || new Date().toISOString().split('T')[0]}
+                          onChange={(e) => {
+                            const toDate = e.target.value;
+                            setEmiUpdate(prev => ({
+                              ...prev, 
+                              advanceToDate: toDate,
+                              // Auto-calculate EMI count when dates change
+                              advanceEmiCount: calculateEmiCount(prev.advanceFromDate || new Date().toISOString().split('T')[0], toDate, selectedLoanForPayment?.loanType)
+                            }));
+                          }}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          EMI Amount (₹) *
+                        </label>
+                        <input 
+                          type="number" 
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          value={emiUpdate.amount || selectedLoanForPayment?.emiAmount || ''}
+                          onChange={(e) => {
+                            const emiAmount = e.target.value;
+                            setEmiUpdate(prev => ({
+                              ...prev, 
+                              amount: emiAmount,
+                              // Auto-calculate total amount
+                              advanceTotalAmount: calculateTotalAmount(emiAmount, prev.advanceEmiCount || '1')
+                            }));
+                          }}
+                          placeholder="EMI Amount"
+                          min="0"
+                          step="0.01"
+                          required
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          No. of EMI *
+                        </label>
+                        <input 
+                          type="number" 
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          value={emiUpdate.advanceEmiCount || '1'}
+                          onChange={(e) => {
+                            const emiCount = e.target.value;
+                            setEmiUpdate(prev => ({
+                              ...prev, 
+                              advanceEmiCount: emiCount,
+                              // Auto-calculate total amount
+                              advanceTotalAmount: calculateTotalAmount(prev.amount || selectedLoanForPayment?.emiAmount || '0', emiCount)
+                            }));
+                          }}
+                          placeholder="Number of EMI"
+                          min="1"
+                          required
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Total Amount (₹)
+                        </label>
+                        <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                          <p className="text-gray-900 font-semibold text-lg">
+                            ₹{emiUpdate.advanceTotalAmount || calculateTotalAmount(emiUpdate.amount || selectedLoanForPayment?.emiAmount || '0', emiUpdate.advanceEmiCount || '1')}
+                          </p>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">Auto-calculated: EMI Amount × No. of EMI</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Payment Status
+                        </label>
+                        <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-green-50">
+                          <p className="text-green-900 font-medium">Advance</p>
+                          <p className="text-xs text-green-600 mt-1">Automatically set for advance payments</p>
+                        </div>
+                        <input 
+                          type="hidden" 
+                          value="Advance"
+                          onChange={(e) => setEmiUpdate({...emiUpdate, status: 'Advance'})}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Collected By *
+                        </label>
+                        <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                          <p className="text-gray-900 font-medium">{currentOperator}</p>
+                          <p className="text-xs text-gray-500 mt-1">Automatically set to logged-in operator</p>
+                        </div>
+                        <input 
+                          type="hidden" 
+                          value={currentOperator}
+                          onChange={(e) => setEmiUpdate({...emiUpdate, collectedBy: currentOperator})}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Advance Payment Summary */}
+                    <div className="bg-green-50 border border-green-200 rounded-md p-4">
+                      <h5 className="font-semibold text-green-900 mb-2">Advance Payment Summary</h5>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div>
+                          <span className="text-green-700">Period:</span>
+                          <p className="font-semibold text-green-900">
+                            {emiUpdate.advanceFromDate ? formatDateToDDMMYYYY(emiUpdate.advanceFromDate) : 'N/A'} to {' '}
+                            {emiUpdate.advanceToDate ? formatDateToDDMMYYYY(emiUpdate.advanceToDate) : 'N/A'}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-green-700">EMI Count:</span>
+                          <p className="font-semibold text-green-900">{emiUpdate.advanceEmiCount || '1'}</p>
+                        </div>
+                        <div>
+                          <span className="text-green-700">EMI Amount:</span>
+                          <p className="font-semibold text-green-900">
+                            ₹{emiUpdate.amount || selectedLoanForPayment?.emiAmount || '0'}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-green-700">Total:</span>
+                          <p className="font-semibold text-green-900">
+                            ₹{emiUpdate.advanceTotalAmount || calculateTotalAmount(emiUpdate.amount || selectedLoanForPayment?.emiAmount || '0', emiUpdate.advanceEmiCount || '1')}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -6441,7 +6729,11 @@ const renderCollection = () => {
                     rows={3}
                     value={emiUpdate.notes || ''}
                     onChange={(e) => setEmiUpdate({...emiUpdate, notes: e.target.value})}
-                    placeholder="Add any notes about this payment..."
+                    placeholder={
+                      emiUpdate.paymentType === 'advance' 
+                        ? `Advance payment notes...` 
+                        : `Add any notes about this payment...`
+                    }
                   />
                 </div>
 
@@ -6455,7 +6747,7 @@ const renderCollection = () => {
                   </button>
                   <button 
                     onClick={handleUpdateEMI}
-                    disabled={!emiUpdate.amount || isLoading}
+                    disabled={!emiUpdate.amount || isLoading || (emiUpdate.paymentType === 'advance' && (!emiUpdate.advanceFromDate || !emiUpdate.advanceToDate))}
                     className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
                   >
                     {isLoading ? (
@@ -6463,6 +6755,8 @@ const renderCollection = () => {
                         <span className="animate-spin mr-2">⏳</span>
                         Processing...
                       </>
+                    ) : emiUpdate.paymentType === 'advance' ? (
+                      'Record Advance EMI Payment'
                     ) : (
                       'Record EMI Payment'
                     )}

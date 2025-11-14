@@ -53,7 +53,12 @@ export async function POST(request) {
       collectedBy,
       paymentMethod = 'Cash',
       transactionId,
-      notes = ''
+      notes = '',
+      paymentType = 'single',
+      advanceFromDate,
+      advanceToDate,
+      advanceEmiCount,
+      advanceTotalAmount
     } = data;
 
     // Validate required fields
@@ -62,6 +67,23 @@ export async function POST(request) {
         success: false,
         error: 'Customer ID, customer name, amount, payment date, and collected by are required'
       }, { status: 400 });
+    }
+
+    // Handle advance payments validation
+    if (paymentType === 'advance') {
+      if (!advanceFromDate || !advanceToDate) {
+        return NextResponse.json({ 
+          success: false,
+          error: 'From date and to date are required for advance payments'
+        }, { status: 400 });
+      }
+
+      if (new Date(advanceFromDate) > new Date(advanceToDate)) {
+        return NextResponse.json({ 
+          success: false,
+          error: 'From date cannot be after to date for advance payments'
+        }, { status: 400 });
+      }
     }
 
     // Validate and clean customerId
@@ -181,8 +203,8 @@ export async function POST(request) {
     // Format payment date to YYYY-MM-DD for comparison
     const formattedPaymentDate = new Date(paymentDate).toISOString().split('T')[0];
 
-    // Check if EMI payment already exists for this date (only if we have a loan ID)
-    if (finalLoanId) {
+    // Check if EMI payment already exists for this date (only if we have a loan ID and it's single payment)
+    if (finalLoanId && paymentType === 'single') {
       const existingPayment = await EMIPayment.findOne({
         $or: [
           { loanId: finalLoanId },
@@ -220,8 +242,21 @@ export async function POST(request) {
       paymentMethod,
       transactionId: transactionId || null,
       notes: notes || `EMI payment for ${customerName}`,
-      isVerified: false
+      isVerified: false,
+      paymentType: paymentType
     };
+
+    // Add advance payment details if applicable
+    if (paymentType === 'advance') {
+      paymentData.advanceFromDate = new Date(advanceFromDate);
+      paymentData.advanceToDate = new Date(advanceToDate);
+      paymentData.advanceEmiCount = advanceEmiCount || 1;
+      paymentData.advanceTotalAmount = advanceTotalAmount || amount;
+      paymentData.isAdvancePayment = true;
+      
+      // Update notes to include advance payment info
+      paymentData.notes = `Advance EMI payment for ${advanceEmiCount || 1} periods (${new Date(advanceFromDate).toLocaleDateString()} to ${new Date(advanceToDate).toLocaleDateString()})${notes ? ` - ${notes}` : ''}`;
+    }
 
     // Only add loan data if we have it
     if (finalLoanId) {
@@ -249,7 +284,7 @@ export async function POST(request) {
         // Calculate new EMI paid count and total paid amount
         const loanPayments = await EMIPayment.find({
           loanId: finalLoanId,
-          status: { $in: ['Paid', 'Partial'] }
+          status: { $in: ['Paid', 'Partial', 'Advance'] }
         });
         
         const totalPaidAmount = loanPayments.reduce((sum, p) => sum + p.amount, 0);
@@ -269,7 +304,8 @@ export async function POST(request) {
               status: payment.status,
               collectedBy: payment.collectedBy,
               notes: payment.notes,
-              createdAt: new Date()
+              createdAt: new Date(),
+              isAdvance: paymentType === 'advance'
             }
           }
         });
@@ -284,9 +320,9 @@ export async function POST(request) {
 
     console.log('✅ EMI payment recorded successfully:', payment._id);
 
-    const responseMessage = finalLoanId 
-      ? `EMI payment of ₹${amount} recorded successfully for ${customerName} (Loan: ${finalLoanNumber})`
-      : `EMI payment of ₹${amount} recorded successfully for ${customerName} (Temporary - No Loan Record)`;
+    const responseMessage = paymentType === 'advance' 
+      ? `Advance EMI payment of ₹${amount} recorded successfully for ${advanceEmiCount || 1} periods (${new Date(advanceFromDate).toLocaleDateString()} to ${new Date(advanceToDate).toLocaleDateString()})`
+      : `EMI payment of ₹${amount} recorded successfully for ${customerName}${finalLoanId ? ` (Loan: ${finalLoanNumber})` : ' (Temporary - No Loan Record)'}`;
 
     return NextResponse.json({ 
       success: true,
@@ -299,7 +335,9 @@ export async function POST(request) {
         paymentDate: payment.paymentDate,
         loanId: finalLoanId ? finalLoanId.toString() : null,
         collectedBy: collectedBy,
-        hasLoanRecord: !!finalLoanId
+        hasLoanRecord: !!finalLoanId,
+        paymentType: paymentType,
+        isAdvance: paymentType === 'advance'
       }
     });
     
@@ -313,7 +351,6 @@ export async function POST(request) {
   }
 }
 
-// ... keep the GET and PUT methods the same as in your original code
 export async function GET(request) {
   try {
     await connectDB();
@@ -323,6 +360,7 @@ export async function GET(request) {
     const loanId = searchParams.get('loanId');
     const date = searchParams.get('date');
     const collectedBy = searchParams.get('collectedBy');
+    const paymentType = searchParams.get('paymentType');
     const limit = parseInt(searchParams.get('limit')) || 50;
 
     let query = {};
@@ -370,6 +408,11 @@ export async function GET(request) {
       query.collectedBy = collectedBy;
     }
 
+    // Filter by payment type
+    if (paymentType) {
+      query.paymentType = paymentType;
+    }
+
     const payments = await EMIPayment.find(query)
       .populate('customerId', 'name phone businessName area loanNumber')
       .populate('loanId', 'loanNumber loanType emiAmount amount emiPaidCount totalPaidAmount')
@@ -389,7 +432,7 @@ export async function GET(request) {
             $gte: today,
             $lt: tomorrow
           },
-          status: { $in: ['Paid', 'Partial'] }
+          status: { $in: ['Paid', 'Partial', 'Advance'] }
         }
       },
       {
@@ -409,7 +452,7 @@ export async function GET(request) {
             $gte: today,
             $lt: tomorrow
           },
-          status: { $in: ['Paid', 'Partial'] }
+          status: { $in: ['Paid', 'Partial', 'Advance'] }
         }
       },
       {
@@ -506,7 +549,7 @@ export async function PUT(request) {
     }
 
     // Update allowed fields
-    const allowedUpdates = ['amount', 'status', 'paymentDate', 'collectedBy', 'paymentMethod', 'notes', 'isVerified'];
+    const allowedUpdates = ['amount', 'status', 'paymentDate', 'collectedBy', 'paymentMethod', 'notes', 'isVerified', 'paymentType', 'advanceFromDate', 'advanceToDate', 'advanceEmiCount', 'advanceTotalAmount'];
     allowedUpdates.forEach(field => {
       if (cleanedData[field] !== undefined) {
         payment[field] = cleanedData[field];
