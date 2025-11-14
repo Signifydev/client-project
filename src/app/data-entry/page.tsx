@@ -70,6 +70,13 @@ interface EMIHistory {
   customerNumber?: string;
   loanNumber?: string;
   loanId?: string;
+  // Add these for advance payments
+  paymentType?: 'single' | 'advance';
+  isAdvancePayment?: boolean;
+  advanceFromDate?: string;
+  advanceToDate?: string;
+  advanceEmiCount?: number;
+  advanceTotalAmount?: number;
 }
 
 interface CustomerDetails {
