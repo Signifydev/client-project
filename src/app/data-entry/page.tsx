@@ -536,20 +536,45 @@ export default function DataEntryDashboard() {
         payment.loanId === loanFilter || payment.loanNumber === loanFilter
       );
 
-  // Create a map of all payments for quick lookup
-  const paymentMap: { [key: string]: EMIHistory[] } = {};
+  console.log('📅 Calendar Debug:', {
+    month: month.toISOString(),
+    loansCount: filteredLoans.length,
+    paymentHistoryCount: filteredPaymentHistory.length,
+    loanFilter
+  });
+
+  // Create a comprehensive map of ALL payments for quick lookup
+  const paymentMap: { [key: string]: { 
+    payments: EMIHistory[]; 
+    totalAmount: number; 
+    loanNumbers: string[] 
+  } } = {};
+  
   filteredPaymentHistory.forEach(payment => {
     const paymentDate = new Date(payment.paymentDate);
     if (paymentDate.getMonth() === monthIndex && paymentDate.getFullYear() === year) {
-      const dateStr = payment.paymentDate;
+      const dateStr = payment.paymentDate.split('T')[0]; // Ensure we only get YYYY-MM-DD
+      
       if (!paymentMap[dateStr]) {
-        paymentMap[dateStr] = [];
+        paymentMap[dateStr] = { 
+          payments: [], 
+          totalAmount: 0, 
+          loanNumbers: [] 
+        };
       }
-      paymentMap[dateStr].push(payment);
+      
+      paymentMap[dateStr].payments.push(payment);
+      paymentMap[dateStr].totalAmount += payment.amount;
+      
+      if (payment.loanNumber && !paymentMap[dateStr].loanNumbers.includes(payment.loanNumber)) {
+        paymentMap[dateStr].loanNumbers.push(payment.loanNumber);
+      }
     }
   });
 
-  // Generate calendar grid
+  console.log('💰 Payment Map:', paymentMap);
+
+  // Generate calendar grid for previous month days
   const startingDayOfWeek = firstDay.getDay();
   for (let i = startingDayOfWeek - 1; i >= 0; i--) {
     const date = new Date(year, monthIndex, -i);
@@ -567,22 +592,22 @@ export default function DataEntryDashboard() {
     const isToday = date.toDateString() === new Date().toDateString();
     const dateStr = date.toISOString().split('T')[0];
     
-    const datePayments = paymentMap[dateStr] || [];
     let emiStatus: CalendarDay['emiStatus'] = 'none';
     let emiAmount = 0;
     const loanNumbers: string[] = [];
+    const datePayments: EMIHistory[] = [];
 
-    // Check if there are payments for this date
-    if (datePayments.length > 0) {
-      emiAmount = datePayments.reduce((sum, payment) => sum + payment.amount, 0);
-      datePayments.forEach(payment => {
-        if (payment.loanNumber && !loanNumbers.includes(payment.loanNumber)) {
-          loanNumbers.push(payment.loanNumber);
-        }
-      });
-      emiStatus = 'paid'; // Always show as paid if there are payments
-    } else {
-      // Check if any loan has EMI due on this date
+    // PRIORITY 1: Check if there are ACTUAL PAYMENTS for this date
+    const paymentInfo = paymentMap[dateStr];
+    if (paymentInfo && paymentInfo.payments.length > 0) {
+      console.log(`✅ Found payments for ${dateStr}:`, paymentInfo);
+      emiStatus = 'paid';
+      emiAmount = paymentInfo.totalAmount;
+      loanNumbers.push(...paymentInfo.loanNumbers);
+      datePayments.push(...paymentInfo.payments);
+    } 
+    // PRIORITY 2: Check if there are due EMIs (only if no payments exist)
+    else {
       let hasDueEMI = false;
       let totalDueAmount = 0;
       const dueLoanNumbers: string[] = [];
@@ -591,21 +616,26 @@ export default function DataEntryDashboard() {
         if (loan.emiPaidCount >= loan.totalEmiCount) return;
 
         const startDate = new Date(loan.emiStartDate || loan.dateApplied);
-        const currentDate = new Date(startDate); // Changed to const
         const loanType = loan.loanType;
 
-        // Generate EMI schedule for this loan
+        console.log(`🔍 Checking loan ${loan.loanNumber} from ${startDate.toISOString()}`);
+
+        // Generate EMI schedule for this loan - FIXED LOGIC
+        let currentDate = new Date(startDate); // Start from EMI start date
+        
         for (let i = 0; i < loan.totalEmiCount; i++) {
           const emiDateStr = currentDate.toISOString().split('T')[0];
           
+          // Check if this EMI date matches the current calendar date
           if (emiDateStr === dateStr) {
+            console.log(`📅 Due EMI found for ${dateStr}: Loan ${loan.loanNumber}, EMI ${i + 1}`);
             hasDueEMI = true;
             totalDueAmount += loan.emiAmount;
             dueLoanNumbers.push(loan.loanNumber);
             break;
           }
 
-          // Calculate next EMI date using a new variable
+          // Calculate next EMI date - FIXED: Calculate AFTER checking current date
           const nextDate = new Date(currentDate);
           switch(loanType) {
             case 'Daily':
@@ -622,10 +652,10 @@ export default function DataEntryDashboard() {
           }
 
           // Update currentDate for next iteration
-          currentDate.setTime(nextDate.getTime());
+          currentDate = new Date(nextDate);
 
-          // Stop if beyond current month
-          if (currentDate.getMonth() !== monthIndex || currentDate.getFullYear() !== year) {
+          // Stop if we've gone beyond the current month
+          if (currentDate.getMonth() > monthIndex || currentDate.getFullYear() > year) {
             break;
           }
         }
@@ -642,11 +672,16 @@ export default function DataEntryDashboard() {
         
         if (calendarDate < today) {
           emiStatus = 'overdue';
+          console.log(`⚠️ Overdue EMI for ${dateStr}`);
         } else if (calendarDate.getTime() === today.getTime()) {
           emiStatus = 'due';
+          console.log(`📅 Due EMI for ${dateStr}`);
         } else {
           emiStatus = 'upcoming';
+          console.log(`🔔 Upcoming EMI for ${dateStr}`);
         }
+      } else {
+        console.log(`➖ No EMI activity for ${dateStr}`);
       }
     }
 
@@ -661,6 +696,7 @@ export default function DataEntryDashboard() {
     });
   }
 
+  // Generate next month days
   const endingDayOfWeek = lastDay.getDay();
   for (let i = 1; i < 7 - endingDayOfWeek; i++) {
     const date = new Date(year, monthIndex + 1, i);
@@ -671,6 +707,16 @@ export default function DataEntryDashboard() {
       emiStatus: 'none'
     });
   }
+  
+  console.log('📊 Final calendar days with status:', days
+    .filter(day => day.emiStatus !== 'none')
+    .map(day => ({
+      date: day.date.toISOString().split('T')[0],
+      status: day.emiStatus,
+      amount: day.emiAmount,
+      loans: day.loanNumbers
+    }))
+  );
   
   return days;
 };
@@ -1837,7 +1883,7 @@ export default function DataEntryDashboard() {
   try {
     console.log('🔄 Fetching collection data for date:', date);
     
-    // First, try to fetch from API
+    // First, try to fetch from our API
     const response = await fetch(`/api/data-entry/collection?date=${date}`);
     
     if (response.ok) {
@@ -1850,7 +1896,7 @@ export default function DataEntryDashboard() {
       }
     }
     
-    // If API fails or returns no data, generate from existing data
+    // If API fails or returns no data, generate from existing customers and EMI history
     console.log('📋 Generating collection data from existing customers and EMI history');
     await generateCollectionDataFromEMIHistory(date);
     
@@ -1871,30 +1917,43 @@ const generateCollectionDataFromEMIHistory = async (date: string) => {
   let office1Collection = 0;
   let office2Collection = 0;
 
+  // Loop through all customers and their loans to find EMI payments for the date
   for (const customer of customers) {
     const customerLoans = getAllCustomerLoans(customer, null);
     let customerTotalCollection = 0;
     const loanDetails: { loanNumber: string; emiAmount: number; collectedAmount: number }[] = [];
     
+    // Check each loan for EMI payments on the selected date
     for (const loan of customerLoans) {
+      let loanCollectedAmount = 0;
+      
       if (loan.emiHistory && Array.isArray(loan.emiHistory)) {
         const datePayments = loan.emiHistory.filter(
           payment => payment.paymentDate === date
         );
         
         if (datePayments.length > 0) {
-          const collectedAmount = datePayments.reduce((sum, payment) => sum + payment.amount, 0);
-          customerTotalCollection += collectedAmount;
+          loanCollectedAmount = datePayments.reduce((sum, payment) => sum + payment.amount, 0);
+          customerTotalCollection += loanCollectedAmount;
           
-          loanDetails.push({
+          console.log(`💰 Payment found for ${customer.name}:`, {
             loanNumber: loan.loanNumber,
-            emiAmount: loan.emiAmount,
-            collectedAmount: collectedAmount
+            paymentDate: date,
+            amount: loanCollectedAmount,
+            payments: datePayments
           });
         }
       }
+      
+      // Include loan details
+      loanDetails.push({
+        loanNumber: loan.loanNumber || 'N/A',
+        emiAmount: loan.emiAmount || 0,
+        collectedAmount: loanCollectedAmount
+      });
     }
     
+    // Only include customers who made payments on this date
     if (customerTotalCollection > 0) {
       collectionCustomers.push({
         customerId: customer._id,
@@ -1902,7 +1961,7 @@ const generateCollectionDataFromEMIHistory = async (date: string) => {
         customerName: customer.name,
         totalCollection: customerTotalCollection,
         officeCategory: customer.officeCategory || 'Office 1',
-        loans: loanDetails // Include loans array
+        loans: loanDetails.filter(loan => loan.collectedAmount > 0) // Only include loans with collections
       });
       
       totalCollection += customerTotalCollection;
@@ -1912,10 +1971,12 @@ const generateCollectionDataFromEMIHistory = async (date: string) => {
       } else if (customer.officeCategory === 'Office 2') {
         office2Collection += customerTotalCollection;
       }
+      
+      console.log(`✅ Added customer ${customer.name} to collection: ₹${customerTotalCollection}`);
     }
   }
 
-  console.log('📊 Generated collection data:', {
+  console.log('📊 Final collection data:', {
     date,
     customers: collectionCustomers,
     summary: {
@@ -1935,6 +1996,48 @@ const generateCollectionDataFromEMIHistory = async (date: string) => {
       office2Collection,
       totalCustomers: collectionCustomers.length
     }
+  });
+};
+
+const debugEMIPayments = () => {
+  console.log('🔍 DEBUG: Checking all EMI payments across all customers');
+  
+  let totalPayments = 0;
+  
+  customers.forEach(customer => {
+    const customerLoans = getAllCustomerLoans(customer, null);
+    let customerPayments = 0;
+    
+    customerLoans.forEach(loan => {
+      if (loan.emiHistory && loan.emiHistory.length > 0) {
+        console.log(`📊 Customer: ${customer.name}, Loan: ${loan.loanNumber}`);
+        console.log('EMI History:', loan.emiHistory);
+        customerPayments += loan.emiHistory.length;
+      }
+    });
+    
+    if (customerPayments > 0) {
+      console.log(`✅ ${customer.name} has ${customerPayments} EMI payments`);
+      totalPayments += customerPayments;
+    }
+  });
+  
+  console.log(`📈 Total EMI payments across all customers: ${totalPayments}`);
+  
+  // Also check for today's payments specifically
+  const today = new Date().toISOString().split('T')[0];
+  console.log(`📅 Checking payments for today (${today}):`);
+  
+  customers.forEach(customer => {
+    const customerLoans = getAllCustomerLoans(customer, null);
+    customerLoans.forEach(loan => {
+      if (loan.emiHistory) {
+        const todayPayments = loan.emiHistory.filter(p => p.paymentDate === today);
+        if (todayPayments.length > 0) {
+          console.log(`💰 TODAY: ${customer.name} - ${loan.loanNumber}:`, todayPayments);
+        }
+      }
+    });
   });
 };
 
@@ -5460,7 +5563,25 @@ const renderCollection = () => {
               </button>
             </div>
           </div>
+          <div className="flex gap-2 mt-4">
+            <button
+              onClick={() => debugEMIPayments()}
+              className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 text-sm"
+            >
+              Debug EMI Payments
+            </button>
+            <button
+              onClick={() => {
+                console.log('Current customers:', customers);
+                console.log('Collection data:', collectionData);
+              }}
+              className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 text-sm"
+            >
+              Debug State
+            </button>
+          </div>
         </div>
+        {/* REMOVED THE EXTRA </div> TAG THAT WAS HERE */}
 
         <div className="border-t border-gray-200">
           {/* Summary Cards */}
@@ -5586,7 +5707,6 @@ const renderCollection = () => {
     </div>
   );
 };
-
   const renderDashboard = () => (
     <div className="px-4 py-6 sm:px-0">
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
