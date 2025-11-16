@@ -61,7 +61,7 @@ interface Loan {
 }
 
 interface EMIHistory {
-  _id?: string; // ADD THIS LINE
+  _id?: string;
   paymentDate: string;
   amount: number;
   status: string;
@@ -78,6 +78,9 @@ interface EMIHistory {
   advanceToDate?: string;
   advanceEmiCount?: number;
   advanceTotalAmount?: number;
+  // Add these for edit/delete functionality
+  customerId?: string;
+  customerName?: string;
 }
 
 interface CustomerDetails {
@@ -912,31 +915,31 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
   };
 
   const handleCalendarDateClick = (day: CalendarDay) => {
-    if (day.paymentHistory && day.paymentHistory.length > 0) {
-      setSelectedCalendarDate(day.date);
-      setShowDatePaymentHistory(true);
-    } else if (day.emiStatus === 'due' || day.emiStatus === 'overdue') {
-      const dueLoans = calendarData?.loans.filter(loan => 
-        loan.nextEmiDate === day.date.toISOString().split('T')[0]
-      );
-      
-      if (dueLoans && dueLoans.length > 0 && selectedCustomer) {
-        setSelectedLoanForPayment(dueLoans[0]);
-        setEmiUpdate(prev => ({
-          ...prev,
-          customerId: selectedCustomer._id || '',
-          customerName: selectedCustomer.name || '',
-          loanId: dueLoans[0]._id,
-          customerNumber: dueLoans[0].customerNumber,
-          loanNumber: dueLoans[0].loanNumber,
-          amount: dueLoans[0].emiAmount.toString(),
-          paymentDate: day.date.toISOString().split('T')[0]
-        }));
-        setShowPaymentForm(true);
-        setShowEMICalendar(false);
-      }
+  if (day.paymentHistory && day.paymentHistory.length > 0) {
+    setSelectedCalendarDate(day.date);
+    setShowDatePaymentHistory(true);
+  } else if (day.emiStatus === 'due' || day.emiStatus === 'overdue') {
+    const dueLoans = calendarData?.loans.filter(loan => 
+      loan.nextEmiDate === day.date.toISOString().split('T')[0]
+    );
+    
+    if (dueLoans && dueLoans.length > 0 && selectedCustomer) {
+      setSelectedLoanForPayment(dueLoans[0]);
+      setEmiUpdate(prev => ({
+        ...prev,
+        customerId: selectedCustomer._id || '',
+        customerName: selectedCustomer.name || '',
+        loanId: dueLoans[0]._id,
+        customerNumber: dueLoans[0].customerNumber,
+        loanNumber: dueLoans[0].loanNumber,
+        amount: dueLoans[0].emiAmount.toString(),
+        paymentDate: day.date.toISOString().split('T')[0]
+      }));
+      setShowPaymentForm(true);
+      setShowEMICalendar(false);
     }
-  };
+  }
+};
 
 
   const handleEditPastEMI = (payment: EMIHistory) => {
@@ -2590,6 +2593,7 @@ const handleEditEMIPayment = async (payment: EMIHistory, newAmount: number, newD
       body: JSON.stringify({
         amount: newAmount,
         paymentDate: newDate || payment.paymentDate,
+        status: payment.status, // Include status in the update
         notes: `Payment edited from ₹${payment.amount} to ₹${newAmount}${payment.notes ? ` - Original notes: ${payment.notes}` : ''}`
       }),
     });
@@ -2974,6 +2978,58 @@ const refreshCustomerData = async (customerId: string) => {
     setEditDate('');
   };
 
+  const handleDeleteEMI = async (payment: EMIHistory) => {
+    if (!payment._id) {
+      alert('Cannot delete payment: Payment ID not found');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete this EMI payment of ₹${payment.amount} from ${payment.paymentDate}? This action cannot be undone.`)) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await fetch(`/api/data-entry/emi-payments?id=${payment._id}`, {
+        method: 'DELETE',
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to delete payment');
+      }
+
+      alert('EMI payment deleted successfully!');
+      
+      // Refresh the calendar data
+      if (calendarData) {
+        const updatedResponse = await fetch(`/api/data-entry/customers/${calendarData.customerId}`);
+        if (updatedResponse.ok) {
+          const updatedData = await updatedResponse.json();
+          if (updatedData.success) {
+            const customerDetails = updatedData.data;
+            const displayLoans = getAllCustomerLoans(customerDetails, customerDetails);
+            
+            setCalendarData({
+              ...calendarData,
+              loans: displayLoans,
+              paymentHistory: displayLoans.flatMap(loan => loan.emiHistory || [])
+            });
+          }
+        }
+      }
+      
+      setShowDatePaymentHistory(false);
+      
+    } catch (error: any) {
+      console.error('Error deleting EMI payment:', error);
+      alert('Error: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
@@ -3022,6 +3078,33 @@ const refreshCustomerData = async (customerId: string) => {
                               onChange={(e) => setEditDate(e.target.value)}
                             />
                           </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Status
+                            </label>
+                            <select
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              value={payment.status}
+                              onChange={(e) => {
+                                // Update the payment status in the local state
+                                const updatedPayments = payments.map(p => 
+                                  p._id === payment._id ? { ...p, status: e.target.value } : p
+                                );
+                                // Update calendar data
+                                setCalendarData(prev => prev ? {
+                                  ...prev,
+                                  paymentHistory: prev.paymentHistory.map(p => 
+                                    p._id === payment._id ? { ...p, status: e.target.value } : p
+                                  )
+                                } : null);
+                              }}
+                            >
+                              <option value="Paid">Paid</option>
+                              <option value="Partial">Partial</option>
+                              <option value="Advance">Advance</option>
+                              <option value="Due">Due</option>
+                            </select>
+                          </div>
                           <div className="flex space-x-2">
                             <button
                               onClick={() => saveEdit(payment)}
@@ -3065,6 +3148,11 @@ const refreshCustomerData = async (customerId: string) => {
                               Advance Payment ({payment.advanceEmiCount} EMI)
                             </div>
                           )}
+                          {payment.loanNumber && (
+                            <div className="text-sm text-gray-500 mt-1">
+                              Loan: {payment.loanNumber}
+                            </div>
+                          )}
                         </>
                       )}
                     </div>
@@ -3077,10 +3165,11 @@ const refreshCustomerData = async (customerId: string) => {
                           Edit
                         </button>
                         <button
-                          onClick={() => handleEditPastEMI(payment)}
-                          className="bg-yellow-600 text-white px-3 py-1 rounded text-sm hover:bg-yellow-700"
+                          onClick={() => handleDeleteEMI(payment)}
+                          className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
+                          disabled={isLoading}
                         >
-                          Request Correction
+                          Delete
                         </button>
                       </div>
                     )}

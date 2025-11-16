@@ -606,71 +606,243 @@ export async function PUT(request) {
     
     const { searchParams } = new URL(request.url);
     const paymentId = searchParams.get('id');
-    const data = await request.json();
-
+    
     if (!paymentId) {
-      return NextResponse.json({ 
-        success: false,
-        error: 'Payment ID is required'
-      }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: 'Payment ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const body = await request.json();
+    const { amount, paymentDate, status, notes, collectedBy } = body;
+
+    // Validate required fields
+    if (!amount || !paymentDate) {
+      return NextResponse.json(
+        { success: false, error: 'Amount and payment date are required' },
+        { status: 400 }
+      );
     }
 
     // Clean payment ID
     const cleanedPaymentId = cleanId(paymentId);
     if (!mongoose.Types.ObjectId.isValid(cleanedPaymentId)) {
-      return NextResponse.json({ 
-        success: false,
-        error: 'Invalid payment ID format'
-      }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: 'Invalid payment ID format' },
+        { status: 400 }
+      );
     }
 
-    console.log('🟡 Updating EMI payment:', cleanedPaymentId);
+    console.log('🟡 Updating EMI payment:', { paymentId: cleanedPaymentId, updates: body });
 
+    // Find the payment first to get original data
     const payment = await EMIPayment.findById(cleanedPaymentId);
     if (!payment) {
-      return NextResponse.json({ 
-        success: false,
-        error: 'EMI payment not found'
-      }, { status: 404 });
+      return NextResponse.json(
+        { success: false, error: 'Payment not found' },
+        { status: 404 }
+      );
     }
 
-    // Clean any IDs in the update data
-    const cleanedData = { ...data };
-    if (cleanedData.customerId) {
-      cleanedData.customerId = cleanId(cleanedData.customerId);
-    }
-    if (cleanedData.loanId) {
-      cleanedData.loanId = cleanId(cleanedData.loanId);
-    }
+    // Store original values for comparison
+    const originalAmount = payment.amount;
+    const originalPaymentDate = payment.paymentDate;
+    const originalStatus = payment.status;
 
-    // Update allowed fields - INCLUDED NEW FIELDS
-    const allowedUpdates = [
-      'amount', 'status', 'paymentDate', 'collectedBy', 'paymentMethod', 
-      'notes', 'isVerified', 'paymentType', 'isAdvancePayment',
-      'advanceFromDate', 'advanceToDate', 'advanceEmiCount', 'advanceTotalAmount'
-    ];
-    
-    allowedUpdates.forEach(field => {
-      if (cleanedData[field] !== undefined) {
-        payment[field] = cleanedData[field];
-      }
-    });
+    // Update payment fields
+    payment.amount = parseFloat(amount);
+    payment.paymentDate = new Date(paymentDate);
+    payment.status = status || payment.status;
+    payment.notes = notes || payment.notes;
+    payment.collectedBy = collectedBy || payment.collectedBy;
+    payment.updatedAt = new Date();
+
+    // Add edit history note
+    const editNote = `Payment edited: Amount changed from ₹${originalAmount} to ₹${amount}`;
+    if (originalPaymentDate.toISOString() !== new Date(paymentDate).toISOString()) {
+      payment.notes = `${editNote}, Date changed from ${originalPaymentDate.toLocaleDateString()} to ${new Date(paymentDate).toLocaleDateString()}. ${payment.notes || ''}`;
+    } else {
+      payment.notes = `${editNote}. ${payment.notes || ''}`;
+    }
 
     await payment.save();
 
     console.log('✅ EMI payment updated successfully:', cleanedPaymentId);
 
-    return NextResponse.json({ 
+    // Update loan statistics if payment has a loan ID
+    if (payment.loanId) {
+      try {
+        const loanPayments = await EMIPayment.find({
+          loanId: payment.loanId,
+          status: { $in: ['Paid', 'Partial', 'Advance'] }
+        });
+        
+        const totalPaidAmount = loanPayments.reduce((sum, p) => sum + p.amount, 0);
+        
+        // Update loan
+        await Loan.findByIdAndUpdate(payment.loanId, {
+          totalPaidAmount: totalPaidAmount,
+          emiPaidCount: loanPayments.length,
+          remainingAmount: Math.max((await Loan.findById(payment.loanId)).amount - totalPaidAmount, 0),
+          updatedAt: new Date()
+        });
+
+        console.log('✅ Loan statistics updated after payment edit');
+      } catch (loanUpdateError) {
+        console.error('⚠️ Error updating loan statistics after edit:', loanUpdateError);
+      }
+    }
+
+    // Update customer total paid if needed
+    if (originalAmount !== parseFloat(amount)) {
+      try {
+        const customerPayments = await EMIPayment.find({
+          customerId: payment.customerId,
+          status: { $in: ['Paid', 'Partial', 'Advance'] }
+        });
+        
+        const totalCustomerPaid = customerPayments.reduce((sum, p) => sum + p.amount, 0);
+        
+        await Customer.findByIdAndUpdate(payment.customerId, {
+          totalPaid: totalCustomerPaid,
+          updatedAt: new Date()
+        });
+
+        console.log('✅ Customer total paid updated after payment edit');
+      } catch (customerUpdateError) {
+        console.error('⚠️ Error updating customer total paid:', customerUpdateError);
+      }
+    }
+
+    return NextResponse.json({
       success: true,
       message: 'EMI payment updated successfully',
       data: payment
     });
-    
+
   } catch (error) {
     console.error('❌ Error updating EMI payment:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: error.message 
-    }, { status: 500 });
+    return NextResponse.json(
+      { 
+        success: false,
+        error: 'Failed to update EMI payment: ' + error.message 
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE method to delete EMI payment
+export async function DELETE(request) {
+  try {
+    await connectDB();
+    
+    const { searchParams } = new URL(request.url);
+    const paymentId = searchParams.get('id');
+    
+    if (!paymentId) {
+      return NextResponse.json(
+        { success: false, error: 'Payment ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Clean payment ID
+    const cleanedPaymentId = cleanId(paymentId);
+    if (!mongoose.Types.ObjectId.isValid(cleanedPaymentId)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid payment ID format' },
+        { status: 400 }
+      );
+    }
+
+    console.log('🟡 Deleting EMI payment:', cleanedPaymentId);
+
+    // Find the payment first to get related data
+    const payment = await EMIPayment.findById(cleanedPaymentId);
+    if (!payment) {
+      return NextResponse.json(
+        { success: false, error: 'Payment not found' },
+        { status: 404 }
+      );
+    }
+
+    // Store related data before deletion
+    const { loanId, customerId, amount } = payment;
+
+    // Delete the payment
+    await EMIPayment.findByIdAndDelete(cleanedPaymentId);
+
+    console.log('✅ EMI payment deleted successfully:', cleanedPaymentId);
+
+    // Update loan statistics if payment had a loan ID
+    if (loanId) {
+      try {
+        const loanPayments = await EMIPayment.find({
+          loanId: loanId,
+          status: { $in: ['Paid', 'Partial', 'Advance'] }
+        });
+        
+        const totalPaidAmount = loanPayments.reduce((sum, p) => sum + p.amount, 0);
+        const emiPaidCount = loanPayments.length;
+
+        // Get loan to calculate remaining amount
+        const loan = await Loan.findById(loanId);
+        if (loan) {
+          await Loan.findByIdAndUpdate(loanId, {
+            emiPaidCount: emiPaidCount,
+            totalPaidAmount: totalPaidAmount,
+            remainingAmount: Math.max(loan.amount - totalPaidAmount, 0),
+            updatedAt: new Date()
+          });
+
+          console.log('✅ Loan statistics updated after payment deletion');
+        }
+      } catch (loanUpdateError) {
+        console.error('⚠️ Error updating loan statistics after deletion:', loanUpdateError);
+      }
+    }
+
+    // Update customer total paid
+    if (customerId) {
+      try {
+        const customerPayments = await EMIPayment.find({
+          customerId: customerId,
+          status: { $in: ['Paid', 'Partial', 'Advance'] }
+        });
+        
+        const totalCustomerPaid = customerPayments.reduce((sum, p) => sum + p.amount, 0);
+        
+        await Customer.findByIdAndUpdate(customerId, {
+          totalPaid: totalCustomerPaid,
+          updatedAt: new Date()
+        });
+
+        console.log('✅ Customer total paid updated after payment deletion');
+      } catch (customerUpdateError) {
+        console.error('⚠️ Error updating customer total paid:', customerUpdateError);
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'EMI payment deleted successfully',
+      data: {
+        deletedPaymentId: cleanedPaymentId,
+        amount: amount,
+        paymentDate: payment.paymentDate
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error deleting EMI payment:', error);
+    return NextResponse.json(
+      { 
+        success: false,
+        error: 'Failed to delete EMI payment: ' + error.message 
+      },
+      { status: 500 }
+    );
   }
 }
