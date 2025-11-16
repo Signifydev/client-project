@@ -239,59 +239,120 @@ export async function POST(request) {
       }
     }
 
-    // Create EMI payment record with ALL new fields
-    const paymentData = {
-      customerId: cleanedCustomerId,
-      customerName,
-      paymentDate: new Date(paymentDate),
-      amount: parseFloat(amount),
-      status: paymentType === 'advance' ? 'Advance' : status, // Use 'Advance' status for advance payments
-      collectedBy,
-      paymentMethod,
-      transactionId: transactionId || null,
-      notes: notes || `EMI payment for ${customerName}`,
-      isVerified: false,
-      // NEW FIELDS from updated model
-      paymentType: paymentType,
-      isAdvancePayment: paymentType === 'advance'
-    };
+    // Create EMI payment record(s)
+    let payments = [];
+    const paymentDateObj = new Date(paymentDate);
 
-    // Add advance payment details if applicable
     if (paymentType === 'advance') {
-      paymentData.advanceFromDate = new Date(advanceFromDate);
-      paymentData.advanceToDate = new Date(advanceToDate);
-      paymentData.advanceEmiCount = parseInt(advanceEmiCount) || 1;
-      paymentData.advanceTotalAmount = parseFloat(advanceTotalAmount) || (parseFloat(amount) * (parseInt(advanceEmiCount) || 1));
+      // For advance payments, create multiple payment records
+      const advanceFrom = new Date(advanceFromDate);
+      const advanceTo = new Date(advanceToDate);
+      const emiCount = parseInt(advanceEmiCount) || 1;
+      const singleEmiAmount = parseFloat(amount) / emiCount;
       
-      // Update notes to include advance payment info
-      paymentData.notes = `Advance EMI payment for ${advanceEmiCount || 1} periods (${new Date(advanceFromDate).toLocaleDateString()} to ${new Date(advanceToDate).toLocaleDateString()})${notes ? ` - ${notes}` : ''}`;
-    }
+      // Create payment for each date in the advance period
+      let currentDate = new Date(advanceFrom);
+      const paymentsCreated = [];
+      
+      for (let i = 0; i < emiCount; i++) {
+        const paymentData = {
+          customerId: cleanedCustomerId,
+          customerName,
+          paymentDate: new Date(currentDate),
+          amount: singleEmiAmount,
+          status: 'Advance',
+          collectedBy,
+          paymentMethod,
+          transactionId: transactionId || null,
+          notes: `Advance EMI ${i + 1}/${emiCount} for period ${new Date(advanceFrom).toLocaleDateString()} to ${new Date(advanceTo).toLocaleDateString()}${notes ? ` - ${notes}` : ''}`,
+          isVerified: false,
+          paymentType: 'advance',
+          isAdvancePayment: true,
+          advanceFromDate: new Date(advanceFrom),
+          advanceToDate: new Date(advanceTo),
+          advanceEmiCount: emiCount,
+          advanceTotalAmount: parseFloat(amount)
+        };
 
-    // Only add loan data if we have it
-    if (finalLoanId) {
-      paymentData.loanId = finalLoanId;
-    }
-    if (finalLoanNumber && finalLoanNumber !== 'N/A') {
-      paymentData.loanNumber = finalLoanNumber;
-    }
+        // Only add loan data if we have it
+        if (finalLoanId) {
+          paymentData.loanId = finalLoanId;
+        }
+        if (finalLoanNumber && finalLoanNumber !== 'N/A') {
+          paymentData.loanNumber = finalLoanNumber;
+        }
 
-    console.log('💾 Creating EMI payment with data:', paymentData);
+        const payment = new EMIPayment(paymentData);
+        await payment.save();
+        payments.push(payment);
+        paymentsCreated.push(payment._id);
+        
+        // Move to next date based on loan type
+        switch(loan?.loanType) {
+          case 'Daily':
+            currentDate.setDate(currentDate.getDate() + 1);
+            break;
+          case 'Weekly':
+            currentDate.setDate(currentDate.getDate() + 7);
+            break;
+          case 'Monthly':
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            break;
+          default:
+            currentDate.setDate(currentDate.getDate() + 1);
+        }
+        
+        // Stop if we've exceeded the advance to date
+        if (currentDate > new Date(advanceTo)) {
+          break;
+        }
+      }
+      
+      console.log(`✅ Created ${payments.length} advance payment records:`, paymentsCreated);
+      
+    } else {
+      // Single payment (existing logic)
+      const paymentData = {
+        customerId: cleanedCustomerId,
+        customerName,
+        paymentDate: paymentDateObj,
+        amount: parseFloat(amount),
+        status: status,
+        collectedBy,
+        paymentMethod,
+        transactionId: transactionId || null,
+        notes: notes || `EMI payment for ${customerName}`,
+        isVerified: false,
+        paymentType: 'single',
+        isAdvancePayment: false
+      };
 
-    const payment = new EMIPayment(paymentData);
-    await payment.save();
+      // Only add loan data if we have it
+      if (finalLoanId) {
+        paymentData.loanId = finalLoanId;
+      }
+      if (finalLoanNumber && finalLoanNumber !== 'N/A') {
+        paymentData.loanNumber = finalLoanNumber;
+      }
+
+      const payment = new EMIPayment(paymentData);
+      await payment.save();
+      payments.push(payment);
+    }
 
     // Update customer's last payment date and total paid
-    await Customer.findByIdAndUpdate(cleanedCustomerId, {
-      lastPaymentDate: new Date(paymentDate),
-      $inc: { totalPaid: parseFloat(amount) },
-      updatedAt: new Date()
-    });
+    // Use the first payment for customer updates
+    if (payments.length > 0) {
+      await Customer.findByIdAndUpdate(cleanedCustomerId, {
+        lastPaymentDate: payments[0].paymentDate,
+        $inc: { totalPaid: payments.reduce((sum, p) => sum + p.amount, 0) },
+        updatedAt: new Date()
+      });
+    }
 
     // Update loan statistics if we have a loan
     if (loan && finalLoanId) {
       try {
-        // Calculate new EMI paid count and total paid amount
-        // Include 'Advance' status in the query
         const loanPayments = await EMIPayment.find({
           loanId: finalLoanId,
           status: { $in: ['Paid', 'Partial', 'Advance'] }
@@ -300,64 +361,72 @@ export async function POST(request) {
         const totalPaidAmount = loanPayments.reduce((sum, p) => sum + p.amount, 0);
         const emiPaidCount = loanPayments.length;
 
-        await Loan.findByIdAndUpdate(finalLoanId, {
+        // Update loan with all payment history
+        const updateData = {
           emiPaidCount: emiPaidCount,
           totalPaidAmount: totalPaidAmount,
           remainingAmount: Math.max(loan.amount - totalPaidAmount, 0),
           lastPaymentDate: new Date(paymentDate),
-          updatedAt: new Date(),
-          $push: {
+          updatedAt: new Date()
+        };
+
+        // Add all payments to emiHistory
+        if (payments.length > 0) {
+          updateData.$push = {
             emiHistory: {
-              _id: payment._id,
-              paymentDate: payment.paymentDate,
-              amount: payment.amount,
-              status: payment.status,
-              collectedBy: payment.collectedBy,
-              notes: payment.notes,
-              createdAt: new Date(),
-              isAdvance: paymentType === 'advance',
-              // Include advance payment details in loan history
-              paymentType: payment.paymentType,
-              advanceFromDate: payment.advanceFromDate,
-              advanceToDate: payment.advanceToDate,
-              advanceEmiCount: payment.advanceEmiCount
+              $each: payments.map(payment => ({
+                _id: payment._id,
+                paymentDate: payment.paymentDate,
+                amount: payment.amount,
+                status: payment.status,
+                collectedBy: payment.collectedBy,
+                notes: payment.notes,
+                createdAt: new Date(),
+                isAdvance: payment.paymentType === 'advance',
+                paymentType: payment.paymentType,
+                advanceFromDate: payment.advanceFromDate,
+                advanceToDate: payment.advanceToDate,
+                advanceEmiCount: payment.advanceEmiCount
+              }))
             }
-          }
-        });
-        console.log('✅ Loan statistics updated successfully');
+          };
+        }
+
+        await Loan.findByIdAndUpdate(finalLoanId, updateData);
+        console.log('✅ Loan statistics updated successfully with', payments.length, 'payments');
       } catch (loanUpdateError) {
         console.error('⚠️ Error updating loan statistics:', loanUpdateError);
-        // Continue even if loan update fails - payment is already recorded
       }
     } else {
       console.log('ℹ️ No loan record to update - payment recorded without loan association');
     }
 
-    console.log('✅ EMI payment recorded successfully:', payment._id);
+    console.log('✅ EMI payment recorded successfully:', payments.length, 'payments created');
 
     const responseMessage = paymentType === 'advance' 
-      ? `Advance EMI payment of ₹${amount} recorded successfully for ${advanceEmiCount || 1} periods (${new Date(advanceFromDate).toLocaleDateString()} to ${new Date(advanceToDate).toLocaleDateString()})`
+      ? `Advance EMI payment of ₹${amount} recorded successfully as ${payments.length} payments for ${advanceEmiCount || 1} periods (${new Date(advanceFromDate).toLocaleDateString()} to ${new Date(advanceToDate).toLocaleDateString()})`
       : `EMI payment of ₹${amount} recorded successfully for ${customerName}${finalLoanId ? ` (Loan: ${finalLoanNumber})` : ' (Temporary - No Loan Record)'}`;
 
     return NextResponse.json({ 
       success: true,
       message: responseMessage,
       data: {
-        paymentId: payment._id,
+        paymentIds: payments.map(p => p._id),
         customerName: customerName,
         amount: amount,
         loanNumber: finalLoanNumber,
-        paymentDate: payment.paymentDate,
+        paymentDate: paymentDate,
         loanId: finalLoanId ? finalLoanId.toString() : null,
         collectedBy: collectedBy,
         hasLoanRecord: !!finalLoanId,
         paymentType: paymentType,
         isAdvance: paymentType === 'advance',
+        paymentCount: payments.length,
         // Include advance payment details in response
-        advanceFromDate: payment.advanceFromDate,
-        advanceToDate: payment.advanceToDate,
-        advanceEmiCount: payment.advanceEmiCount,
-        advanceTotalAmount: payment.advanceTotalAmount
+        advanceFromDate: advanceFromDate,
+        advanceToDate: advanceToDate,
+        advanceEmiCount: advanceEmiCount,
+        advanceTotalAmount: amount
       }
     });
     

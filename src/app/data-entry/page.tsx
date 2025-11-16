@@ -61,6 +61,7 @@ interface Loan {
 }
 
 interface EMIHistory {
+  _id?: string; // ADD THIS LINE
   paymentDate: string;
   amount: number;
   status: string;
@@ -457,6 +458,12 @@ export default function DataEntryDashboard() {
     loanFilter: 'all'
   });
 
+  // Add these state variables with your other useState declarations
+const [editingFields, setEditingFields] = useState<{[key: string]: boolean}>({});
+const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+const [editAmount, setEditAmount] = useState('');
+const [editDate, setEditDate] = useState('');
+
   const calculateEMICompletion = (loan: Loan) => {
   // Use actual values from the loan object
   const totalEmiCount = loan.totalEmiCount || loan.loanDays || 30;
@@ -480,6 +487,44 @@ export default function DataEntryDashboard() {
     totalPaid: totalPaidAmount,
     remainingAmount,
     totalLoanAmount // Return total loan amount for display
+  };
+};
+
+const calculatePaymentBehavior = (loan: Loan) => {
+  const totalPayments = loan.emiHistory?.length || 0;
+  
+  if (totalPayments === 0) {
+    return {
+      punctualityScore: 100,
+      behaviorRating: 'EXCELLENT',
+      totalPayments: 0,
+      onTimePayments: 0,
+      latePayments: 0
+    };
+  }
+
+  const onTimePayments = loan.emiHistory?.filter(payment => {
+    if (!payment.paymentDate) return false;
+    
+    const paymentDate = new Date(payment.paymentDate);
+    const dueDate = new Date(calculateNextEmiDate(loan.lastEmiDate, loan.loanType));
+    return paymentDate <= dueDate;
+  }).length || 0;
+  
+  const punctualityScore = totalPayments > 0 ? (onTimePayments / totalPayments) * 100 : 100;
+  
+  let behaviorRating: string;
+  if (punctualityScore >= 90) behaviorRating = 'EXCELLENT';
+  else if (punctualityScore >= 75) behaviorRating = 'GOOD';
+  else if (punctualityScore >= 60) behaviorRating = 'AVERAGE';
+  else behaviorRating = 'RISKY';
+  
+  return {
+    punctualityScore,
+    behaviorRating,
+    totalPayments,
+    onTimePayments,
+    latePayments: totalPayments - onTimePayments
   };
 };
 
@@ -522,52 +567,33 @@ const calculateTotalAmount = (emiAmount: string | number, emiCount: string | num
 
 
 
-  const calculateNextEmiDate = (currentDate: string, loanType: string): string => {
-    const date = new Date(currentDate);
-    
-    switch(loanType) {
-      case 'Daily':
-        date.setDate(date.getDate() + 1);
-        break;
-      case 'Weekly':
-        date.setDate(date.getDate() + 7);
-        break;
-      case 'Monthly':
-        date.setMonth(date.getMonth() + 1);
-        break;
-      default:
-        date.setDate(date.getDate() + 1);
-    }
-    
-    return date.toISOString().split('T')[0];
-  };
+  // Fix the calculateNextEmiDate function
+const calculateNextEmiDate = (currentDate: string, loanType: string): string => {
+  const date = new Date(currentDate);
+  
+  // Ensure we're working with the correct date (remove time component)
+  date.setHours(0, 0, 0, 0);
+  
+  switch(loanType) {
+    case 'Daily':
+      date.setDate(date.getDate() + 1);
+      break;
+    case 'Weekly':
+      date.setDate(date.getDate() + 7);
+      break;
+    case 'Monthly':
+      date.setMonth(date.getMonth() + 1);
+      break;
+    default:
+      date.setDate(date.getDate() + 1);
+  }
+  
+  return date.toISOString().split('T')[0];
+};
 
-  const calculatePaymentBehavior = (loan: Loan) => {
-    const totalPayments = loan.emiHistory.length;
-    const onTimePayments = loan.emiHistory.filter(payment => {
-      const paymentDate = new Date(payment.paymentDate);
-      const dueDate = new Date(calculateNextEmiDate(loan.lastEmiDate, loan.loanType));
-      return paymentDate <= dueDate;
-    }).length;
-    
-    const punctualityScore = totalPayments > 0 ? (onTimePayments / totalPayments) * 100 : 100;
-    
-    let behaviorRating: string;
-    if (punctualityScore >= 90) behaviorRating = 'EXCELLENT';
-    else if (punctualityScore >= 75) behaviorRating = 'GOOD';
-    else if (punctualityScore >= 60) behaviorRating = 'AVERAGE';
-    else behaviorRating = 'RISKY';
-    
-    return {
-      punctualityScore,
-      behaviorRating,
-      totalPayments,
-      onTimePayments,
-      latePayments: totalPayments - onTimePayments
-    };
-  };
-
-  const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory[], loanFilter: string = 'all'): CalendarDay[] => {
+// Fix the calendar generation logic in generateCalendar function
+// Fix the calendar generation logic in generateCalendar function
+const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory[], loanFilter: string = 'all'): CalendarDay[] => {
   const days: CalendarDay[] = [];
   const year = month.getFullYear();
   const monthIndex = month.getMonth();
@@ -601,8 +627,11 @@ const calculateTotalAmount = (emiAmount: string | number, emiCount: string | num
   
   filteredPaymentHistory.forEach(payment => {
     const paymentDate = new Date(payment.paymentDate);
+    // Fix: Use proper date comparison without time component
+    paymentDate.setHours(0, 0, 0, 0);
+    
     if (paymentDate.getMonth() === monthIndex && paymentDate.getFullYear() === year) {
-      const dateStr = payment.paymentDate.split('T')[0]; // Ensure we only get YYYY-MM-DD
+      const dateStr = paymentDate.toISOString().split('T')[0];
       
       if (!paymentMap[dateStr]) {
         paymentMap[dateStr] = { 
@@ -613,15 +642,63 @@ const calculateTotalAmount = (emiAmount: string | number, emiCount: string | num
       }
       
       paymentMap[dateStr].payments.push(payment);
-      paymentMap[dateStr].totalAmount += payment.amount;
+      
+      // FIX: For advance payments, use the actual payment amount, not divided amount
+      if (payment.paymentType === 'advance' && payment.advanceEmiCount && payment.advanceEmiCount > 1) {
+        // For advance payments, show the total amount on the payment date
+        paymentMap[dateStr].totalAmount += payment.amount;
+      } else {
+        // For single payments, use the normal amount
+        paymentMap[dateStr].totalAmount += payment.amount;
+      }
       
       if (payment.loanNumber && !paymentMap[dateStr].loanNumbers.includes(payment.loanNumber)) {
         paymentMap[dateStr].loanNumbers.push(payment.loanNumber);
       }
     }
-  });
 
-  console.log('💰 Payment Map:', paymentMap);
+    // FIX: Handle advance payments - mark all dates in the advance period as paid
+    if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.advanceToDate) {
+      const fromDate = new Date(payment.advanceFromDate);
+      const toDate = new Date(payment.advanceToDate);
+      
+      let currentDate = new Date(fromDate);
+      while (currentDate <= toDate) {
+        if (currentDate.getMonth() === monthIndex && currentDate.getFullYear() === year) {
+          const advanceDateStr = currentDate.toISOString().split('T')[0];
+          
+          if (!paymentMap[advanceDateStr]) {
+            paymentMap[advanceDateStr] = { 
+              payments: [], 
+              totalAmount: 0, 
+              loanNumbers: [] 
+            };
+          }
+          
+          // Only add the payment record once to avoid duplicates
+          if (!paymentMap[advanceDateStr].payments.some(p => p._id === payment._id)) {
+            paymentMap[advanceDateStr].payments.push(payment);
+          }
+          
+          // For each day in advance period, show the individual EMI amount, not divided total
+          const individualEmiAmount = payment.advanceEmiCount && payment.advanceEmiCount > 0 
+            ? payment.amount / payment.advanceEmiCount 
+            : payment.amount;
+          
+          paymentMap[advanceDateStr].totalAmount += individualEmiAmount;
+          
+          if (payment.loanNumber && !paymentMap[advanceDateStr].loanNumbers.includes(payment.loanNumber)) {
+            paymentMap[advanceDateStr].loanNumbers.push(payment.loanNumber);
+          }
+        }
+        
+        currentDate.setDate(currentDate.getDate() + 1);
+        
+        // Break if we've processed too many days (safety check)
+        if (currentDate > toDate) break;
+      }
+    }
+  });
 
   // Generate calendar grid for previous month days
   const startingDayOfWeek = firstDay.getDay();
@@ -635,9 +712,11 @@ const calculateTotalAmount = (emiAmount: string | number, emiCount: string | num
     });
   }
   
-  // Generate days for current month
+  // Generate days for current month - FIXED DATE HANDLING
   for (let day = 1; day <= lastDay.getDate(); day++) {
     const date = new Date(year, monthIndex, day);
+    date.setHours(0, 0, 0, 0); // Normalize time component
+    
     const isToday = date.toDateString() === new Date().toDateString();
     const dateStr = date.toISOString().split('T')[0];
     
@@ -665,15 +744,18 @@ const calculateTotalAmount = (emiAmount: string | number, emiCount: string | num
         if (loan.emiPaidCount >= loan.totalEmiCount) return;
 
         const startDate = new Date(loan.emiStartDate || loan.dateApplied);
+        startDate.setHours(0, 0, 0, 0); // Normalize start date
         const loanType = loan.loanType;
 
         console.log(`🔍 Checking loan ${loan.loanNumber} from ${startDate.toISOString()}`);
 
         // Generate EMI schedule for this loan - FIXED LOGIC
-        let currentDate = new Date(startDate); // Start from EMI start date
+        let currentDate = new Date(startDate);
         
         for (let i = 0; i < loan.totalEmiCount; i++) {
-          const emiDateStr = currentDate.toISOString().split('T')[0];
+          const emiDate = new Date(currentDate);
+          emiDate.setHours(0, 0, 0, 0);
+          const emiDateStr = emiDate.toISOString().split('T')[0];
           
           // Check if this EMI date matches the current calendar date
           if (emiDateStr === dateStr) {
@@ -684,7 +766,7 @@ const calculateTotalAmount = (emiAmount: string | number, emiCount: string | num
             break;
           }
 
-          // Calculate next EMI date - FIXED: Calculate AFTER checking current date
+          // Calculate next EMI date
           const nextDate = new Date(currentDate);
           switch(loanType) {
             case 'Daily':
@@ -699,6 +781,7 @@ const calculateTotalAmount = (emiAmount: string | number, emiCount: string | num
             default:
               nextDate.setDate(nextDate.getDate() + 1);
           }
+          nextDate.setHours(0, 0, 0, 0);
 
           // Update currentDate for next iteration
           currentDate = new Date(nextDate);
@@ -756,16 +839,6 @@ const calculateTotalAmount = (emiAmount: string | number, emiCount: string | num
       emiStatus: 'none'
     });
   }
-  
-  console.log('📊 Final calendar days with status:', days
-    .filter(day => day.emiStatus !== 'none')
-    .map(day => ({
-      date: day.date.toISOString().split('T')[0],
-      status: day.emiStatus,
-      amount: day.emiAmount,
-      loans: day.loanNumbers
-    }))
-  );
   
   return days;
 };
@@ -868,26 +941,26 @@ const calculateTotalAmount = (emiAmount: string | number, emiCount: string | num
       }
     }
   };
-  const [editingFields, setEditingFields] = useState<{[key: string]: boolean}>({});
+
 
   const handleEditPastEMI = (payment: EMIHistory) => {
-    const editRequest = {
-      type: 'EMI Correction',
-      customerId: calendarData?.customerId,
-      customerName: calendarData?.customerName,
-      originalPayment: payment,
-      requestedChanges: {
-        amount: payment.amount,
-        paymentDate: payment.paymentDate,
-        status: payment.status
-      },
-      reason: 'Data correction required'
-    };
-    
-    submitEditRequest(editRequest);
-    alert('EMI correction request submitted for admin approval');
-    setShowDatePaymentHistory(false);
+  const editRequest = {
+    type: 'EMI Correction',
+    customerId: calendarData?.customerId,
+    customerName: calendarData?.customerName,
+    originalPayment: payment,
+    requestedChanges: {
+      amount: payment.amount,
+      paymentDate: payment.paymentDate,
+      status: payment.status
+    },
+    reason: 'Data correction required'
   };
+  
+  submitEditRequest(editRequest);
+  alert('EMI correction request submitted for admin approval');
+  setShowDatePaymentHistory(false);
+};
 
   const submitEditRequest = async (requestData: any) => {
     try {
@@ -2359,8 +2432,9 @@ const debugEMIPayments = () => {
 
     // For advance payments, set status to 'Advance'
     const finalStatus = emiUpdate.paymentType === 'advance' ? 'Advance' : emiUpdate.status;
-    const finalAmount = emiUpdate.paymentType === 'advance' ? emiUpdate.advanceTotalAmount || emiUpdate.amount : emiUpdate.amount;
-
+    const finalAmount = emiUpdate.paymentType === 'advance' 
+  ? emiUpdate.advanceTotalAmount || calculateTotalAmount(emiUpdate.amount, emiUpdate.advanceEmiCount || '1')
+  : emiUpdate.amount;
     // Validate that we're not duplicating payment for the same date (for single payments)
     if (emiUpdate.paymentType === 'single') {
       const paymentDate = new Date(emiUpdate.paymentDate).toISOString().split('T')[0];
@@ -2518,6 +2592,66 @@ const debugEMIPayments = () => {
   }
 };
 
+const handleEditEMIPayment = async (payment: EMIHistory, newAmount: number, newDate?: string) => {
+  if (!payment._id) {
+    alert('Cannot edit payment: Payment ID not found');
+    return;
+  }
+
+  if (!confirm(`Are you sure you want to edit this EMI payment from ₹${payment.amount} to ₹${newAmount}?`)) {
+    return;
+  }
+
+  setIsLoading(true);
+  try {
+    const response = await fetch(`/api/data-entry/emi-payments?id=${payment._id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        amount: newAmount,
+        paymentDate: newDate || payment.paymentDate,
+        notes: `Payment edited from ₹${payment.amount} to ₹${newAmount}${payment.notes ? ` - Original notes: ${payment.notes}` : ''}`
+      }),
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to update payment');
+    }
+
+    alert('EMI payment updated successfully!');
+    
+    // Refresh the calendar data
+    if (calendarData) {
+      const updatedResponse = await fetch(`/api/data-entry/customers/${calendarData.customerId}`);
+      if (updatedResponse.ok) {
+        const updatedData = await updatedResponse.json();
+        if (updatedData.success) {
+          const customerDetails = updatedData.data;
+          const displayLoans = getAllCustomerLoans(customerDetails, customerDetails);
+          
+          setCalendarData({
+            ...calendarData,
+            loans: displayLoans,
+            paymentHistory: displayLoans.flatMap(loan => loan.emiHistory || [])
+          });
+        }
+      }
+    }
+    
+    setShowDatePaymentHistory(false);
+    
+  } catch (error: any) {
+    console.error('Error editing EMI payment:', error);
+    alert('Error: ' + error.message);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
 const refreshCustomerData = async (customerId: string) => {
   try {
     console.log('🔄 Refreshing customer data for:', customerId);
@@ -2625,291 +2759,376 @@ const refreshCustomerData = async (customerId: string) => {
   };
 
     const renderEMICalendar = () => {
-    if (!calendarData) return null;
+  if (!calendarData) return null;
 
-    const calendarDays = generateCalendar(
-      currentMonth, 
-      calendarData.loans, 
-      calendarData.paymentHistory,
-      calendarFilter.loanFilter
-    );
+  const calendarDays = generateCalendar(
+    currentMonth, 
+    calendarData.loans, 
+    calendarData.paymentHistory,
+    calendarFilter.loanFilter
+  );
+  
+  const filteredDays = calendarDays.filter(day => {
+    if (calendarFilter.emiStatus === 'all') return true;
     
-    const filteredDays = calendarDays.filter(day => {
-      if (calendarFilter.emiStatus === 'all') return true;
-      
-      // For 'paid' filter, include both 'paid' and days with payments
-      if (calendarFilter.emiStatus === 'paid') {
-        return day.emiStatus === 'paid' || (day.paymentHistory && day.paymentHistory.length > 0);
-      }
-      
-      // For other statuses, match exactly
-      return day.emiStatus === calendarFilter.emiStatus;
-    });
+    if (calendarFilter.emiStatus === 'paid') {
+      return day.emiStatus === 'paid' || (day.paymentHistory && day.paymentHistory.length > 0);
+    }
+    
+    return day.emiStatus === calendarFilter.emiStatus;
+  });
 
-    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
-          <div className="p-6">
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h3 className="text-xl font-bold">EMI Calendar - {calendarData.customerName}</h3>
-                <p className="text-gray-600">Payment history and due dates</p>
-              </div>
-              <button 
-                onClick={() => setShowEMICalendar(false)}
-                className="text-gray-500 hover:text-gray-700"
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h3 className="text-xl font-bold">EMI Calendar - {calendarData.customerName}</h3>
+              <p className="text-gray-600">Payment history and due dates</p>
+            </div>
+            <button 
+              onClick={() => setShowEMICalendar(false)}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="flex justify-between items-center mb-4">
+            <div className="flex space-x-2">
+              <button
+                onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
+                className="p-2 border rounded-md hover:bg-gray-50"
               >
-                ✕
+                ← Previous
+              </button>
+              <h4 className="text-lg font-semibold px-4">
+                {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+              </h4>
+              <button
+                onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}
+                className="p-2 border rounded-md hover:bg-gray-50"
+              >
+                Next →
               </button>
             </div>
 
-            <div className="flex justify-between items-center mb-4">
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
-                  className="p-2 border rounded-md hover:bg-gray-50"
-                >
-                  ← Previous
-                </button>
-                <h4 className="text-lg font-semibold px-4">
-                  {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
-                </h4>
-                <button
-                  onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}
-                  className="p-2 border rounded-md hover:bg-gray-50"
-                >
-                  Next →
-                </button>
-              </div>
-
-              <select
-                value={calendarFilter.loanFilter}
-                onChange={(e) => setCalendarFilter(prev => ({
-                  ...prev,
-                  loanFilter: e.target.value
-                }))}
-                className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-              >
-                <option value="all">All Loans</option>
-                {calendarData.loans.map((loan, index) => (
-                  <option key={loan._id} value={loan._id}>
-                    {loan.loanNumber} - {loan.customerNumber}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <label className="text-sm font-medium text-gray-700">EMI Status:</label>
-              <select
-                value={calendarFilter.emiStatus}
-                onChange={(e) => setCalendarFilter(prev => ({
-                  ...prev,
-                  emiStatus: e.target.value as 'all' | 'paid' | 'due' | 'overdue' | 'partial' | 'upcoming'
-                }))}
-                className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-              >
-                <option value="all">All EMI</option>
-                <option value="paid">Paid Only</option>
-                <option value="due">Due</option>
-                <option value="overdue">Overdue</option>
-                <option value="partial">Partial</option>
-                <option value="upcoming">Upcoming</option>
-              </select>
-            </div>
-
-            <div className="flex flex-wrap gap-4 mb-4 p-3 bg-gray-50 rounded-md">
-              <div className="flex items-center">
-                <div className="w-4 h-4 bg-green-100 border border-green-300 rounded mr-2"></div>
-                <span className="text-sm">Paid</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-4 h-4 bg-blue-100 border border-blue-300 rounded mr-2"></div>
-                <span className="text-sm">Due</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-4 h-4 bg-red-100 border border-red-300 rounded mr-2"></div>
-                <span className="text-sm">Overdue</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-4 h-4 bg-yellow-100 border border-yellow-300 rounded mr-2"></div>
-                <span className="text-sm">Partial</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-4 h-4 bg-purple-100 border border-purple-300 rounded mr-2"></div>
-                <span className="text-sm">Upcoming</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-7 gap-1 mb-2">
-              {dayNames.map(day => (
-                <div key={day} className="text-center font-medium text-gray-600 py-2">
-                  {day}
-                </div>
+            <select
+              value={calendarFilter.loanFilter}
+              onChange={(e) => setCalendarFilter(prev => ({
+                ...prev,
+                loanFilter: e.target.value
+              }))}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+            >
+              <option value="all">All Loans</option>
+              {calendarData.loans.map((loan) => (
+                <option key={loan._id} value={loan._id}>
+                  {loan.loanNumber} - {loan.customerNumber}
+                </option>
               ))}
-            </div>
+            </select>
+          </div>
 
-            <div className="grid grid-cols-7 gap-1">
-              {filteredDays.map((day, index) => (
-                <div
-                  key={index}
-                  onClick={() => handleCalendarDateClick(day)}
-                  className={`min-h-24 p-2 border rounded-md cursor-pointer transition-all hover:shadow-md ${
-                    getStatusColor(day.emiStatus)
-                  } ${!day.isCurrentMonth ? 'opacity-40' : ''} ${
-                    day.isToday ? 'ring-2 ring-blue-500' : ''
-                  }`}
-                >
-                  <div className="flex justify-between items-start">
-                    <span className={`text-sm font-medium ${
-                      day.isToday ? 'text-blue-600' : ''
+          <div className="flex items-center space-x-2">
+            <label className="text-sm font-medium text-gray-700">EMI Status:</label>
+            <select
+              value={calendarFilter.emiStatus}
+              onChange={(e) => setCalendarFilter(prev => ({
+                ...prev,
+                emiStatus: e.target.value as 'all' | 'paid' | 'due' | 'overdue' | 'partial' | 'upcoming'
+              }))}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+            >
+              <option value="all">All EMI</option>
+              <option value="paid">Paid Only</option>
+              <option value="due">Due</option>
+              <option value="overdue">Overdue</option>
+              <option value="partial">Partial</option>
+              <option value="upcoming">Upcoming</option>
+            </select>
+          </div>
+
+          <div className="flex flex-wrap gap-4 mb-4 p-3 bg-gray-50 rounded-md">
+            <div className="flex items-center">
+              <div className="w-4 h-4 bg-green-100 border border-green-300 rounded mr-2"></div>
+              <span className="text-sm">Paid</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-4 h-4 bg-blue-100 border border-blue-300 rounded mr-2"></div>
+              <span className="text-sm">Due</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-4 h-4 bg-red-100 border border-red-300 rounded mr-2"></div>
+              <span className="text-sm">Overdue</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-4 h-4 bg-yellow-100 border border-yellow-300 rounded mr-2"></div>
+              <span className="text-sm">Partial</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-4 h-4 bg-purple-100 border border-purple-300 rounded mr-2"></div>
+              <span className="text-sm">Upcoming</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-7 gap-1 mb-2">
+            {dayNames.map(day => (
+              <div key={day} className="text-center font-medium text-gray-600 py-2">
+                {day}
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-1">
+            {filteredDays.map((day, index) => (
+              <div
+                key={index}
+                onClick={() => handleCalendarDateClick(day)}
+                className={`min-h-24 p-2 border rounded-md cursor-pointer transition-all hover:shadow-md ${
+                  getStatusColor(day.emiStatus)
+                } ${!day.isCurrentMonth ? 'opacity-40' : ''} ${
+                  day.isToday ? 'ring-2 ring-blue-500' : ''
+                }`}
+              >
+                <div className="flex justify-between items-start">
+                  <span className={`text-sm font-medium ${
+                    day.isToday ? 'text-blue-600' : ''
+                  }`}>
+                    {day.date.getDate()}
+                  </span>
+                  {day.emiStatus && day.emiStatus !== 'none' && (
+                    <span className="text-xs">{getStatusIcon(day.emiStatus)}</span>
+                  )}
+                </div>
+                
+                {(day.emiAmount && day.emiAmount > 0) && (
+                  <div className="mt-1">
+                    <div className={`text-xs font-semibold ${
+                      day.emiStatus === 'paid' ? 'text-green-700' : 'text-gray-700'
                     }`}>
-                      {day.date.getDate()}
-                    </span>
-                    {day.emiStatus && day.emiStatus !== 'none' && (
-                      <span className="text-xs">{getStatusIcon(day.emiStatus)}</span>
+                      ₹{day.emiAmount}
+                    </div>
+                    {day.loanNumbers && day.loanNumbers.length > 0 && (
+                      <div className="text-xs text-gray-600 mt-1">
+                        {day.loanNumbers.slice(0, 2).join(', ')}
+                        {day.loanNumbers.length > 2 && ` +${day.loanNumbers.length - 2}`}
+                      </div>
                     )}
                   </div>
-                  
-                  {/* Show payment amount if exists */}
-                  {(day.emiAmount && day.emiAmount > 0) && (
-                    <div className="mt-1">
-                      <div className={`text-xs font-semibold ${
-                        day.emiStatus === 'paid' ? 'text-green-700' : 'text-gray-700'
-                      }`}>
-                        ₹{day.emiAmount}
-                      </div>
-                      {day.loanNumbers && day.loanNumbers.length > 0 && (
-                        <div className="text-xs text-gray-600 mt-1">
-                          {day.loanNumbers.slice(0, 2).join(', ')}
-                          {day.loanNumbers.length > 2 && ` +${day.loanNumbers.length - 2}`}
+                )}
+
+                {day.paymentHistory && day.paymentHistory.length > 0 && (
+                  <div className="mt-1 text-xs text-green-600 font-semibold">
+                    ✅ {day.paymentHistory.length} payment(s)
+                  </div>
+                )}
+                
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+            <h5 className="font-semibold mb-3">Payment Behavior Summary</h5>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              {calendarData.loans.map((loan) => {
+                const behavior = calculatePaymentBehavior(loan);
+                const completion = calculateEMICompletion(loan);
+                
+                return (
+                  <div key={loan._id} className="bg-white p-3 rounded border">
+                    <div className="font-medium">{loan.loanNumber}</div>
+                    <div className="text-xs text-gray-600">
+                      Score: {behavior.punctualityScore.toFixed(0)}%
+                    </div>
+                    <div className={`text-xs font-semibold ${
+                      behavior.behaviorRating === 'EXCELLENT' ? 'text-green-600' :
+                      behavior.behaviorRating === 'GOOD' ? 'text-blue-600' :
+                      behavior.behaviorRating === 'AVERAGE' ? 'text-yellow-600' : 'text-red-600'
+                    }`}>
+                      {behavior.behaviorRating}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {completion.completionPercentage.toFixed(1)}% Complete
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}; // <-- This closing brace was likely missing
+
+  const renderDatePaymentHistory = () => {
+  if (!selectedCalendarDate || !calendarData) return null;
+
+  const dateStr = selectedCalendarDate.toISOString().split('T')[0];
+  const payments = calendarData.paymentHistory.filter(p => p.paymentDate === dateStr);
+
+  const startEdit = (payment: EMIHistory) => {
+    setEditingPaymentId(payment._id || '');
+    setEditAmount(payment.amount.toString());
+    setEditDate(payment.paymentDate);
+  };
+
+  const cancelEdit = () => {
+    setEditingPaymentId(null);
+    setEditAmount('');
+    setEditDate('');
+  };
+
+  const saveEdit = async (payment: EMIHistory) => {
+    if (!editAmount || parseFloat(editAmount) <= 0) {
+      alert('Please enter a valid amount');
+      return;
+    }
+
+    await handleEditEMIPayment(payment, parseFloat(editAmount), editDate);
+    setEditingPaymentId(null);
+    setEditAmount('');
+    setEditDate('');
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-bold">
+              Payment History - {selectedCalendarDate.toLocaleDateString()}
+            </h3>
+            <button 
+              onClick={() => setShowDatePaymentHistory(false)}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              ✕
+            </button>
+          </div>
+
+          {payments.length > 0 ? (
+            <div className="space-y-4">
+              {payments.map((payment, index) => (
+                <div key={payment._id || index} className="border rounded-lg p-4 bg-white">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      {editingPaymentId === payment._id ? (
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Amount (₹)
+                            </label>
+                            <input
+                              type="number"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              value={editAmount}
+                              onChange={(e) => setEditAmount(e.target.value)}
+                              min="0"
+                              step="0.01"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Payment Date
+                            </label>
+                            <input
+                              type="date"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              value={editDate.split('T')[0]}
+                              onChange={(e) => setEditDate(e.target.value)}
+                            />
+                          </div>
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => saveEdit(payment)}
+                              className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={cancelEdit}
+                              className="bg-gray-600 text-white px-3 py-1 rounded text-sm hover:bg-gray-700"
+                            >
+                              Cancel
+                            </button>
+                          </div>
                         </div>
+                      ) : (
+                        <>
+                          <div className="font-medium text-lg">₹{payment.amount}</div>
+                          <div className="text-sm text-gray-600">
+                            Status: <span className={
+                              payment.status === 'Paid' ? 'text-green-600' : 
+                              payment.status === 'Partial' ? 'text-yellow-600' : 
+                              payment.status === 'Advance' ? 'text-blue-600' : 'text-red-600'
+                            }>
+                              {payment.status}
+                            </span>
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            Collected by: {payment.collectedBy}
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            Date: {new Date(payment.paymentDate).toLocaleDateString()}
+                          </div>
+                          {payment.notes && (
+                            <div className="text-sm text-gray-600 mt-1">
+                              Notes: {payment.notes}
+                            </div>
+                          )}
+                          {payment.paymentType === 'advance' && (
+                            <div className="text-sm text-blue-600 mt-1">
+                              Advance Payment ({payment.advanceEmiCount} EMI)
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
-                  )}
-
-                  {/* Show payment count */}
-                  {day.paymentHistory && day.paymentHistory.length > 0 && (
-                    <div className="mt-1 text-xs text-green-600 font-semibold">
-                      ✅ {day.paymentHistory.length} payment(s)
-                    </div>
-                  )}
+                    {editingPaymentId !== payment._id && (
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => startEdit(payment)}
+                          className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleEditPastEMI(payment)}
+                          className="bg-yellow-600 text-white px-3 py-1 rounded text-sm hover:bg-yellow-700"
+                        >
+                          Request Correction
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
-
-            <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-              <h5 className="font-semibold mb-3">Payment Behavior Summary</h5>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                {calendarData.loans.map((loan, index) => {
-                  const behavior = calculatePaymentBehavior(loan);
-                  const completion = calculateEMICompletion(loan);
-                  
-                  return (
-                    <div key={loan._id} className="bg-white p-3 rounded border">
-                      <div className="font-medium">{loan.loanNumber}</div>
-                      <div className="text-xs text-gray-600">
-                        Score: {behavior.punctualityScore.toFixed(0)}%
-                      </div>
-                      <div className={`text-xs font-semibold ${
-                        behavior.behaviorRating === 'EXCELLENT' ? 'text-green-600' :
-                        behavior.behaviorRating === 'GOOD' ? 'text-blue-600' :
-                        behavior.behaviorRating === 'AVERAGE' ? 'text-yellow-600' : 'text-red-600'
-                      }`}>
-                        {behavior.behaviorRating}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {completion.completionPercentage.toFixed(1)}% Complete
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              No payments recorded for this date
             </div>
+          )}
+
+          <div className="flex justify-end mt-6">
+            <button
+              onClick={() => setShowDatePaymentHistory(false)}
+              className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+            >
+              Close
+            </button>
           </div>
         </div>
       </div>
-    );
-  }; // <-- This closing brace was likely missing
-
-  const renderDatePaymentHistory = () => {
-    if (!selectedCalendarDate || !calendarData) return null;
-
-    const dateStr = selectedCalendarDate.toISOString().split('T')[0];
-    const payments = calendarData.paymentHistory.filter(p => p.paymentDate === dateStr);
-
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-lg max-w-2xl w-full">
-          <div className="p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold">
-                Payment History - {selectedCalendarDate.toLocaleDateString()}
-              </h3>
-              <button 
-                onClick={() => setShowDatePaymentHistory(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                ✕
-              </button>
-            </div>
-
-            {payments.length > 0 ? (
-              <div className="space-y-3">
-                {payments.map((payment, index) => (
-                  <div key={index} className="border rounded-lg p-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="font-medium">₹{payment.amount}</div>
-                        <div className="text-sm text-gray-600">
-                          Status: <span className={
-                            payment.status === 'Paid' ? 'text-green-600' : 
-                            payment.status === 'Partial' ? 'text-yellow-600' : 'text-red-600'
-                          }>
-                            {payment.status}
-                          </span>
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          Collected by: {payment.collectedBy}
-                        </div>
-                        {payment.notes && (
-                          <div className="text-sm text-gray-600 mt-1">
-                            Notes: {payment.notes}
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => handleEditPastEMI(payment)}
-                        className="bg-yellow-600 text-white px-3 py-1 rounded text-sm hover:bg-yellow-700"
-                      >
-                        Request Edit
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                No payments recorded for this date
-              </div>
-            )}
-
-            <div className="flex justify-end mt-6">
-              <button
-                onClick={() => setShowDatePaymentHistory(false)}
-                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
+    </div>
+  );
+};
 
   const renderSearchAndFilters = () => {
     const handleFilterChange = (key: keyof Filters, value: string) => {
