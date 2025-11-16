@@ -750,47 +750,47 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
         console.log(`🔍 Checking loan ${loan.loanNumber} from ${startDate.toISOString()}`);
 
         // Generate EMI schedule for this loan - FIXED LOGIC
-        let currentDate = new Date(startDate);
-        
-        for (let i = 0; i < loan.totalEmiCount; i++) {
-          const emiDate = new Date(currentDate);
-          emiDate.setHours(0, 0, 0, 0);
-          const emiDateStr = emiDate.toISOString().split('T')[0];
-          
-          // Check if this EMI date matches the current calendar date
-          if (emiDateStr === dateStr) {
-            console.log(`📅 Due EMI found for ${dateStr}: Loan ${loan.loanNumber}, EMI ${i + 1}`);
-            hasDueEMI = true;
-            totalDueAmount += loan.emiAmount;
-            dueLoanNumbers.push(loan.loanNumber);
-            break;
-          }
+let currentDate = new Date(startDate); // Changed from const to let
 
-          // Calculate next EMI date
-          const nextDate = new Date(currentDate);
-          switch(loanType) {
-            case 'Daily':
-              nextDate.setDate(nextDate.getDate() + 1);
-              break;
-            case 'Weekly':
-              nextDate.setDate(nextDate.getDate() + 7);
-              break;
-            case 'Monthly':
-              nextDate.setMonth(nextDate.getMonth() + 1);
-              break;
-            default:
-              nextDate.setDate(nextDate.getDate() + 1);
-          }
-          nextDate.setHours(0, 0, 0, 0);
+for (let i = 0; i < loan.totalEmiCount; i++) {
+  const emiDate = new Date(currentDate);
+  emiDate.setHours(0, 0, 0, 0);
+  const emiDateStr = emiDate.toISOString().split('T')[0];
+  
+  // Check if this EMI date matches the current calendar date
+  if (emiDateStr === dateStr) {
+    console.log(`📅 Due EMI found for ${dateStr}: Loan ${loan.loanNumber}, EMI ${i + 1}`);
+    hasDueEMI = true;
+    totalDueAmount += loan.emiAmount;
+    dueLoanNumbers.push(loan.loanNumber);
+    break;
+  }
 
-          // Update currentDate for next iteration
-          currentDate = new Date(nextDate);
+  // Calculate next EMI date
+  const nextDate = new Date(currentDate);
+  switch(loanType) {
+    case 'Daily':
+      nextDate.setDate(nextDate.getDate() + 1);
+      break;
+    case 'Weekly':
+      nextDate.setDate(nextDate.getDate() + 7);
+      break;
+    case 'Monthly':
+      nextDate.setMonth(nextDate.getMonth() + 1);
+      break;
+    default:
+      nextDate.setDate(nextDate.getDate() + 1);
+  }
+  nextDate.setHours(0, 0, 0, 0);
 
-          // Stop if we've gone beyond the current month
-          if (currentDate.getMonth() > monthIndex || currentDate.getFullYear() > year) {
-            break;
-          }
-        }
+  // Update currentDate for next iteration
+  currentDate = new Date(nextDate);
+
+  // Stop if we've gone beyond the current month
+  if (currentDate.getMonth() > monthIndex || currentDate.getFullYear() > year) {
+    break;
+  }
+}
       });
 
       if (hasDueEMI) {
@@ -1022,18 +1022,18 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
     } : 'null'
   });
 
-  // Only use loans from customerDetails if available and they have real database IDs
+  // Use loans from customerDetails if available
   if (customerDetails?.loans && Array.isArray(customerDetails.loans)) {
     console.log(`📊 Processing ${customerDetails.loans.length} loans from customerDetails`);
     
     customerDetails.loans.forEach((loan, index) => {
-      // Only include loans that have valid database IDs (not temporary ones)
+      // Only include loans that have valid database IDs
       if (loan._id && loan._id.length === 24 && /^[0-9a-fA-F]{24}$/.test(loan._id.replace(/_default$/, ''))) {
         const cleanLoanId = loan._id.replace(/_default$/, '');
         
         const enhancedLoan: Loan = {
           ...loan,
-          _id: cleanLoanId, // Use cleaned ID
+          _id: cleanLoanId,
           loanNumber: loan.loanNumber || `L${index + 1}`,
           totalEmiCount: (loan as any).totalEmiCount || loan.loanDays || 30,
           emiPaidCount: (loan as any).emiPaidCount || 0,
@@ -1052,32 +1052,14 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
     });
   }
   
-  // If no valid database loans found but customer has loan data, create a fallback loan
-  // BUT mark it clearly as a fallback so we know it might not exist in the database
-  if (loans.length === 0 && customer.loanAmount) {
-    console.log('⚠️ No valid database loans found, creating fallback loan from customer data');
+  // ONLY create fallback loan if NO valid database loans found AND customer has loan data
+  // AND customerDetails is null (meaning API call failed)
+  if (loans.length === 0 && customer.loanAmount && !customerDetails) {
+    console.log('⚠️ No valid database loans found and API failed, creating fallback loan from customer data');
     const cleanCustomerId = customer._id?.replace?.(/_default$/, '') || customer._id;
     
-    const refreshCustomerLoans = async (customerId: string): Promise<Loan[]> => {
-  try {
-    console.log('🔄 Refreshing customer loans for:', customerId);
-    
-    const response = await fetch(`/api/data-entry/customers/${customerId}`);
-    if (response.ok) {
-      const data = await response.json();
-      if (data.success && data.data) {
-        console.log('✅ Customer loans refreshed:', data.data.loans);
-        return data.data.loans || [];
-      }
-    }
-  } catch (error) {
-    console.error('❌ Error refreshing customer loans:', error);
-  }
-  return [];
-};
-
     const fallbackLoan: Loan = {
-      _id: `fallback_${cleanCustomerId}`, // Mark as fallback
+      _id: `fallback_${cleanCustomerId}`,
       customerId: cleanCustomerId,
       customerName: customer.name,
       customerNumber: customer.customerNumber || `CN${cleanCustomerId}`,
@@ -1095,10 +1077,10 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
       remainingAmount: customer.loanAmount || 0,
       emiHistory: [],
       status: customer.status || 'active',
-      isFallback: true // Mark as fallback
+      isFallback: true
     };
     loans.push(fallbackLoan);
-    console.log('📝 Created fallback loan (may not exist in database):', fallbackLoan);
+    console.log('📝 Created fallback loan (API failed):', fallbackLoan);
   }
   
   console.log(`🎯 Final loans count: ${loans.length}`, loans);
