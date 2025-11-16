@@ -749,8 +749,8 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
 
         console.log(`🔍 Checking loan ${loan.loanNumber} from ${startDate.toISOString()}`);
 
-        // Generate EMI schedule for this loan - FIXED LOGIC
-let currentDate = new Date(startDate); // Changed from const to let
+// Generate EMI schedule for this loan - FIXED LOGIC
+let currentDate = new Date(startDate); // Use let since we reassign it
 
 for (let i = 0; i < loan.totalEmiCount; i++) {
   const emiDate = new Date(currentDate);
@@ -766,25 +766,21 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
     break;
   }
 
-  // Calculate next EMI date
-  const nextDate = new Date(currentDate);
+  // Calculate next EMI date without reassigning currentDate
   switch(loanType) {
     case 'Daily':
-      nextDate.setDate(nextDate.getDate() + 1);
+      currentDate.setDate(currentDate.getDate() + 1);
       break;
     case 'Weekly':
-      nextDate.setDate(nextDate.getDate() + 7);
+      currentDate.setDate(currentDate.getDate() + 7);
       break;
     case 'Monthly':
-      nextDate.setMonth(nextDate.getMonth() + 1);
+      currentDate.setMonth(currentDate.getMonth() + 1);
       break;
     default:
-      nextDate.setDate(nextDate.getDate() + 1);
+      currentDate.setDate(currentDate.getDate() + 1);
   }
-  nextDate.setHours(0, 0, 0, 0);
-
-  // Update currentDate for next iteration
-  currentDate = new Date(nextDate);
+  currentDate.setHours(0, 0, 0, 0);
 
   // Stop if we've gone beyond the current month
   if (currentDate.getMonth() > monthIndex || currentDate.getFullYear() > year) {
