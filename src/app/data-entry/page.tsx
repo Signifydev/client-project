@@ -658,46 +658,46 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
     }
 
     // FIX: Handle advance payments - mark all dates in the advance period as paid
-    if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.advanceToDate) {
-      const fromDate = new Date(payment.advanceFromDate);
-      const toDate = new Date(payment.advanceToDate);
+if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.advanceToDate) {
+  const fromDate = new Date(payment.advanceFromDate);
+  const toDate = new Date(payment.advanceToDate);
+  
+  const currentDate = new Date(fromDate); // Use const since we modify the same object
+  while (currentDate <= toDate) {
+    if (currentDate.getMonth() === monthIndex && currentDate.getFullYear() === year) {
+      const advanceDateStr = currentDate.toISOString().split('T')[0];
       
-      let currentDate = new Date(fromDate);
-      while (currentDate <= toDate) {
-        if (currentDate.getMonth() === monthIndex && currentDate.getFullYear() === year) {
-          const advanceDateStr = currentDate.toISOString().split('T')[0];
-          
-          if (!paymentMap[advanceDateStr]) {
-            paymentMap[advanceDateStr] = { 
-              payments: [], 
-              totalAmount: 0, 
-              loanNumbers: [] 
-            };
-          }
-          
-          // Only add the payment record once to avoid duplicates
-          if (!paymentMap[advanceDateStr].payments.some(p => p._id === payment._id)) {
-            paymentMap[advanceDateStr].payments.push(payment);
-          }
-          
-          // For each day in advance period, show the individual EMI amount, not divided total
-          const individualEmiAmount = payment.advanceEmiCount && payment.advanceEmiCount > 0 
-            ? payment.amount / payment.advanceEmiCount 
-            : payment.amount;
-          
-          paymentMap[advanceDateStr].totalAmount += individualEmiAmount;
-          
-          if (payment.loanNumber && !paymentMap[advanceDateStr].loanNumbers.includes(payment.loanNumber)) {
-            paymentMap[advanceDateStr].loanNumbers.push(payment.loanNumber);
-          }
-        }
-        
-        currentDate.setDate(currentDate.getDate() + 1);
-        
-        // Break if we've processed too many days (safety check)
-        if (currentDate > toDate) break;
+      if (!paymentMap[advanceDateStr]) {
+        paymentMap[advanceDateStr] = { 
+          payments: [], 
+          totalAmount: 0, 
+          loanNumbers: [] 
+        };
+      }
+      
+      // Only add the payment record once to avoid duplicates
+      if (!paymentMap[advanceDateStr].payments.some(p => p._id === payment._id)) {
+        paymentMap[advanceDateStr].payments.push(payment);
+      }
+      
+      // For each day in advance period, show the individual EMI amount, not divided total
+      const individualEmiAmount = payment.advanceEmiCount && payment.advanceEmiCount > 0 
+        ? payment.amount / payment.advanceEmiCount 
+        : payment.amount;
+      
+      paymentMap[advanceDateStr].totalAmount += individualEmiAmount;
+      
+      if (payment.loanNumber && !paymentMap[advanceDateStr].loanNumbers.includes(payment.loanNumber)) {
+        paymentMap[advanceDateStr].loanNumbers.push(payment.loanNumber);
       }
     }
+    
+    currentDate.setDate(currentDate.getDate() + 1); // Modify the existing object
+    
+    // Break if we've processed too many days (safety check)
+    if (currentDate > toDate) break;
+  }
+}
   });
 
   // Generate calendar grid for previous month days
@@ -750,7 +750,7 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
         console.log(`🔍 Checking loan ${loan.loanNumber} from ${startDate.toISOString()}`);
 
 // Generate EMI schedule for this loan - FIXED LOGIC
-let currentDate = new Date(startDate); // Use let since we reassign it
+const currentDate = new Date(startDate); // Use const since we modify the same object
 
 for (let i = 0; i < loan.totalEmiCount; i++) {
   const emiDate = new Date(currentDate);
@@ -766,7 +766,7 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
     break;
   }
 
-  // Calculate next EMI date without reassigning currentDate
+  // Calculate next EMI date by modifying the currentDate object
   switch(loanType) {
     case 'Daily':
       currentDate.setDate(currentDate.getDate() + 1);
