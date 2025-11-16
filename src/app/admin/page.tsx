@@ -2860,62 +2860,44 @@ const renderDashboard = () => (
   </div>
 )
 
-  // Conditional render
-  if (selectedCustomer) {
-    return (
-      <div className="min-h-screen bg-gray-50 p-6">
-        {renderNavigation()}
+  // Main render function with consistent header and navigation
+  const renderMainContent = () => {
+    if (selectedCustomer) {
+      return (
         <CustomerDetailsView 
           customer={selectedCustomer} 
           onBack={handleBackToDashboard}
           onDelete={handleDeleteCustomer}
         />
-      </div>
-    )
-  }
+      )
+    }
 
-  if (activeTab === 'requests') {
+    switch (activeTab) {
+      case 'dashboard':
+        return renderDashboard();
+      case 'customers':
+        return renderCustomers();
+      case 'requests':
+        return (
+          <PendingRequestsView 
+            requests={pendingRequests}
+            onApprove={handleApproveRequest}
+            onReject={handleRejectRequest}
+            onBack={() => setActiveTab('dashboard')}
+          />
+        );
+      case 'reports':
+        return <EnhancedReportsView onBack={() => setActiveTab('dashboard')} />;
+      case 'team':
+        return <TeamManagementView onBack={() => setActiveTab('dashboard')} />;
+      case 'collection':
+        return <CollectionView onBack={() => setActiveTab('dashboard')} />;
+      default:
+        return renderDashboard();
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      {renderNavigation()}
-      <PendingRequestsView 
-        requests={pendingRequests}
-        onApprove={handleApproveRequest}
-        onReject={handleRejectRequest}
-        onBack={() => setActiveTab('dashboard')}
-      />
-    </div>
-  )
-}
-
-  if (activeTab === 'reports') {
-    return (
-      <div className="min-h-screen bg-gray-50 p-6">
-        {renderNavigation()}
-        <EnhancedReportsView onBack={() => setActiveTab('dashboard')} />
-      </div>
-    )
-  }
-
-  if (activeTab === 'team') {
-    return (
-      <div className="min-h-screen bg-gray-50 p-6">
-        {renderNavigation()}
-        <TeamManagementView onBack={() => setActiveTab('dashboard')} />
-      </div>
-    )
-  }
-
-  if (activeTab === 'collection') {
-    return (
-      <div className="min-h-screen bg-gray-50 p-6">
-        {renderNavigation()}
-        <CollectionView onBack={() => setActiveTab('dashboard')} />
-      </div>
-    )
-  }
-
-    return (
     <div className="min-h-screen bg-gray-50">
       {/* HEADER - Always visible */}
       <header className="bg-white shadow">
@@ -2942,8 +2924,7 @@ const renderDashboard = () => (
 
       {/* MAIN CONTENT */}
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        {activeTab === 'dashboard' && renderDashboard()}
-        {activeTab === 'customers' && renderCustomers()}
+        {renderMainContent()}
       </main>
     </div>
   )
