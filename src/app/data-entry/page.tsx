@@ -251,7 +251,7 @@ interface CalendarDay {
   emiStatus?: 'paid' | 'due' | 'overdue' | 'partial' | 'upcoming' | 'none';
   emiAmount?: number;
   loanNumbers?: string[];
-  paymentHistory?: EMIHistory[];
+  paymentHistory?: EMIHistory[]; // Make sure this is included
 }
 
 interface EMICalendarData {
@@ -453,6 +453,11 @@ export default function DataEntryDashboard() {
   
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date | null>(null);
   const [showDatePaymentHistory, setShowDatePaymentHistory] = useState(false);
+  const [editingPayment, setEditingPayment] = useState<EMIHistory | null>(null);
+const [editStatus, setEditStatus] = useState('Paid');
+const [showEditPaymentModal, setShowEditPaymentModal] = useState(false);
+const [deletingPayment, setDeletingPayment] = useState<EMIHistory | null>(null);
+const [showDeleteConfirmationModal, setShowDeleteConfirmationModal] = useState(false);
   const [calendarFilter, setCalendarFilter] = useState<{
     emiStatus: 'all' | 'paid' | 'due' | 'overdue' | 'partial' | 'upcoming';
     loanFilter: 'all' | string;
@@ -2634,6 +2639,53 @@ const handleEditEMIPayment = async (payment: EMIHistory, newAmount: number, newD
   }
 };
 
+const testPaymentAPI = async () => {
+  // First, let's check if we can get the payment
+  const testPaymentId = editingPayment?._id;
+  if (!testPaymentId) {
+    console.log('❌ No payment ID available');
+    return;
+  }
+
+  console.log('🧪 Testing API with payment ID:', testPaymentId);
+  
+  try {
+    // Test GET request first
+    const getResponse = await fetch(`/api/data-entry/emi-payments?customerId=${calendarData?.customerId}`);
+    const getData = await getResponse.json();
+    console.log('📊 Available payments:', getData);
+    
+    // Check if our payment exists
+    const paymentExists = getData.data?.payments?.find((p: any) => p._id === testPaymentId);
+    console.log('🔍 Payment exists in GET response:', paymentExists);
+    
+  } catch (error) {
+    console.error('❌ API test failed:', error);
+  }
+};
+
+const handleEditPayment = (payment: EMIHistory, date: Date) => {
+  console.log('🟡 handleEditPayment called with:', {
+    paymentId: payment._id,
+    paymentDate: payment.paymentDate,
+    amount: payment.amount,
+    date: date
+  });
+  
+  setSelectedCalendarDate(date);
+  setEditingPayment(payment);
+  setEditAmount(payment.amount.toString());
+  setEditStatus(payment.status);
+  setEditDate(payment.paymentDate); // Make sure editDate is set
+  setShowEditPaymentModal(true);
+};
+
+const handleDeletePayment = async (payment: EMIHistory, date: Date) => {
+  setSelectedCalendarDate(date);
+  setDeletingPayment(payment);
+  setShowDeleteConfirmationModal(true);
+};
+
 const refreshCustomerData = async (customerId: string) => {
   try {
     console.log('🔄 Refreshing customer data for:', customerId);
@@ -2871,7 +2923,7 @@ const refreshCustomerData = async (customerId: string) => {
               <div
                 key={index}
                 onClick={() => handleCalendarDateClick(day)}
-                className={`min-h-24 p-2 border rounded-md cursor-pointer transition-all hover:shadow-md ${
+                className={`min-h-28 p-2 border rounded-md cursor-pointer transition-all hover:shadow-md ${
                   getStatusColor(day.emiStatus)
                 } ${!day.isCurrentMonth ? 'opacity-40' : ''} ${
                   day.isToday ? 'ring-2 ring-blue-500' : ''
@@ -2905,11 +2957,57 @@ const refreshCustomerData = async (customerId: string) => {
                 )}
 
                 {day.paymentHistory && day.paymentHistory.length > 0 && (
-                  <div className="mt-1 text-xs text-green-600 font-semibold">
-                    ✅ {day.paymentHistory.length} payment(s)
+                  <div className="mt-1">
+                    <div className="text-xs text-green-600 font-semibold">
+                      ✅ {day.paymentHistory.length} payment(s)
+                    </div>
+                    
+                    {/* Edit/Delete buttons for paid dates - HOVER VERSION */}
+                    {day.emiStatus === 'paid' && day.paymentHistory.length > 0 && (
+                      <div className="mt-2 opacity-0 hover:opacity-100 transition-opacity duration-200">
+                        <div className="flex flex-col gap-1">
+                          {/* REMOVED "Manage Payments" button - keeping only Edit/Delete */}
+                          {day.paymentHistory.slice(0, 2).map((payment, paymentIndex) => (
+                            <div key={payment._id || paymentIndex} className="flex gap-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditPayment(payment, day.date);
+                                }}
+                                className="flex-1 bg-blue-500 text-white text-xs px-1 py-0.5 rounded hover:bg-blue-600 transition-colors"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeletePayment(payment, day.date);
+                                }}
+                                className="flex-1 bg-red-500 text-white text-xs px-1 py-0.5 rounded hover:bg-red-600 transition-colors"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          ))}
+                          
+                          {/* Show "More" if there are more than 2 payments */}
+                          {day.paymentHistory.length > 2 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedCalendarDate(day.date);
+                                setShowDatePaymentHistory(true);
+                              }}
+                              className="text-xs text-blue-600 hover:text-blue-800 underline"
+                            >
+                              +{day.paymentHistory.length - 2} more
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
-                
               </div>
             ))}
           </div>
@@ -2946,51 +3044,477 @@ const refreshCustomerData = async (customerId: string) => {
       </div>
     </div>
   );
-}; // <-- This closing brace was likely missing
+};
 
   const renderDatePaymentHistory = () => {
   if (!selectedCalendarDate || !calendarData) return null;
 
   const dateStr = selectedCalendarDate.toISOString().split('T')[0];
-  const payments = calendarData.paymentHistory.filter(p => p.paymentDate === dateStr);
+  const payments = calendarData.paymentHistory.filter(p => {
+    const paymentDate = new Date(p.paymentDate).toISOString().split('T')[0];
+    return paymentDate === dateStr;
+  });
 
   const startEdit = (payment: EMIHistory) => {
-    setEditingPaymentId(payment._id || '');
+    setEditingPayment(payment);
     setEditAmount(payment.amount.toString());
-    setEditDate(payment.paymentDate);
+    setEditStatus(payment.status);
+    setShowEditPaymentModal(true);
   };
 
-  const cancelEdit = () => {
-    setEditingPaymentId(null);
-    setEditAmount('');
-    setEditDate('');
+  const handleDeleteEMI = async (payment: EMIHistory) => {
+    setDeletingPayment(payment);
+    setShowDeleteConfirmationModal(true);
   };
 
-  const saveEdit = async (payment: EMIHistory) => {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-bold">
+              Payment History - {selectedCalendarDate.toLocaleDateString()}
+            </h3>
+            <button 
+              onClick={() => setShowDatePaymentHistory(false)}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              ✕
+            </button>
+          </div>
+
+          {payments.length > 0 ? (
+            <div className="space-y-4">
+              {payments.map((payment, index) => {
+                const associatedLoan = calendarData.loans.find(loan => 
+                  loan._id === payment.loanId || loan.loanNumber === payment.loanNumber
+                );
+                
+                return (
+                  <div key={payment._id || index} className="border rounded-lg p-4 bg-white">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="font-medium text-lg">₹{payment.amount}</div>
+                        <div className="text-sm text-gray-600">
+                          Status: <span className={
+                            payment.status === 'Paid' ? 'text-green-600' : 
+                            payment.status === 'Partial' ? 'text-yellow-600' : 
+                            payment.status === 'Advance' ? 'text-blue-600' : 'text-red-600'
+                          }>
+                            {payment.status}
+                          </span>
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          Collected by: {payment.collectedBy}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          Date: {new Date(payment.paymentDate).toLocaleDateString()}
+                        </div>
+                        {payment.loanNumber && (
+                          <div className="text-sm text-gray-600">
+                            Loan: {payment.loanNumber} ({associatedLoan?.loanType || 'N/A'})
+                          </div>
+                        )}
+                        {payment.notes && (
+                          <div className="text-sm text-gray-600 mt-1">
+                            Notes: {payment.notes}
+                          </div>
+                        )}
+                        {payment.paymentType === 'advance' && (
+                          <div className="text-sm text-blue-600 mt-1">
+                            Advance Payment ({payment.advanceEmiCount} EMI)
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => startEdit(payment)}
+                          className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteEMI(payment)}
+                          className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
+                          disabled={isLoading}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              No payments recorded for this date
+            </div>
+          )}
+
+          <div className="flex justify-end mt-6">
+            <button
+              onClick={() => setShowDatePaymentHistory(false)}
+              className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const renderEditPaymentModal = () => {
+  if (!editingPayment || !selectedCalendarDate) return null;
+
+  console.log('🔍 Editing payment details:', {
+    paymentId: editingPayment._id,
+    paymentDate: editingPayment.paymentDate,
+    amount: editingPayment.amount,
+    status: editingPayment.status,
+    loanNumber: editingPayment.loanNumber
+  });
+
+  // Find the loan associated with this payment
+  const associatedLoan = calendarData?.loans.find(loan => 
+    loan._id === editingPayment.loanId || loan.loanNumber === editingPayment.loanNumber
+  );
+
+  const handleSaveEdit = async () => {
     if (!editAmount || parseFloat(editAmount) <= 0) {
       alert('Please enter a valid amount');
       return;
     }
 
-    await handleEditEMIPayment(payment, parseFloat(editAmount), editDate);
-    setEditingPaymentId(null);
-    setEditAmount('');
-    setEditDate('');
-  };
-
-  const handleDeleteEMI = async (payment: EMIHistory) => {
-    if (!payment._id) {
-      alert('Cannot delete payment: Payment ID not found');
-      return;
-    }
-
-    if (!confirm(`Are you sure you want to delete this EMI payment of ₹${payment.amount} from ${payment.paymentDate}? This action cannot be undone.`)) {
+    if (!editDate) {
+      alert('Please select a valid payment date');
       return;
     }
 
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/data-entry/emi-payments?id=${payment._id}`, {
+      console.log('🟡 Attempting to update payment:', editingPayment._id);
+
+      // First, let's check if the payment exists by trying to fetch it
+      const checkResponse = await fetch(`/api/data-entry/emi-payments?customerId=${calendarData?.customerId}`);
+      const checkData = await checkResponse.json();
+      
+      if (checkData.success) {
+        const paymentExists = checkData.data.payments.find((p: any) => p._id === editingPayment._id);
+        console.log('🔍 Payment exists check:', paymentExists);
+        
+        if (!paymentExists) {
+          throw new Error(`Payment ${editingPayment._id} not found in database. It may have been deleted.`);
+        }
+      }
+
+      // If payment exists, proceed with update
+      const response = await fetch(`/api/data-entry/emi-payments?id=${editingPayment._id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: parseFloat(editAmount),
+          paymentDate: editDate,
+          status: editStatus,
+          notes: `Payment edited: Amount ₹${editingPayment.amount} → ₹${editAmount}, Status ${editingPayment.status} → ${editStatus}`
+        }),
+      });
+
+      const responseText = await response.text();
+      console.log('📄 Raw API response:', responseText);
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('❌ Failed to parse response as JSON:', parseError);
+        throw new Error('Server returned invalid response');
+      }
+
+      console.log('✅ Parsed response data:', data);
+      
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+      }
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to update payment');
+      }
+
+      alert('EMI payment updated successfully!');
+      
+      // Refresh the calendar data
+      if (calendarData) {
+        console.log('🔄 Refreshing calendar data...');
+        const updatedResponse = await fetch(`/api/data-entry/customers/${calendarData.customerId}`);
+        if (updatedResponse.ok) {
+          const updatedData = await updatedResponse.json();
+          if (updatedData.success) {
+            const customerDetails = updatedData.data;
+            const displayLoans = getAllCustomerLoans(customerDetails, customerDetails);
+            
+            setCalendarData({
+              ...calendarData,
+              loans: displayLoans,
+              paymentHistory: displayLoans.flatMap(loan => loan.emiHistory || [])
+            });
+            console.log('✅ Calendar data refreshed successfully');
+          }
+        }
+      }
+      
+      setShowEditPaymentModal(false);
+      setEditingPayment(null);
+      
+    } catch (error: any) {
+      console.error('💥 Error editing EMI payment:', error);
+      
+      if (error.message.includes('not found in database')) {
+        // Payment doesn't exist in database - offer to create a new one
+        const shouldCreateNew = confirm(
+          `This payment record doesn't exist in the database. It may have been deleted.\n\n` +
+          `Would you like to create a new payment record with these details?\n\n` +
+          `Amount: ₹${editAmount}\n` +
+          `Date: ${new Date(editDate).toLocaleDateString()}\n` +
+          `Status: ${editStatus}`
+        );
+        
+        if (shouldCreateNew) {
+          await createNewPaymentFromEdit();
+        }
+      } else {
+        alert('Error: ' + error.message);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Function to create a new payment when the original is missing
+  const createNewPaymentFromEdit = async () => {
+    try {
+      console.log('🟡 Creating new payment to replace missing one...');
+      
+      const newPaymentData = {
+        customerId: calendarData?.customerId,
+        customerName: calendarData?.customerName,
+        loanId: editingPayment.loanId,
+        loanNumber: editingPayment.loanNumber || associatedLoan?.loanNumber,
+        paymentDate: editDate,
+        amount: parseFloat(editAmount),
+        status: editStatus,
+        collectedBy: editingPayment.collectedBy || 'Operator 1',
+        notes: `Payment recreated: ${editingPayment.notes || 'Original payment was missing from database'}`
+      };
+
+      const response = await fetch('/api/data-entry/emi-payments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(newPaymentData),
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create new payment');
+      }
+
+      alert('New payment record created successfully!');
+      
+      // Refresh calendar data
+      if (calendarData) {
+        const updatedResponse = await fetch(`/api/data-entry/customers/${calendarData.customerId}`);
+        if (updatedResponse.ok) {
+          const updatedData = await updatedResponse.json();
+          if (updatedData.success) {
+            const customerDetails = updatedData.data;
+            const displayLoans = getAllCustomerLoans(customerDetails, customerDetails);
+            
+            setCalendarData({
+              ...calendarData,
+              loans: displayLoans,
+              paymentHistory: displayLoans.flatMap(loan => loan.emiHistory || [])
+            });
+          }
+        }
+      }
+      
+      setShowEditPaymentModal(false);
+      setEditingPayment(null);
+      
+    } catch (error: any) {
+      console.error('❌ Error creating new payment:', error);
+      alert('Error creating new payment: ' + error.message);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-md w-full">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-bold">Edit EMI Payment</h3>
+            <div className="flex items-center space-x-2">
+              <span className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600">
+                ID: {editingPayment._id?.substring(0, 8)}...
+              </span>
+              <button 
+                onClick={() => {
+                  setShowEditPaymentModal(false);
+                  setEditingPayment(null);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          {/* Warning if payment might be missing */}
+          <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-4">
+            <div className="flex items-center">
+              <span className="text-yellow-500 mr-2">⚠️</span>
+              <div>
+                <p className="text-sm text-yellow-800 font-medium">Payment Record Issue</p>
+                <p className="text-xs text-yellow-700 mt-1">
+                  This payment might not exist in the database. If update fails, you can create a new record.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {/* Non-editable information */}
+            <div className="bg-gray-50 p-3 rounded-md">
+              <h4 className="font-medium text-gray-700 mb-2">Payment Information</h4>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <span className="text-gray-600">Loan:</span>
+                  <p className="font-medium">{editingPayment.loanNumber || associatedLoan?.loanNumber || 'N/A'}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600">Loan Type:</span>
+                  <p className="font-medium">{associatedLoan?.loanType || 'N/A'}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600">Collected By:</span>
+                  <p className="font-medium">{editingPayment.collectedBy}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600">Original Date:</span>
+                  <p className="font-medium">{new Date(editingPayment.paymentDate).toLocaleDateString()}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Editable fields */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Payment Date *
+              </label>
+              <input
+                type="date"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={editDate.split('T')[0]}
+                onChange={(e) => setEditDate(e.target.value)}
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                EMI Amount Paid (₹) *
+              </label>
+              <input
+                type="number"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={editAmount}
+                onChange={(e) => setEditAmount(e.target.value)}
+                min="0"
+                step="0.01"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Original amount: ₹{editingPayment.amount}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Payment Status *
+              </label>
+              <select
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={editStatus}
+                onChange={(e) => setEditStatus(e.target.value)}
+                required
+              >
+                <option value="Paid">Paid</option>
+                <option value="Partial">Partial Payment</option>
+                <option value="Due">Due</option>
+                <option value="Advance">Advance</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Original status: {editingPayment.status}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex justify-end space-x-3 mt-6">
+            <button
+              onClick={() => {
+                setShowEditPaymentModal(false);
+                setEditingPayment(null);
+              }}
+              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+              disabled={isLoading}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveEdit}
+              disabled={isLoading || !editAmount || !editDate}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 flex items-center"
+            >
+              {isLoading ? (
+                <>
+                  <span className="animate-spin mr-2">⏳</span>
+                  Saving...
+                </>
+              ) : (
+                'Save Changes'
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const renderDeleteConfirmationModal = () => {
+  if (!deletingPayment || !selectedCalendarDate) return null;
+
+  // Find the loan associated with this payment
+  const associatedLoan = calendarData?.loans.find(loan => 
+    loan._id === deletingPayment.loanId || loan.loanNumber === deletingPayment.loanNumber
+  );
+
+  const handleConfirmDelete = async () => {
+    if (!deletingPayment._id) {
+      alert('Cannot delete payment: Payment ID not found');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await fetch(`/api/data-entry/emi-payments?id=${deletingPayment._id}`, {
         method: 'DELETE',
       });
 
@@ -3020,7 +3544,8 @@ const refreshCustomerData = async (customerId: string) => {
         }
       }
       
-      setShowDatePaymentHistory(false);
+      setShowDeleteConfirmationModal(false);
+      setDeletingPayment(null);
       
     } catch (error: any) {
       console.error('Error deleting EMI payment:', error);
@@ -3032,163 +3557,90 @@ const refreshCustomerData = async (customerId: string) => {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+      <div className="bg-white rounded-lg max-w-md w-full">
         <div className="p-6">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-bold">
-              Payment History - {selectedCalendarDate.toLocaleDateString()}
-            </h3>
+            <h3 className="text-lg font-bold text-red-600">Delete EMI Payment</h3>
             <button 
-              onClick={() => setShowDatePaymentHistory(false)}
+              onClick={() => {
+                setShowDeleteConfirmationModal(false);
+                setDeletingPayment(null);
+              }}
               className="text-gray-500 hover:text-gray-700"
             >
               ✕
             </button>
           </div>
 
-          {payments.length > 0 ? (
-            <div className="space-y-4">
-              {payments.map((payment, index) => (
-                <div key={payment._id || index} className="border rounded-lg p-4 bg-white">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      {editingPaymentId === payment._id ? (
-                        <div className="space-y-3">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Amount (₹)
-                            </label>
-                            <input
-                              type="number"
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                              value={editAmount}
-                              onChange={(e) => setEditAmount(e.target.value)}
-                              min="0"
-                              step="0.01"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Payment Date
-                            </label>
-                            <input
-                              type="date"
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                              value={editDate.split('T')[0]}
-                              onChange={(e) => setEditDate(e.target.value)}
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Status
-                            </label>
-                            <select
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                              value={payment.status}
-                              onChange={(e) => {
-                                // Update the payment status in the local state
-                                const updatedPayments = payments.map(p => 
-                                  p._id === payment._id ? { ...p, status: e.target.value } : p
-                                );
-                                // Update calendar data
-                                setCalendarData(prev => prev ? {
-                                  ...prev,
-                                  paymentHistory: prev.paymentHistory.map(p => 
-                                    p._id === payment._id ? { ...p, status: e.target.value } : p
-                                  )
-                                } : null);
-                              }}
-                            >
-                              <option value="Paid">Paid</option>
-                              <option value="Partial">Partial</option>
-                              <option value="Advance">Advance</option>
-                              <option value="Due">Due</option>
-                            </select>
-                          </div>
-                          <div className="flex space-x-2">
-                            <button
-                              onClick={() => saveEdit(payment)}
-                              className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
-                            >
-                              Save
-                            </button>
-                            <button
-                              onClick={cancelEdit}
-                              className="bg-gray-600 text-white px-3 py-1 rounded text-sm hover:bg-gray-700"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="font-medium text-lg">₹{payment.amount}</div>
-                          <div className="text-sm text-gray-600">
-                            Status: <span className={
-                              payment.status === 'Paid' ? 'text-green-600' : 
-                              payment.status === 'Partial' ? 'text-yellow-600' : 
-                              payment.status === 'Advance' ? 'text-blue-600' : 'text-red-600'
-                            }>
-                              {payment.status}
-                            </span>
-                          </div>
-                          <div className="text-sm text-gray-600">
-                            Collected by: {payment.collectedBy}
-                          </div>
-                          <div className="text-sm text-gray-600">
-                            Date: {new Date(payment.paymentDate).toLocaleDateString()}
-                          </div>
-                          {payment.notes && (
-                            <div className="text-sm text-gray-600 mt-1">
-                              Notes: {payment.notes}
-                            </div>
-                          )}
-                          {payment.paymentType === 'advance' && (
-                            <div className="text-sm text-blue-600 mt-1">
-                              Advance Payment ({payment.advanceEmiCount} EMI)
-                            </div>
-                          )}
-                          {payment.loanNumber && (
-                            <div className="text-sm text-gray-500 mt-1">
-                              Loan: {payment.loanNumber}
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                    {editingPaymentId !== payment._id && (
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => startEdit(payment)}
-                          className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDeleteEMI(payment)}
-                          className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
-                          disabled={isLoading}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    )}
-                  </div>
+          <div className="space-y-4">
+            <div className="bg-red-50 p-4 rounded-md">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <span className="text-red-400 text-xl">⚠️</span>
                 </div>
-              ))}
+                <div className="ml-3">
+                  <h4 className="text-sm font-medium text-red-800">Warning</h4>
+                  <p className="text-sm text-red-700 mt-1">
+                    Are you sure you want to delete this EMI payment? This action cannot be undone.
+                  </p>
+                </div>
+              </div>
             </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              No payments recorded for this date
-            </div>
-          )}
 
-          <div className="flex justify-end mt-6">
+            <div className="bg-gray-50 p-3 rounded-md">
+              <h4 className="font-medium text-gray-700 mb-2">Payment Details</h4>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <span className="text-gray-600">Payment Date:</span>
+                  <p className="font-medium">{new Date(deletingPayment.paymentDate).toLocaleDateString()}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600">Loan:</span>
+                  <p className="font-medium">{deletingPayment.loanNumber || associatedLoan?.loanNumber || 'N/A'}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600">Loan Type:</span>
+                  <p className="font-medium">{associatedLoan?.loanType || 'N/A'}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600">Amount:</span>
+                  <p className="font-medium">₹{deletingPayment.amount}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600">Status:</span>
+                  <p className="font-medium">{deletingPayment.status}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600">Collected By:</span>
+                  <p className="font-medium">{deletingPayment.collectedBy}</p>
+                </div>
+              </div>
+              {deletingPayment.notes && (
+                <div className="mt-2">
+                  <span className="text-gray-600 text-sm">Notes:</span>
+                  <p className="text-sm text-gray-700 mt-1">{deletingPayment.notes}</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex justify-end space-x-3 mt-6">
             <button
-              onClick={() => setShowDatePaymentHistory(false)}
-              className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+              onClick={() => {
+                setShowDeleteConfirmationModal(false);
+                setDeletingPayment(null);
+              }}
+              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+              disabled={isLoading}
             >
-              Close
+              Cancel
+            </button>
+            <button
+              onClick={handleConfirmDelete}
+              disabled={isLoading}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:bg-gray-400"
+            >
+              {isLoading ? 'Deleting...' : 'Delete Payment'}
             </button>
           </div>
         </div>
@@ -7344,6 +7796,8 @@ const renderCollection = () => {
       {showAddLoanModal && renderAddLoanModal()}
       {showEMICalendar && renderEMICalendar()}
       {showDatePaymentHistory && renderDatePaymentHistory()}
+      {showEditPaymentModal && renderEditPaymentModal()}
+      {showDeleteConfirmationModal && renderDeleteConfirmationModal()}
     </div>
   );
 }
