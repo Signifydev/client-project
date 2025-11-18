@@ -1035,6 +1035,18 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
       if (loan._id && loan._id.length === 24 && /^[0-9a-fA-F]{24}$/.test(loan._id.replace(/_default$/, ''))) {
         const cleanLoanId = loan._id.replace(/_default$/, '');
         
+        // FIX: Calculate proper next EMI date - use emiStartDate if no payments made
+        const hasPaidEMIs = (loan as any).emiPaidCount > 0 || ((loan as any).emiHistory && (loan as any).emiHistory.length > 0);
+        
+        let nextEmiDate;
+        if (hasPaidEMIs) {
+          // If EMIs have been paid, calculate next date from lastEmiDate
+          nextEmiDate = calculateNextEmiDate((loan as any).lastEmiDate || loan.dateApplied, loan.loanType);
+        } else {
+          // If no EMIs paid, next EMI date should be the EMI start date
+          nextEmiDate = loan.emiStartDate || loan.dateApplied;
+        }
+        
         const enhancedLoan: Loan = {
           ...loan,
           _id: cleanLoanId,
@@ -1042,14 +1054,20 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
           totalEmiCount: (loan as any).totalEmiCount || loan.loanDays || 30,
           emiPaidCount: (loan as any).emiPaidCount || 0,
           lastEmiDate: (loan as any).lastEmiDate || loan.dateApplied,
-          nextEmiDate: (loan as any).nextEmiDate || calculateNextEmiDate(loan.dateApplied, loan.loanType),
+          nextEmiDate: nextEmiDate, // This is the fixed line
           totalPaidAmount: (loan as any).totalPaidAmount || 0,
           remainingAmount: (loan as any).remainingAmount || loan.amount,
           emiHistory: (loan as any).emiHistory || [],
           status: (loan as any).status || 'active'
         };
         loans.push(enhancedLoan);
-        console.log(`📋 Added database loan ${index + 1}:`, enhancedLoan);
+        console.log(`📋 Added database loan ${index + 1}:`, {
+          loanNumber: enhancedLoan.loanNumber,
+          hasPaidEMIs,
+          emiPaidCount: enhancedLoan.emiPaidCount,
+          emiStartDate: loan.emiStartDate,
+          nextEmiDate: enhancedLoan.nextEmiDate
+        });
       } else {
         console.log(`⚠️ Skipping loan ${index + 1} - invalid or temporary ID:`, loan._id);
       }
@@ -1062,6 +1080,7 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
     console.log('⚠️ No valid database loans found and API failed, creating fallback loan from customer data');
     const cleanCustomerId = customer._id?.replace?.(/_default$/, '') || customer._id;
     
+    // For fallback loan, next EMI date should be today (since we don't have emiStartDate)
     const fallbackLoan: Loan = {
       _id: `fallback_${cleanCustomerId}`,
       customerId: cleanCustomerId,
@@ -1076,7 +1095,7 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
       totalEmiCount: 30,
       emiPaidCount: 0,
       lastEmiDate: customer.createdAt || new Date().toISOString(),
-      nextEmiDate: calculateNextEmiDate(customer.createdAt || new Date().toISOString(), customer.loanType || 'Daily'),
+      nextEmiDate: customer.createdAt || new Date().toISOString(), // Use creation date as next EMI date
       totalPaidAmount: 0,
       remainingAmount: customer.loanAmount || 0,
       emiHistory: [],
@@ -1087,7 +1106,12 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
     console.log('📝 Created fallback loan (API failed):', fallbackLoan);
   }
   
-  console.log(`🎯 Final loans count: ${loans.length}`, loans);
+  console.log(`🎯 Final loans count: ${loans.length}`, loans.map(loan => ({
+    loanNumber: loan.loanNumber,
+    nextEmiDate: loan.nextEmiDate,
+    emiPaidCount: loan.emiPaidCount,
+    emiHistoryCount: loan.emiHistory?.length || 0
+  })));
   return loans;
 };
   const validateStep1 = () => {
