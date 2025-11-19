@@ -35,6 +35,28 @@ function validateAndCleanObjectId(id, fieldName = 'ID') {
   };
 }
 
+// Helper function to calculate next EMI date
+function calculateNextEmiDate(currentDate, loanType) {
+  const date = new Date(currentDate);
+  date.setHours(0, 0, 0, 0);
+  
+  switch(loanType) {
+    case 'Daily':
+      date.setDate(date.getDate() + 1);
+      break;
+    case 'Weekly':
+      date.setDate(date.getDate() + 7);
+      break;
+    case 'Monthly':
+      date.setMonth(date.getMonth() + 1);
+      break;
+    default:
+      date.setDate(date.getDate() + 1);
+  }
+  
+  return date.toISOString().split('T')[0];
+}
+
 export async function POST(request) {
   try {
     await connectDB();
@@ -361,14 +383,27 @@ export async function POST(request) {
         const totalPaidAmount = loanPayments.reduce((sum, p) => sum + p.amount, 0);
         const emiPaidCount = loanPayments.length;
 
-        // Update loan with all payment history
+        // CRITICAL FIX: Calculate next EMI date
+        const nextEmiDate = calculateNextEmiDate(paymentDate, loan.loanType);
+
+        // Update loan with ALL required fields
         const updateData = {
           emiPaidCount: emiPaidCount,
           totalPaidAmount: totalPaidAmount,
           remainingAmount: Math.max(loan.amount - totalPaidAmount, 0),
-          lastPaymentDate: new Date(paymentDate),
+          lastEmiDate: new Date(paymentDate), // UPDATE THIS - frontend expects this
+          nextEmiDate: nextEmiDate, // UPDATE THIS - frontend expects this
+          lastPaymentDate: new Date(paymentDate), // Keep this for customer updates
           updatedAt: new Date()
         };
+
+        console.log('🔄 Updating loan with:', {
+          loanId: finalLoanId.toString(),
+          lastEmiDate: updateData.lastEmiDate,
+          nextEmiDate: updateData.nextEmiDate,
+          emiPaidCount: updateData.emiPaidCount,
+          totalPaidAmount: updateData.totalPaidAmount
+        });
 
         // Add all payments to emiHistory
         if (payments.length > 0) {
@@ -393,7 +428,12 @@ export async function POST(request) {
         }
 
         await Loan.findByIdAndUpdate(finalLoanId, updateData);
-        console.log('✅ Loan statistics updated successfully with', payments.length, 'payments');
+        console.log('✅ Loan statistics updated successfully with:', {
+          payments: payments.length,
+          lastEmiDate: updateData.lastEmiDate,
+          nextEmiDate: updateData.nextEmiDate,
+          emiPaidCount: updateData.emiPaidCount
+        });
       } catch (loanUpdateError) {
         console.error('⚠️ Error updating loan statistics:', loanUpdateError);
       }
@@ -510,7 +550,7 @@ export async function GET(request) {
 
     const payments = await EMIPayment.find(query)
       .populate('customerId', 'name phone businessName area loanNumber')
-      .populate('loanId', 'loanNumber loanType emiAmount amount emiPaidCount totalPaidAmount')
+      .populate('loanId', 'loanNumber loanType emiAmount amount emiPaidCount totalPaidAmount lastEmiDate nextEmiDate')
       .sort({ paymentDate: -1, createdAt: -1 })
       .limit(limit);
 
@@ -680,15 +720,25 @@ export async function PUT(request) {
         
         const totalPaidAmount = loanPayments.reduce((sum, p) => sum + p.amount, 0);
         
-        // Update loan
-        await Loan.findByIdAndUpdate(payment.loanId, {
-          totalPaidAmount: totalPaidAmount,
-          emiPaidCount: loanPayments.length,
-          remainingAmount: Math.max((await Loan.findById(payment.loanId)).amount - totalPaidAmount, 0),
-          updatedAt: new Date()
-        });
+        // Update loan with next EMI date calculation
+        const loan = await Loan.findById(payment.loanId);
+        if (loan) {
+          const nextEmiDate = calculateNextEmiDate(paymentDate, loan.loanType);
+          
+          await Loan.findByIdAndUpdate(payment.loanId, {
+            totalPaidAmount: totalPaidAmount,
+            emiPaidCount: loanPayments.length,
+            remainingAmount: Math.max(loan.amount - totalPaidAmount, 0),
+            lastEmiDate: new Date(paymentDate), // ADD THIS
+            nextEmiDate: nextEmiDate, // ADD THIS
+            updatedAt: new Date()
+          });
 
-        console.log('✅ Loan statistics updated after payment edit');
+          console.log('✅ Loan statistics updated after payment edit:', {
+            lastEmiDate: new Date(paymentDate),
+            nextEmiDate: nextEmiDate
+          });
+        }
       } catch (loanUpdateError) {
         console.error('⚠️ Error updating loan statistics after edit:', loanUpdateError);
       }
@@ -787,17 +837,36 @@ export async function DELETE(request) {
         const totalPaidAmount = loanPayments.reduce((sum, p) => sum + p.amount, 0);
         const emiPaidCount = loanPayments.length;
 
-        // Get loan to calculate remaining amount
+        // Get loan to calculate remaining amount and update dates
         const loan = await Loan.findById(loanId);
         if (loan) {
+          // Find the most recent payment to calculate next EMI date
+          const recentPayments = await EMIPayment.find({
+            loanId: loanId,
+            status: { $in: ['Paid', 'Partial', 'Advance'] }
+          }).sort({ paymentDate: -1 }).limit(1);
+          
+          let lastEmiDate = loan.lastEmiDate;
+          let nextEmiDate = loan.nextEmiDate;
+          
+          if (recentPayments.length > 0) {
+            lastEmiDate = recentPayments[0].paymentDate;
+            nextEmiDate = calculateNextEmiDate(lastEmiDate, loan.loanType);
+          }
+          
           await Loan.findByIdAndUpdate(loanId, {
             emiPaidCount: emiPaidCount,
             totalPaidAmount: totalPaidAmount,
             remainingAmount: Math.max(loan.amount - totalPaidAmount, 0),
+            lastEmiDate: lastEmiDate, // UPDATE THIS
+            nextEmiDate: nextEmiDate, // UPDATE THIS
             updatedAt: new Date()
           });
 
-          console.log('✅ Loan statistics updated after payment deletion');
+          console.log('✅ Loan statistics updated after payment deletion:', {
+            lastEmiDate: lastEmiDate,
+            nextEmiDate: nextEmiDate
+          });
         }
       } catch (loanUpdateError) {
         console.error('⚠️ Error updating loan statistics after deletion:', loanUpdateError);
