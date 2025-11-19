@@ -1027,61 +1027,85 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
   if (customerDetails?.loans && Array.isArray(customerDetails.loans)) {
     console.log(`📊 Processing ${customerDetails.loans.length} loans from customerDetails`);
     
-    customerDetails.loans.forEach((loan, index) => {
+    customerDetails.loans.forEach((loan: any, index) => { // Use 'any' to avoid TypeScript errors with database fields
       // Only include loans that have valid database IDs
       if (loan._id && loan._id.length === 24 && /^[0-9a-fA-F]{24}$/.test(loan._id.replace(/_default$/, ''))) {
         const cleanLoanId = loan._id.replace(/_default$/, '');
         
-        // FIX: Use ACTUAL database data to determine EMI status
-        const hasPaidEMIs = (loan as any).emiPaidCount > 0 || 
-                           (loan.totalPaidAmount && loan.totalPaidAmount > 0) ||
-                           (loan.emiHistory && loan.emiHistory.length > 0);
-        
-        console.log(`🔍 Loan ${loan.loanNumber} Database Status:`, {
-          emiPaidCount: (loan as any).emiPaidCount,        // From database
-          totalPaidAmount: loan.totalPaidAmount,           // From database  
-          emiHistoryCount: loan.emiHistory?.length || 0,   // From database
-          hasPaidEMIs: hasPaidEMIs
+        // DEBUG: Log ALL loan data from database
+        console.log(`📋 Loan ${loan.loanNumber} FULL DATABASE DATA:`, {
+          loanNumber: loan.loanNumber,
+          // Next EMI Date from database
+          nextEmiDate: loan.nextEmiDate,
+          // EMI Start Date from database  
+          emiStartDate: loan.emiStartDate,
+          // Payment counts from database
+          emiPaidCount: loan.emiPaidCount,
+          totalPaidAmount: loan.totalPaidAmount,
+          // Dates from database
+          lastEmiDate: loan.lastEmiDate,
+          dateApplied: loan.dateApplied,
+          // EMI History from database
+          emiHistoryCount: loan.emiHistory?.length || 0,
+          // Loan details
+          loanType: loan.loanType,
+          amount: loan.amount,
+          emiAmount: loan.emiAmount
         });
-        
+
+        // FIX: Use the ACTUAL nextEmiDate from database if it exists
         let nextEmiDate;
-        if (hasPaidEMIs) {
-          // If EMIs have been paid, use the ACTUAL nextEmiDate from database
-          // or calculate from lastPaymentDate if available
-          const lastPaymentDate = (loan as any).lastPaymentDate || (loan as any).lastEmiDate;
-          if (lastPaymentDate) {
-            nextEmiDate = calculateNextEmiDate(lastPaymentDate, loan.loanType);
-            console.log(`💰 Loan ${loan.loanNumber} has paid EMIs, calculating from:`, lastPaymentDate);
-          } else {
-            // Fallback: use existing nextEmiDate from database
-            nextEmiDate = (loan as any).nextEmiDate || loan.emiStartDate || loan.dateApplied;
-            console.log(`🔄 Loan ${loan.loanNumber} using existing nextEmiDate:`, nextEmiDate);
-          }
+        
+        if (loan.nextEmiDate) {
+          // USE THE ACTUAL NEXT EMI DATE FROM DATABASE
+          nextEmiDate = loan.nextEmiDate;
+          console.log(`✅ Loan ${loan.loanNumber} using ACTUAL nextEmiDate from database:`, nextEmiDate);
         } else {
-          // If no EMIs paid, next EMI date should be the EMI start date
-          nextEmiDate = loan.emiStartDate || loan.dateApplied;
-          console.log(`🆕 Loan ${loan.loanNumber} has NO paid EMIs, using emiStartDate:`, loan.emiStartDate);
+          // Fallback: Calculate based on payment history
+          const hasPaidEMIs = loan.emiPaidCount > 0 || 
+                             (loan.totalPaidAmount && loan.totalPaidAmount > 0) ||
+                             (loan.emiHistory && loan.emiHistory.length > 0);
+          
+          if (hasPaidEMIs) {
+            // If EMIs paid but no nextEmiDate in database, calculate from lastEmiDate
+            const lastEmiDate = loan.lastEmiDate;
+            if (lastEmiDate) {
+              nextEmiDate = calculateNextEmiDate(lastEmiDate, loan.loanType);
+              console.log(`💰 Loan ${loan.loanNumber} has paid EMIs, calculating next date from lastEmiDate:`, lastEmiDate);
+            } else {
+              // Fallback to EMI start date
+              nextEmiDate = loan.emiStartDate || loan.dateApplied;
+              console.log(`⚠️ Loan ${loan.loanNumber} has paid EMIs but no lastEmiDate, using emiStartDate:`, nextEmiDate);
+            }
+          } else {
+            // No EMIs paid, use EMI start date
+            nextEmiDate = loan.emiStartDate || loan.dateApplied;
+            console.log(`🆕 Loan ${loan.loanNumber} has NO paid EMIs, using emiStartDate:`, nextEmiDate);
+          }
         }
         
         const enhancedLoan: Loan = {
           ...loan,
           _id: cleanLoanId,
           loanNumber: loan.loanNumber || `L${index + 1}`,
-          totalEmiCount: (loan as any).totalEmiCount || loan.loanDays || 30,
-          emiPaidCount: (loan as any).emiPaidCount || 0,
-          lastEmiDate: (loan as any).lastEmiDate || loan.dateApplied,
+          totalEmiCount: loan.totalEmiCount || loan.loanDays || 30,
+          emiPaidCount: loan.emiPaidCount || 0,
+          lastEmiDate: loan.lastEmiDate || loan.dateApplied,
           nextEmiDate: nextEmiDate,
-          totalPaidAmount: (loan as any).totalPaidAmount || 0,
-          remainingAmount: (loan as any).remainingAmount || loan.amount,
-          emiHistory: (loan as any).emiHistory || [],
-          status: (loan as any).status || 'active'
+          totalPaidAmount: loan.totalPaidAmount || 0,
+          remainingAmount: loan.remainingAmount || loan.amount,
+          emiHistory: loan.emiHistory || [],
+          status: loan.status || 'active',
+          emiStartDate: loan.emiStartDate || loan.dateApplied
         };
+        
         loans.push(enhancedLoan);
-        console.log(`📋 Final Loan ${enhancedLoan.loanNumber}:`, {
+        console.log(`🎯 Final Loan ${enhancedLoan.loanNumber}:`, {
           nextEmiDate: enhancedLoan.nextEmiDate,
+          source: loan.nextEmiDate ? 'FROM_DATABASE' : 'CALCULATED',
           emiPaidCount: enhancedLoan.emiPaidCount,
           totalPaidAmount: enhancedLoan.totalPaidAmount,
-          hasPaidEMIs: hasPaidEMIs
+          emiStartDate: enhancedLoan.emiStartDate
         });
       } else {
         console.log(`⚠️ Skipping loan ${index + 1} - invalid or temporary ID:`, loan._id);
@@ -1089,11 +1113,39 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
     });
   }
   
-  // Fallback loan creation (keep your existing logic here)
+  // ONLY create fallback loan if NO valid database loans found AND customer has loan data
+  // AND customerDetails is null (meaning API call failed)
   if (loans.length === 0 && customer.loanAmount && !customerDetails) {
-    // ... your existing fallback logic
+    console.log('⚠️ No valid database loans found and API failed, creating fallback loan from customer data');
+    const cleanCustomerId = customer._id?.replace?.(/_default$/, '') || customer._id;
+    
+    const fallbackLoan: Loan = {
+      _id: `fallback_${cleanCustomerId}`,
+      customerId: cleanCustomerId,
+      customerName: customer.name,
+      customerNumber: customer.customerNumber || `CN${cleanCustomerId}`,
+      loanNumber: 'L1',
+      amount: customer.loanAmount || 0,
+      emiAmount: customer.emiAmount || 0,
+      loanType: customer.loanType || 'Daily',
+      dateApplied: customer.createdAt || new Date().toISOString(),
+      emiStartDate: customer.createdAt || new Date().toISOString(),
+      loanDays: 30,
+      totalEmiCount: 30,
+      emiPaidCount: 0,
+      lastEmiDate: customer.createdAt || new Date().toISOString(),
+      nextEmiDate: customer.createdAt || new Date().toISOString(),
+      totalPaidAmount: 0,
+      remainingAmount: customer.loanAmount || 0,
+      emiHistory: [],
+      status: customer.status || 'active',
+      isFallback: true
+    };
+    loans.push(fallbackLoan);
+    console.log('📝 Created fallback loan (API failed):', fallbackLoan);
   }
   
+  console.log(`🎯 Final loans count: ${loans.length}`);
   return loans;
 };
   const validateStep1 = () => {
