@@ -1386,7 +1386,7 @@ function RecentActivities() {
   );
 }
 
-// Customer Details View Component
+// Enhanced Customer Details View Component with FI Documents
 function CustomerDetailsView({ customer, onBack, onDelete }: { 
   customer: any; 
   onBack: () => void;
@@ -1408,36 +1408,71 @@ function CustomerDetailsView({ customer, onBack, onDelete }: {
     setShowDeleteConfirm(false);
   };
 
+  // Function to handle document download
+  const handleDownload = (documentUrl: string, documentType: string) => {
+    if (documentUrl) {
+      const link = document.createElement('a');
+      link.href = documentUrl;
+      link.download = `${customer.name}_${documentType}.pdf`;
+      link.click();
+    } else {
+      alert('Document not available');
+    }
+  };
+
+  // Function to handle document share via WhatsApp
+  const handleShareWhatsApp = (documentUrl: string, documentType: string) => {
+    if (documentUrl) {
+      const message = `FI Document for ${customer.name} - ${documentType}`;
+      const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message + ' ' + documentUrl)}`;
+      window.open(whatsappUrl, '_blank');
+    } else {
+      alert('Document not available for sharing');
+    }
+  };
+
   return (
     <div className="space-y-6">
-      {/* Header with Back Button */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <button 
-            onClick={onBack}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <span className="text-gray-600">← Back</span>
-          </button>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">{customer.name}</h1>
-            <p className="text-gray-600">{customer.businessName} • {customer.area}</p>
+      {/* Enhanced Header with Background Color */}
+      <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg p-6 text-white">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <button 
+              onClick={onBack}
+              className="flex items-center space-x-2 bg-white text-blue-700 px-4 py-2 rounded-lg hover:bg-blue-50 transition-colors font-medium"
+            >
+              <span className="text-lg">←</span>
+              <span>Back</span>
+            </button>
+            <div>
+              <div className="flex items-center space-x-4">
+                <h1 className="text-2xl font-bold">{customer.name}</h1>
+                <span className="bg-blue-500 text-white px-3 py-1 rounded-full text-sm font-medium">
+                  {customer.customerNumber}
+                </span>
+              </div>
+              <div className="flex items-center space-x-4 mt-2">
+                <p className="text-blue-100">{customer.businessName}</p>
+                <span className="text-blue-200">•</span>
+                <p className="text-blue-100">{customer.area}</p>
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="flex items-center space-x-3">
-          <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-            customer.status === 'active' 
-              ? 'bg-green-100 text-green-800' 
-              : 'bg-red-100 text-red-800'
-          }`}>
-            {customer.status === 'active' ? 'Active' : 'Inactive'}
-          </span>
-          <button 
-            onClick={handleDeleteClick}
-            className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition-colors text-sm font-medium"
-          >
-            Delete Profile
-          </button>
+          <div className="flex items-center space-x-3">
+            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+              customer.status === 'active' 
+                ? 'bg-green-500 text-white' 
+                : 'bg-red-500 text-white'
+            }`}>
+              {customer.status === 'active' ? 'Active' : 'Inactive'}
+            </span>
+            <button 
+              onClick={handleDeleteClick}
+              className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors text-sm font-medium"
+            >
+              Delete Profile
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1487,7 +1522,7 @@ function CustomerDetailsView({ customer, onBack, onDelete }: {
         </div>
       )}
 
-      {/* Tabs */}
+      {/* Tabs - Added FI Documents */}
       <div className="border-b border-gray-200">
         <nav className="-mb-px flex space-x-8">
           <button
@@ -1510,72 +1545,153 @@ function CustomerDetailsView({ customer, onBack, onDelete }: {
           >
             Transaction History
           </button>
+          <button
+            onClick={() => setActiveTab('fi-documents')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'fi-documents'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            FI Documents
+          </button>
         </nav>
       </div>
 
       {/* Tab Content */}
       {activeTab === 'loan-details' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Loan Information */}
+        <div className="space-y-6">
+          {/* Customer Information Box */}
           <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Loan Information</h3>
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+              <h3 className="text-lg font-semibold text-gray-900">Customer Information</h3>
             </div>
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Loan Number</p>
-                  <p className="text-lg font-semibold text-gray-900">{customer.loanNumber}</p>
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">Customer Name</p>
+                    <p className="text-lg font-semibold text-gray-900">{customer.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">Business Name</p>
+                    <p className="text-lg font-semibold text-gray-900">{customer.businessName}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">Primary Phone Number</p>
+                    <p className="text-lg font-semibold text-gray-900">{customer.phone}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">Secondary Phone Number</p>
+                    <p className="text-lg font-semibold text-gray-900">{customer.secondaryPhone || 'N/A'}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Loan Amount</p>
-                  <p className="text-lg font-semibold text-gray-900">₹{customer.loanAmount?.toLocaleString()}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Loan Type</p>
-                  <p className="text-lg font-semibold text-gray-900">{customer.loanType}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Area</p>
-                  <p className="text-lg font-semibold text-gray-900">{customer.area}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Phone</p>
-                  <p className="text-lg font-semibold text-gray-900">{customer.phone}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Business</p>
-                  <p className="text-lg font-semibold text-gray-900">{customer.businessName}</p>
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">WhatsApp Number</p>
+                    <p className="text-lg font-semibold text-gray-900">{customer.whatsappNumber || customer.phone}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">Address</p>
+                    <p className="text-lg font-semibold text-gray-900">{customer.address || 'No address provided'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">Area</p>
+                    <p className="text-lg font-semibold text-gray-900">{customer.area}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">Office Category & Category</p>
+                    <div className="flex space-x-2 mt-1">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        {customer.officeCategory || 'N/A'}
+                      </span>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        customer.category === 'A' ? 'bg-green-100 text-green-800' :
+                        customer.category === 'B' ? 'bg-yellow-100 text-yellow-800' :
+                        customer.category === 'C' ? 'bg-blue-100 text-blue-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {customer.category || 'Not specified'}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* EMI Details */}
+          {/* Loan Details Box */}
           <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">EMI Details</h3>
+            <div className="px-6 py-4 border-b border-gray-200 bg-blue-50">
+              <h3 className="text-lg font-semibold text-gray-900">Loan Details</h3>
             </div>
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">EMI Amount</p>
-                  <p className="text-lg font-semibold text-gray-900">₹{customer.emiAmount}</p>
+            <div className="p-6">
+              {/* Single Loan Display */}
+              <div className="space-y-4">
+                <div className="border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-md font-semibold text-gray-900">Loan Details</h4>
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      Active
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Loan Number</p>
+                      <p className="text-lg font-semibold text-gray-900">{customer.loanNumber}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Loan Amount</p>
+                      <p className="text-lg font-semibold text-green-600">₹{customer.loanAmount?.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">EMI Amount</p>
+                      <p className="text-lg font-semibold text-blue-600">₹{customer.emiAmount}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Loan Type</p>
+                      <p className="text-lg font-semibold text-gray-900">{customer.loanType}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Loan Date</p>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {customer.loanDate ? new Date(customer.loanDate).toLocaleDateString() : 'Not specified'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Loan Duration</p>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {customer.loanDays ? `${customer.loanDays} days` : 'Not specified'}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Payment Frequency</p>
-                  <p className="text-lg font-semibold text-gray-900">{customer.loanType}</p>
-                </div>
-                <div className="col-span-2">
-                  <p className="text-sm font-medium text-gray-600">Address</p>
-                  <p className="text-lg font-semibold text-gray-900">{customer.address || 'No address provided'}</p>
-                </div>
-                <div className="col-span-2">
-                  <p className="text-sm font-medium text-gray-600">Created Date</p>
-                  <p className="text-lg font-semibold text-gray-900">
-                    {customer.createdAt ? new Date(customer.createdAt).toLocaleDateString() : 'Unknown'}
-                  </p>
-                </div>
+                
+                {/* Additional loans can be added here in similar structure */}
+                {customer.additionalLoans && customer.additionalLoans.map((loan: any, index: number) => (
+                  <div key={index} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-md font-semibold text-gray-900">Loan {index + 2}</h4>
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        Additional
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">Loan Number</p>
+                        <p className="text-lg font-semibold text-gray-900">{loan.loanNumber}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">Loan Amount</p>
+                        <p className="text-lg font-semibold text-green-600">₹{loan.loanAmount?.toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">EMI Amount</p>
+                        <p className="text-lg font-semibold text-blue-600">₹{loan.emiAmount}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -1588,10 +1704,121 @@ function CustomerDetailsView({ customer, onBack, onDelete }: {
             <h3 className="text-lg font-semibold text-gray-900">Transaction History</h3>
           </div>
           <div className="p-6">
-            <div className="text-center py-8">
-              <div className="text-gray-400 text-4xl mb-4">📝</div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No transactions found</h3>
-              <p className="text-gray-600">Transaction history will appear here when EMI payments are made.</p>
+            {customer.transactions && customer.transactions.length > 0 ? (
+              <div className="space-y-4">
+                {customer.transactions.map((transaction: any, index: number) => (
+                  <div key={index} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">EMI Payment</p>
+                        <p className="text-lg font-semibold text-green-600">₹{transaction.amount}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-medium text-gray-600">Date</p>
+                        <p className="text-lg font-semibold text-gray-900">
+                          {new Date(transaction.date).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                    {transaction.notes && (
+                      <p className="text-sm text-gray-500 mt-2">{transaction.notes}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <div className="text-gray-400 text-4xl mb-4">📝</div>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No transactions found</h3>
+                <p className="text-gray-600">Transaction history will appear here when EMI payments are made.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'fi-documents' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Shop FI Document */}
+            <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+              <div className="px-6 py-4 border-b border-gray-200 bg-green-50">
+                <h3 className="text-lg font-semibold text-gray-900">Shop FI Document</h3>
+              </div>
+              <div className="p-6">
+                <div className="text-center">
+                  <div className="text-green-400 text-6xl mb-4">🏪</div>
+                  <p className="text-gray-600 mb-4">Shop Field Investigation Document</p>
+                  <div className="flex justify-center space-x-3">
+                    <button 
+                      onClick={() => handleDownload(customer.fiDocuments?.shop, 'Shop_FI')}
+                      className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      Download
+                    </button>
+                    <button 
+                      onClick={() => handleShareWhatsApp(customer.fiDocuments?.shop, 'Shop FI Document')}
+                      className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors flex items-center space-x-2"
+                    >
+                      <span>WhatsApp</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Home FI Document */}
+            <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+              <div className="px-6 py-4 border-b border-gray-200 bg-blue-50">
+                <h3 className="text-lg font-semibold text-gray-900">Home FI Document</h3>
+              </div>
+              <div className="p-6">
+                <div className="text-center">
+                  <div className="text-blue-400 text-6xl mb-4">🏠</div>
+                  <p className="text-gray-600 mb-4">Home Field Investigation Document</p>
+                  <div className="flex justify-center space-x-3">
+                    <button 
+                      onClick={() => handleDownload(customer.fiDocuments?.home, 'Home_FI')}
+                      className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      Download
+                    </button>
+                    <button 
+                      onClick={() => handleShareWhatsApp(customer.fiDocuments?.home, 'Home FI Document')}
+                      className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors flex items-center space-x-2"
+                    >
+                      <span>WhatsApp</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Document Status */}
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+              <h3 className="text-lg font-semibold text-gray-900">Document Status</h3>
+            </div>
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                  <span className="text-gray-700">Shop FI Document</span>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    customer.fiDocuments?.shop ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                  }`}>
+                    {customer.fiDocuments?.shop ? 'Uploaded' : 'Not Uploaded'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                  <span className="text-gray-700">Home FI Document</span>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    customer.fiDocuments?.home ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                  }`}>
+                    {customer.fiDocuments?.home ? 'Uploaded' : 'Not Uploaded'}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1600,7 +1827,7 @@ function CustomerDetailsView({ customer, onBack, onDelete }: {
   );
 }
 
-// Enhanced Pending Requests Component with proper data extraction
+// Enhanced Pending Requests Component with Filters
 function PendingRequestsView({ 
   requests, 
   onApprove, 
@@ -1614,6 +1841,12 @@ function PendingRequestsView({
 }) {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
+  const [filters, setFilters] = useState({
+    requestType: '',
+    status: '',
+    operator: '',
+    sortBy: 'newest'
+  });
 
   const handleViewEdit = (request: any) => {
     setSelectedRequest(request);
@@ -1637,6 +1870,39 @@ function PendingRequestsView({
       onReject(selectedRequest);
       handleCloseModal();
     }
+  };
+
+  // Filter and sort requests
+  const filteredAndSortedRequests = requests
+    .filter(request => {
+      const matchesType = !filters.requestType || request.type === filters.requestType;
+      const matchesStatus = !filters.status || request.status === filters.status;
+      const matchesOperator = !filters.operator || request.createdBy === filters.operator;
+      return matchesType && matchesStatus && matchesOperator;
+    })
+    .sort((a, b) => {
+      if (filters.sortBy === 'newest') {
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      } else {
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      }
+    });
+
+  // Get unique values for filters
+  const requestTypes = [...new Set(requests.map(r => r.type))];
+  const operators = [...new Set(requests.map(r => r.createdBy).filter(Boolean))];
+
+  const handleFilterChange = (key: string, value: string) => {
+    setFilters(prev => ({ ...prev, [key]: value }));
+  };
+
+  const clearFilters = () => {
+    setFilters({
+      requestType: '',
+      status: '',
+      operator: '',
+      sortBy: 'newest'
+    });
   };
 
   // Helper function to format field names
@@ -1918,15 +2184,145 @@ function PendingRequestsView({
           </div>
         </div>
         <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
-          {requests.length} Pending
+          {filteredAndSortedRequests.length} Pending
         </span>
+      </div>
+
+      {/* Filters Section */}
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+        <div className="p-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+            {/* Request Type Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Request Type
+              </label>
+              <select
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                value={filters.requestType}
+                onChange={(e) => handleFilterChange('requestType', e.target.value)}
+              >
+                <option value="">All Types</option>
+                <option value="New Customer">New Customer</option>
+                <option value="EDIT">Edit Request</option>
+              </select>
+            </div>
+
+            {/* Status Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Status
+              </label>
+              <select
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                value={filters.status}
+                onChange={(e) => handleFilterChange('status', e.target.value)}
+              >
+                <option value="">All Status</option>
+                <option value="pending">Pending</option>
+                <option value="reviewed">Reviewed</option>
+              </select>
+            </div>
+
+            {/* Operator Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Operator
+              </label>
+              <select
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                value={filters.operator}
+                onChange={(e) => handleFilterChange('operator', e.target.value)}
+              >
+                <option value="">All Operators</option>
+                {operators.map(operator => (
+                  <option key={operator} value={operator}>{operator}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Sort By Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Sort By Date
+              </label>
+              <select
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                value={filters.sortBy}
+                onChange={(e) => handleFilterChange('sortBy', e.target.value)}
+              >
+                <option value="newest">Newest First</option>
+                <option value="oldest">Oldest First</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Active Filters Display */}
+          {(filters.requestType || filters.status || filters.operator || filters.sortBy !== 'newest') && (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm text-gray-600">Active filters:</span>
+                {filters.requestType && (
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
+                    Type: {filters.requestType}
+                    <button 
+                      onClick={() => handleFilterChange('requestType', '')}
+                      className="ml-1 text-blue-600 hover:text-blue-800"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+                {filters.status && (
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
+                    Status: {filters.status}
+                    <button 
+                      onClick={() => handleFilterChange('status', '')}
+                      className="ml-1 text-purple-600 hover:text-purple-800"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+                {filters.operator && (
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
+                    Operator: {filters.operator}
+                    <button 
+                      onClick={() => handleFilterChange('operator', '')}
+                      className="ml-1 text-green-600 hover:text-green-800"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+                {filters.sortBy !== 'newest' && (
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-orange-100 text-orange-800">
+                    Sort: {filters.sortBy === 'oldest' ? 'Oldest First' : 'Newest First'}
+                    <button 
+                      onClick={() => handleFilterChange('sortBy', 'newest')}
+                      className="ml-1 text-orange-600 hover:text-orange-800"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={clearFilters}
+                className="text-sm text-red-600 hover:text-red-800"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Requests List */}
       <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
         <div className="p-6">
           <div className="space-y-4">
-            {requests.map((request) => (
+            {filteredAndSortedRequests.map((request) => (
               <div key={request._id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                 <div className="flex-1">
                   <div className="flex items-center space-x-4">
@@ -1953,10 +2349,14 @@ function PendingRequestsView({
                         }`}>
                           {request.type === 'EDIT' ? 'EDIT Request' : 'New Customer'}
                         </span>
+                        <span className="text-xs text-gray-500">
+                          #{request.customerNumber || 'N/A'}
+                        </span>
                       </div>
                       <p className="text-xs text-gray-500 mt-1">
                         {request.type === 'EDIT' ? 'Customer Update' : 'New Registration'} • 
-                        Created: {new Date(request.createdAt).toLocaleDateString()}
+                        Created: {new Date(request.createdAt).toLocaleDateString()} •
+                        By: {request.createdBy || 'Unknown Operator'}
                       </p>
                       
                       {/* Quick summary */}
@@ -2007,7 +2407,7 @@ function PendingRequestsView({
               </div>
             ))}
             
-            {requests.length === 0 && (
+            {filteredAndSortedRequests.length === 0 && (
               <div className="text-center py-8">
                 <div className="text-gray-400 text-4xl mb-4">✅</div>
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No pending requests</h3>
@@ -2096,33 +2496,45 @@ export default function DashboardPage() {
   officeCategory: '',
   category: '' // Add category filter
 });
+
+  // Sort state
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
   const [loading, setLoading] = useState(true)
   const [showLoanDetails, setShowLoanDetails] = useState(false)
 
-  // Enhanced filtered customers calculation
-  const filteredCustomers = customers.filter(customer => {
-  const matchesSearch = searchTerm === '' || 
-    customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    customer.customerNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    customer.phone.includes(searchTerm);
+  // Enhanced filtered and sorted customers calculation
+  const filteredAndSortedCustomers = customers
+    .filter(customer => {
+      const matchesSearch = searchTerm === '' || 
+        customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        customer.customerNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        customer.phone.includes(searchTerm);
 
-  const matchesCustomerNumber = filters.customerNumber === '' || 
-    (customer.customerNumber && customer.customerNumber.toLowerCase().includes(filters.customerNumber.toLowerCase()));
-  
-  const matchesLoanType = filters.loanType === '' || 
-    customer.loanType === filters.loanType;
-  
-  const matchesStatus = filters.status === '' || 
-    customer.status === filters.status;
+      const matchesCustomerNumber = filters.customerNumber === '' || 
+        (customer.customerNumber && customer.customerNumber.toLowerCase().includes(filters.customerNumber.toLowerCase()));
+      
+      const matchesLoanType = filters.loanType === '' || 
+        customer.loanType === filters.loanType;
+      
+      const matchesStatus = filters.status === '' || 
+        customer.status === filters.status;
 
-  const matchesOfficeCategory = filters.officeCategory === '' || 
-    customer.officeCategory === filters.officeCategory;
+      const matchesOfficeCategory = filters.officeCategory === '' || 
+        customer.officeCategory === filters.officeCategory;
 
-  const matchesCategory = filters.category === '' || 
-    customer.category === filters.category;
+      const matchesCategory = filters.category === '' || 
+        customer.category === filters.category;
 
-  return matchesSearch && matchesCustomerNumber && matchesLoanType && matchesStatus && matchesOfficeCategory && matchesCategory;
-});
+      return matchesSearch && matchesCustomerNumber && matchesLoanType && matchesStatus && matchesOfficeCategory && matchesCategory;
+    })
+    .sort((a, b) => {
+      if (sortOrder === 'asc') {
+        return a.customerNumber.localeCompare(b.customerNumber);
+      } else {
+        return b.customerNumber.localeCompare(a.customerNumber);
+      }
+    });
 
   // Fetch real data
   const fetchDashboardData = async () => {
@@ -2346,7 +2758,12 @@ export default function DashboardPage() {
     router.push('/auth');
   }
 
-  // Enhanced Search and Filters function
+  // Toggle sort order
+  const toggleSortOrder = () => {
+    setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+  };
+
+  // Enhanced Search and Filters function with Sort Button
   const renderSearchAndFilters = () => {
   const handleFilterChange = (key: keyof typeof filters, value: string) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -2361,6 +2778,7 @@ export default function DashboardPage() {
       category: ''
     });
     setSearchTerm('');
+    setSortOrder('asc');
   };
 
   const loanTypes = [...new Set(customers.map(customer => customer.loanType).filter(Boolean))];
@@ -2386,6 +2804,17 @@ export default function DashboardPage() {
         </div>
         
         <div className="flex gap-2">
+          {/* Sort Button */}
+          <button
+            onClick={toggleSortOrder}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <span>Sort</span>
+            <span className={`transform ${sortOrder === 'asc' ? '' : 'rotate-180'}`}>
+              ↓
+            </span>
+          </button>
+          
           <button
             onClick={() => setShowFilters(!showFilters)}
             className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
@@ -2396,7 +2825,7 @@ export default function DashboardPage() {
             </span>
           </button>
           
-          {(filters.customerNumber || filters.loanType || filters.status || filters.officeCategory || filters.category || searchTerm) && (
+          {(filters.customerNumber || filters.loanType || filters.status || filters.officeCategory || filters.category || searchTerm || sortOrder !== 'asc') && (
             <button
               onClick={clearFilters}
               className="px-4 py-2 text-red-600 border border-red-300 rounded-lg hover:bg-red-50 transition-colors"
@@ -2497,7 +2926,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Active Filters Display */}
-          {(filters.customerNumber || filters.loanType || filters.status || filters.officeCategory || filters.category) && (
+          {(filters.customerNumber || filters.loanType || filters.status || filters.officeCategory || filters.category || sortOrder !== 'asc') && (
             <div className="mt-4 pt-4 border-t border-gray-200">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm text-gray-600">Active filters:</span>
@@ -2556,6 +2985,15 @@ export default function DashboardPage() {
                     </button>
                   </span>
                 )}
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800">
+                  Sort: {sortOrder === 'asc' ? 'A-Z' : 'Z-A'}
+                  <button 
+                    onClick={() => setSortOrder('asc')}
+                    className="ml-1 text-gray-600 hover:text-gray-800"
+                  >
+                    ×
+                  </button>
+                </span>
               </div>
             </div>
           )}
@@ -2564,10 +3002,11 @@ export default function DashboardPage() {
 
       <div className="flex justify-between items-center">
         <span className="text-sm text-gray-600">
-          Showing {filteredCustomers.length} of {customers.length} customers
+          Showing {filteredAndSortedCustomers.length} of {customers.length} customers
+          {sortOrder === 'asc' ? ' (A-Z)' : ' (Z-A)'}
         </span>
         
-        {filteredCustomers.length < customers.length && (
+        {(filteredAndSortedCustomers.length < customers.length || sortOrder !== 'asc') && (
           <button
             onClick={clearFilters}
             className="text-sm text-blue-600 hover:text-blue-800"
@@ -2790,7 +3229,7 @@ const renderDashboard = () => (
   </div>
 )
 
-  // Customers Section with Enhanced Filters
+  // Customers Section with Enhanced Filters and Sort
   const renderCustomers = () => (
   <div className="space-y-6">
     <div className="flex items-center justify-between">
@@ -2798,10 +3237,12 @@ const renderDashboard = () => (
         <h1 className="text-2xl font-bold text-gray-900">Customer Management</h1>
         <p className="text-gray-600">Manage all customer accounts and loan details</p>
       </div>
-      <span className="text-sm text-gray-600">{customers.length} customers</span>
+      <span className="text-sm text-gray-600">
+        {customers.length} customers • Sorted {sortOrder === 'asc' ? 'A-Z' : 'Z-A'}
+      </span>
     </div>
 
-    {/* Enhanced Search and Filters */}
+    {/* Enhanced Search and Filters with Sort */}
     {renderSearchAndFilters()}
 
     <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
@@ -2818,7 +3259,7 @@ const renderDashboard = () => (
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {filteredCustomers.map((customer) => (
+            {filteredAndSortedCustomers.map((customer) => (
               <tr key={customer._id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 w-1/6">{customer.customerNumber}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 w-1/6">{customer.name}</td>
@@ -2846,7 +3287,7 @@ const renderDashboard = () => (
                 </td>
               </tr>
             ))}
-            {filteredCustomers.length === 0 && (
+            {filteredAndSortedCustomers.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
                   No customers found
