@@ -168,6 +168,11 @@ interface NewCustomerStep3 {
   [key: string]: any;
 }
 
+interface Filters {
+  status: string;
+  officeCategory: string;
+}
+
 interface RenewLoanData {
   loanId: string;
   customerId: string;
@@ -458,6 +463,10 @@ const [editStatus, setEditStatus] = useState('Paid');
 const [showEditPaymentModal, setShowEditPaymentModal] = useState(false);
 const [deletingPayment, setDeletingPayment] = useState<EMIHistory | null>(null);
 const [showDeleteConfirmationModal, setShowDeleteConfirmationModal] = useState(false);
+const [emiSearchQuery, setEmiSearchQuery] = useState('');
+const [emiSortOrder, setEmiSortOrder] = useState<'asc' | 'desc'>('asc');
+const [customerSortOrder, setCustomerSortOrder] = useState<'asc' | 'desc'>('asc');
+const [selectedCustomerForEMI, setSelectedCustomerForEMI] = useState<Customer | null>(null);
   const [calendarFilter, setCalendarFilter] = useState<{
     emiStatus: 'all' | 'paid' | 'due' | 'overdue' | 'partial' | 'upcoming';
     loanFilter: 'all' | string;
@@ -2225,6 +2234,57 @@ const debugEMIPayments = () => {
       return;
     }
   }
+
+  const debugDataStorage = (step1Data: NewCustomerStep1, step2Data: NewCustomerStep2, step3Data: NewCustomerStep3) => {
+  console.log('🔍 DEBUG - Data Being Sent to API:');
+  
+  // Step 1 Data
+  console.log('📋 STEP 1 - Customer Details:');
+  console.log('- Name:', step1Data.name);
+  console.log('- Primary Phone:', step1Data.phone[0]);
+  console.log('- Secondary Phone:', step1Data.phone[1]);
+  console.log('- WhatsApp:', step1Data.whatsappNumber);
+  console.log('- Business Name:', step1Data.businessName);
+  console.log('- Area:', step1Data.area);
+  console.log('- Customer Number:', `CN${step1Data.customerNumber.replace('CN', '')}`);
+  console.log('- Address:', step1Data.address);
+  console.log('- Category:', step1Data.category);
+  console.log('- Office Category:', step1Data.officeCategory);
+  console.log('- Profile Picture:', step1Data.profilePicture?.name || 'None');
+  console.log('- FI Shop Doc:', step1Data.fiDocuments.shop?.name || 'None');
+  console.log('- FI Home Doc:', step1Data.fiDocuments.home?.name || 'None');
+  
+  // Step 2 Data
+  console.log('💰 STEP 2 - Loan Details:');
+  console.log('- Loan Type:', step2Data.loanType);
+  console.log('- EMI Collection Type:', step2Data.emiType);
+  console.log('- Loan Date:', step2Data.loanDate);
+  console.log('- EMI Start Date:', step2Data.emiStartDate);
+  console.log('- Loan Amount:', step2Data.loanAmount);
+  console.log('- EMI Amount:', step2Data.emiAmount);
+  console.log('- Loan Days:', step2Data.loanDays);
+  console.log('- Custom EMI Amount:', step2Data.customEmiAmount || 'N/A');
+  
+  // Step 3 Data
+  console.log('🔐 STEP 3 - Login Credentials:');
+  console.log('- Login ID:', step3Data.loginId);
+  console.log('- Password:', step3Data.password ? '***' : 'Not set');
+  console.log('- Confirm Password:', step3Data.confirmPassword ? '***' : 'Not set');
+  
+  // Calculated fields
+  console.log('🧮 CALCULATED FIELDS:');
+  console.log('- Final Customer Number:', `CN${step1Data.customerNumber.replace('CN', '')}`);
+  console.log('- First Loan Number:', 'L1 (should be auto-assigned)');
+  console.log('- Total Loan Amount:', 
+    step2Data.emiType === 'custom' && step2Data.loanType !== 'Daily' 
+      ? ((Number(step2Data.emiAmount || 0) * (Number(step2Data.loanDays || 1) - 1)) + 
+         (Number(step2Data.customEmiAmount || 0) * 1)).toLocaleString()
+      : (Number(step2Data.emiAmount || 0) * Number(step2Data.loanDays || 1)).toLocaleString()
+  );
+};
+
+// Call this in handleAddCustomer before the API call
+debugDataStorage(step1Data, step2Data, step3Data);
 
   // ENHANCED: Validate Step 2 data with detailed checks
   console.log('🔍 DEBUG - Validating Step 2 data before submission:');
@@ -6064,37 +6124,378 @@ const renderDeleteConfirmationModal = () => {
   );
 };
 
-  const renderEMI = () => (
+  const renderEMI = () => {
+  // Filter customers for EMI section
+  const filteredEMICustomers = customers.filter(customer => {
+    const matchesSearch = emiSearchQuery === '' || 
+      customer.name.toLowerCase().includes(emiSearchQuery.toLowerCase()) ||
+      (customer.customerNumber && customer.customerNumber.toLowerCase().includes(emiSearchQuery.toLowerCase()));
+    
+    return matchesSearch && customer.status === 'active';
+  });
+
+  // Sort EMI customers by customer number
+  const sortedEMICustomers = [...filteredEMICustomers].sort((a, b) => {
+    const aNumber = a.customerNumber || '';
+    const bNumber = b.customerNumber || '';
+    
+    if (emiSortOrder === 'asc') {
+      return aNumber.localeCompare(bNumber);
+    } else {
+      return bNumber.localeCompare(aNumber);
+    }
+  });
+
+  // Get EMI status for a customer with real data
+  const getEMIStatus = (customer: Customer) => {
+    const today = new Date().toISOString().split('T')[0];
+    const customerLoans = getAllCustomerLoans(customer, null);
+    
+    let hasPaid = false;
+    let hasPartial = false;
+    let hasUnpaid = false;
+
+    customerLoans.forEach(loan => {
+      if (loan.emiHistory && loan.emiHistory.length > 0) {
+        const todayPayment = loan.emiHistory.find(payment => 
+          payment.paymentDate === today
+        );
+        
+        if (todayPayment) {
+          if (todayPayment.status === 'Paid') {
+            hasPaid = true;
+          } else if (todayPayment.status === 'Partial') {
+            hasPartial = true;
+          }
+        } else {
+          hasUnpaid = true;
+        }
+      } else {
+        hasUnpaid = true;
+      }
+    });
+
+    if (hasPaid) return 'paid';
+    if (hasPartial) return 'partial';
+    return 'unpaid';
+  };
+
+  const getEMIStatusColor = (status: string) => {
+    switch (status) {
+      case 'paid': return 'bg-green-100 text-green-800';
+      case 'partial': return 'bg-yellow-100 text-yellow-800';
+      case 'unpaid': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getEMIStatusText = (status: string) => {
+    switch (status) {
+      case 'paid': return 'Paid';
+      case 'partial': return 'Partial Paid';
+      case 'unpaid': return 'Unpaid';
+      default: return 'Unknown';
+    }
+  };
+
+  const handleCustomerSelectForEMI = (customer: Customer) => {
+    setSelectedCustomerForEMI(customer);
+    setSelectedCustomer(customer);
+    setShowUpdateEMI(true);
+  };
+
+  const handleViewCustomerLoans = (customer: Customer) => {
+    // Toggle - if same customer is clicked again, close it
+    if (selectedCustomerForEMI?._id === customer._id) {
+      setSelectedCustomerForEMI(null);
+    } else {
+      setSelectedCustomerForEMI(customer);
+    }
+  };
+
+  // Get payment status for a specific loan with real data
+  const getLoanPaymentStatus = (loan: Loan) => {
+    const today = new Date().toISOString().split('T')[0];
+    const todayPayment = loan.emiHistory?.find(payment => payment.paymentDate === today);
+    
+    return {
+      status: todayPayment?.status || 'Unpaid',
+      amount: todayPayment?.amount || 0,
+      date: todayPayment?.paymentDate || today
+    };
+  };
+
+  const getPaymentStatusColor = (status: string) => {
+    switch (status) {
+      case 'Paid': return 'bg-green-100 text-green-800';
+      case 'Partial': return 'bg-yellow-100 text-yellow-800';
+      case 'Advance': return 'bg-blue-100 text-blue-800';
+      default: return 'bg-red-100 text-red-800';
+    }
+  };
+
+  return (
     <div className="px-4 py-6 sm:px-0">
       <div className="bg-white shadow rounded-lg">
         <div className="px-4 py-5 sm:px-6">
           <h3 className="text-lg leading-6 font-medium text-gray-900">EMI Management</h3>
-          <p className="mt-1 max-w-2xl text-sm text-gray-500">Update daily EMI collections</p>
+          <p className="mt-1 max-w-2xl text-sm text-gray-500">Manage daily EMI collections for all customers</p>
         </div>
+        
         <div className="border-t border-gray-200">
           <div className="px-4 py-5 sm:p-6">
-            <div className="space-y-6">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-                <h4 className="text-lg font-medium text-blue-900 mb-4">Update EMI Payment</h4>
-                <p className="text-gray-600 mb-4">Search for a customer and record their EMI payment</p>
-                <button 
-                  onClick={() => setShowUpdateEMI(true)}
-                  className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700"
-                >
-                  Update EMI
-                </button>
+            {/* Search and Sort Section */}
+            <div className="mb-6 space-y-4">
+              <div className="flex flex-col sm:flex-row gap-4 justify-between">
+                <div className="flex-1">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Search by customer name or customer number..."
+                      className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      value={emiSearchQuery}
+                      onChange={(e) => setEmiSearchQuery(e.target.value)}
+                    />
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <span className="text-gray-400">🔍</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setEmiSortOrder(emiSortOrder === 'asc' ? 'desc' : 'asc')}
+                    className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    <span>Sort {emiSortOrder === 'asc' ? '↑' : '↓'}</span>
+                  </button>
+                </div>
               </div>
 
-              <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-                <h4 className="text-lg font-medium text-green-900 mb-4">Today's EMI Summary</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-green-600">{todayStats.emiCollected}</p>
-                    <p className="text-sm text-green-700">EMI Collected</p>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">
+                  Showing {sortedEMICustomers.length} of {customers.filter(c => c.status === 'active').length} active customers
+                </span>
+                
+                {emiSearchQuery && (
+                  <button
+                    onClick={() => setEmiSearchQuery('')}
+                    className="text-sm text-blue-600 hover:text-blue-800"
+                  >
+                    Clear search
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Customers List */}
+            <div className="bg-white shadow-sm rounded-lg border border-gray-200">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
+                        Customer Number
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
+                        Customer Name
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
+                        Business Name
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
+                        Office
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
+                        EMI Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {sortedEMICustomers.map((customer) => {
+                      const emiStatus = getEMIStatus(customer);
+                      const isSelected = selectedCustomerForEMI?._id === customer._id;
+                      const customerLoans = getAllCustomerLoans(customer, null);
+                      
+                      return (
+                        <>
+                          <tr 
+                            key={customer._id} 
+                            className={`hover:bg-gray-50 cursor-pointer transition-colors duration-200 ${
+                              isSelected ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
+                            }`}
+                            onClick={() => handleViewCustomerLoans(customer)}
+                          >
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 w-1/6">
+                              {customer.customerNumber}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 w-1/6">
+                              {customer.name}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/6">
+                              {customer.businessName}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/6">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                customer.officeCategory === 'Office 1' 
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : 'bg-purple-100 text-purple-800'
+                              }`}>
+                                {customer.officeCategory || 'N/A'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm w-1/6">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getEMIStatusColor(emiStatus)}`}>
+                                {getEMIStatusText(emiStatus)}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium w-1/6">
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCustomerSelectForEMI(customer);
+                                }}
+                                className="bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 text-sm transition-colors"
+                              >
+                                Update EMI
+                              </button>
+                            </td>
+                          </tr>
+                          
+                          {/* Expanded Loan Details with smooth transition */}
+                          {isSelected && (
+                            <tr className="bg-blue-50">
+                              <td colSpan={6} className="px-6 py-4">
+                                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm transition-all duration-300 ease-in-out">
+                                  <h5 className="font-semibold text-gray-900 mb-3 text-lg">
+                                    Loan Details - {customer.name} - {customer.customerNumber}
+                                  </h5>
+                                  <div className="space-y-3">
+                                    {customerLoans.map((loan, index) => {
+                                      const paymentInfo = getLoanPaymentStatus(loan);
+                                      const completion = calculateEMICompletion(loan);
+                                      
+                                      return (
+                                        <div key={loan._id} className="flex justify-between items-center p-4 border border-gray-200 rounded-md bg-gray-50 hover:bg-white transition-colors">
+                                          <div className="flex-1">
+                                            <div className="flex items-center gap-6 mb-2">
+                                              <span className="font-medium text-gray-900 text-lg">
+                                                {loan.loanNumber}
+                                              </span>
+                                              <span className="text-sm text-gray-700 font-semibold">
+                                                EMI: ₹{loan.emiAmount}
+                                              </span>
+                                              <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getPaymentStatusColor(paymentInfo.status)}`}>
+                                                {paymentInfo.status}
+                                              </span>
+                                            </div>
+                                            <div className="text-sm text-gray-600 grid grid-cols-1 md:grid-cols-2 gap-2">
+                                              <div>
+                                                <span className="font-medium">Next EMI Date: </span>
+                                                {formatDateToDDMMYYYY(loan.nextEmiDate)}
+                                              </div>
+                                              <div>
+                                                <span className="font-medium">Paid: </span>
+                                                {loan.emiPaidCount || 0} / {loan.totalEmiCount || loan.loanDays || 30} EMIs
+                                              </div>
+                                            </div>
+                                            {paymentInfo.amount > 0 && paymentInfo.status !== 'Unpaid' && (
+                                              <div className="text-xs text-green-600 mt-1">
+                                                Today's Payment: ₹{paymentInfo.amount} on {formatDateToDDMMYYYY(paymentInfo.date)}
+                                              </div>
+                                            )}
+                                          </div>
+                                          <button 
+                                            onClick={() => {
+                                              setSelectedCustomerForEMI(customer);
+                                              setSelectedCustomer(customer);
+                                              setSelectedLoanForPayment(loan);
+                                              setShowUpdateEMI(true);
+                                            }}
+                                            className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 text-sm transition-colors"
+                                          >
+                                            Pay EMI
+                                          </button>
+                                        </div>
+                                      );
+                                    })}
+                                    
+                                    {customerLoans.length === 0 && (
+                                      <div className="text-center py-4 text-gray-500">
+                                        No loans found for this customer
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </>
+                      );
+                    })}
+                    
+                    {sortedEMICustomers.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="px-6 py-8 text-center">
+                          <div className="text-gray-400 text-4xl mb-4">💰</div>
+                          <p className="text-gray-500 text-lg">No customers found</p>
+                          <p className="text-sm text-gray-400 mt-2">
+                            {emiSearchQuery 
+                              ? 'Try adjusting your search terms' 
+                              : 'No active customers available for EMI management'
+                            }
+                          </p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Summary Cards */}
+            <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="bg-white p-4 rounded-lg border border-gray-200">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <span className="text-green-500 text-2xl">✅</span>
                   </div>
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-green-600">₹{todayStats.totalCollection}</p>
-                    <p className="text-sm text-green-700">Total Collection</p>
+                  <div className="ml-3">
+                    <p className="text-sm font-medium text-gray-500">Paid Today</p>
+                    <p className="text-2xl font-semibold text-green-600">
+                      {sortedEMICustomers.filter(c => getEMIStatus(c) === 'paid').length}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white p-4 rounded-lg border border-gray-200">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <span className="text-red-500 text-2xl">⏰</span>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm font-medium text-gray-500">Pending</p>
+                    <p className="text-2xl font-semibold text-red-600">
+                      {sortedEMICustomers.filter(c => getEMIStatus(c) === 'unpaid').length}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white p-4 rounded-lg border border-gray-200">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <span className="text-yellow-500 text-2xl">💰</span>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm font-medium text-gray-500">Partial</p>
+                    <p className="text-2xl font-semibold text-yellow-600">
+                      {sortedEMICustomers.filter(c => getEMIStatus(c) === 'partial').length}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -6104,6 +6505,7 @@ const renderDeleteConfirmationModal = () => {
       </div>
     </div>
   );
+};
 
   const renderRequests = () => {
 
@@ -6734,7 +7136,20 @@ const renderCollection = () => {
     </div>
   );
 
-  const renderCustomers = () => (
+  const renderCustomers = () => {
+  // Sort customers by customer number
+  const sortedCustomers = [...filteredCustomers].sort((a, b) => {
+    const aNumber = a.customerNumber || '';
+    const bNumber = b.customerNumber || '';
+    
+    if (customerSortOrder === 'asc') {
+      return aNumber.localeCompare(bNumber);
+    } else {
+      return bNumber.localeCompare(aNumber);
+    }
+  });
+
+  return (
     <div className="px-4 py-6 sm:px-0">
       <div className="mb-6">
         <div className="flex flex-col sm:flex-row gap-4 mb-4">
@@ -6763,76 +7178,227 @@ const renderCollection = () => {
           </div>
         </div>
         
-        {renderSearchAndFilters()}
+        {/* Search, Filter and Sort in one line */}
+        <div className="flex flex-col sm:flex-row gap-4 mb-4">
+          <div className="flex-1">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search by customer name or customer number..."
+                className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <span className="text-gray-400">🔍</span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <span>Filters</span>
+              <span className={`transform transition-transform ${showFilters ? 'rotate-180' : ''}`}>
+                ▼
+              </span>
+            </button>
+            
+            <button
+              onClick={() => setCustomerSortOrder(customerSortOrder === 'asc' ? 'desc' : 'asc')}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <span>Sort {customerSortOrder === 'asc' ? '↑' : '↓'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Filters Section - Updated without Customer Number and Loan Type */}
+        {showFilters && (
+          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Status
+                </label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={filters.status}
+                  onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
+                >
+                  <option value="">All Status</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="pending">Pending</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Office Category
+                </label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={filters.officeCategory}
+                  onChange={(e) => setFilters(prev => ({ ...prev, officeCategory: e.target.value }))}
+                >
+                  <option value="">All Offices</option>
+                  <option value="Office 1">Office 1</option>
+                  <option value="Office 2">Office 2</option>
+                </select>
+              </div>
+            </div>
+
+            {(filters.status || filters.officeCategory) && (
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm text-gray-600">Active filters:</span>
+                  {filters.status && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
+                      Status: {filters.status}
+                      <button 
+                        onClick={() => setFilters(prev => ({ ...prev, status: '' }))}
+                        className="ml-1 text-purple-600 hover:text-purple-800"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                  {filters.officeCategory && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-orange-100 text-orange-800">
+                      Office: {filters.officeCategory}
+                      <button 
+                        onClick={() => setFilters(prev => ({ ...prev, officeCategory: '' }))}
+                        className="ml-1 text-orange-600 hover:text-orange-800"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex justify-between items-center">
+          <span className="text-sm text-gray-600">
+            Showing {sortedCustomers.length} of {customers.length} customers
+          </span>
+          
+          {(filters.status || filters.officeCategory || searchQuery) && (
+            <button
+              onClick={() => {
+                setFilters({
+                  customerNumber: '',
+                  loanType: '',
+                  status: '',
+                  officeCategory: ''
+                });
+                setSearchQuery('');
+              }}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              Clear all filters
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="bg-white shadow rounded-lg">
-  <div className="px-4 py-5 sm:px-6">
-    <h3 className="text-lg leading-6 font-medium text-gray-900">Customers List</h3>
-    <p className="mt-1 max-w-2xl text-sm text-gray-500">All active customers and their loan details</p>
-  </div>
-  <div className="border-t border-gray-200">
-    <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">Customer Number</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">Name</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">Business</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">Office</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">Actions</th>
-          </tr>
-        </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
-          {filteredCustomers.map((customer) => (
-            <tr key={customer._id}>
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 w-1/5">{customer.customerNumber}</td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 w-1/5">{customer.name}</td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/5">{customer.businessName}</td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/5">
-                {customer.officeCategory || 'N/A'}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium w-1/5">
-                <div className="flex space-x-2">
-                  <button 
-                    onClick={() => {
-                      handleSearchCustomer(customer);
-                      setShowUpdateEMI(true);
-                    }}
-                    className="bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 text-sm"
-                  >
-                    Update EMI
-                  </button>
-                  <button 
-                    onClick={() => handleViewDetails(customer)}
-                    className="bg-green-600 text-white px-3 py-1 rounded-md hover:bg-green-700 text-sm"
-                  >
-                    View Details
-                  </button>
-                  <button 
-                    onClick={() => handleViewEMICalendar(customer)}
-                    className="bg-purple-600 text-white px-3 py-1 rounded-md hover:bg-purple-700 text-sm"
-                  >
-                    EMI Calendar
-                  </button>
-                </div>
-              </td>
-            </tr>
-          ))}
-          {filteredCustomers.length === 0 && (
-            <tr>
-              <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
-                No customers found
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
+        <div className="px-4 py-5 sm:px-6">
+          <h3 className="text-lg leading-6 font-medium text-gray-900">Customers List</h3>
+          <p className="mt-1 max-w-2xl text-sm text-gray-500">
+            All active customers and their loan details
+          </p>
+        </div>
+        <div className="border-t border-gray-200">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">
+                    Customer Number
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">
+                    Name
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">
+                    Business
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">
+                    Office
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {sortedCustomers.map((customer) => (
+                  <tr key={customer._id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 w-1/5">
+                      {customer.customerNumber}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 w-1/5">
+                      {customer.name}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/5">
+                      {customer.businessName}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/5">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        customer.officeCategory === 'Office 1' 
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-purple-100 text-purple-800'
+                      }`}>
+                        {customer.officeCategory || 'N/A'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium w-1/5">
+                      <div className="flex space-x-2">
+                        <button 
+                          onClick={() => {
+                            handleSearchCustomer(customer);
+                            setShowUpdateEMI(true);
+                          }}
+                          className="bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 text-sm"
+                        >
+                          Update EMI
+                        </button>
+                        <button 
+                          onClick={() => handleViewDetails(customer)}
+                          className="bg-green-600 text-white px-3 py-1 rounded-md hover:bg-green-700 text-sm"
+                        >
+                          View Details
+                        </button>
+                        <button 
+                          onClick={() => handleViewEMICalendar(customer)}
+                          className="bg-purple-600 text-white px-3 py-1 rounded-md hover:bg-purple-700 text-sm"
+                        >
+                          EMI Calendar
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {sortedCustomers.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
+                      No customers found
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
   );
+};
 
   const renderUpdateEMIForm = () => {
     const displayLoans = selectedCustomer ? getAllCustomerLoans(selectedCustomer, customerDetails) : [];
