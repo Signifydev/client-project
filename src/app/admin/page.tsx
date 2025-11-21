@@ -767,10 +767,12 @@ function EnhancedReportsView({ onBack }: { onBack: () => void }) {
 }
 
 // Team Management Component
+// Team Management Component - UPDATED
 function TeamManagementView({ onBack }: { onBack: () => void }) {
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
+  const [showDataEntryModal, setShowDataEntryModal] = useState(false);
   const [editingMember, setEditingMember] = useState<any>(null);
 
   const fetchTeamMembers = async () => {
@@ -827,22 +829,32 @@ function TeamManagementView({ onBack }: { onBack: () => void }) {
 
   const handleEditMember = (member: any) => {
     setEditingMember(member);
-    setShowAddModal(true);
+    if (member.role === 'Recovery Team') {
+      setShowRecoveryModal(true);
+    } else {
+      setShowDataEntryModal(true);
+    }
   };
 
-  const handleAddMember = () => {
+  const handleAddRecoveryMember = () => {
     setEditingMember(null);
-    setShowAddModal(true);
+    setShowRecoveryModal(true);
   };
 
-  const handleSaveMember = async (memberData: any) => {
+  const handleAddDataEntryMember = () => {
+    setEditingMember(null);
+    setShowDataEntryModal(true);
+  };
+
+  const handleSaveMember = async (memberData: any, isRecovery: boolean) => {
     try {
       const url = '/api/admin/team-members';
       const method = editingMember ? 'PUT' : 'POST';
       
+      const role = isRecovery ? 'Recovery Team' : 'Data Entry Operator';
       const requestBody = editingMember ? 
-        { ...memberData, memberId: editingMember._id } : 
-        memberData;
+        { ...memberData, memberId: editingMember._id, role } : 
+        { ...memberData, role };
       
       const response = await fetch(url, {
         method,
@@ -857,7 +869,8 @@ function TeamManagementView({ onBack }: { onBack: () => void }) {
       if (response.ok) {
         alert(editingMember ? 'Team member updated successfully!' : 'Team member added successfully!');
         fetchTeamMembers();
-        setShowAddModal(false);
+        setShowRecoveryModal(false);
+        setShowDataEntryModal(false);
         setEditingMember(null);
       } else {
         alert(`Error: ${responseData.error || responseData.message || 'Unknown error'}`);
@@ -867,99 +880,215 @@ function TeamManagementView({ onBack }: { onBack: () => void }) {
     }
   };
 
+  // Filter team members by role
+  const recoveryTeamMembers = teamMembers.filter(member => member.role === 'Recovery Team');
+  const dataEntryOperators = teamMembers.filter(member => member.role === 'Data Entry Operator');
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <button 
-            onClick={onBack}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <span className="text-gray-600">← Back</span>
-          </button>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Team Management</h1>
-            <p className="text-gray-600">Manage your team members and their roles</p>
+      {/* Enhanced Header with Background Color */}
+      <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg p-6 text-white">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <button 
+              onClick={onBack}
+              className="flex items-center space-x-2 bg-white text-blue-700 px-4 py-2 rounded-lg hover:bg-blue-50 transition-colors font-medium"
+            >
+              <span className="text-lg">←</span>
+              <span>Back</span>
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold">Team Management</h1>
+              <p className="text-blue-100 mt-1">Manage your team members and their roles</p>
+            </div>
           </div>
         </div>
-        <button 
-          onClick={handleAddMember}
-          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
-        >
-          Add Team Member
-        </button>
       </div>
 
-      {/* Team Members Grid */}
-      {loading ? (
-        <div className="text-center py-8">
-          <div className="text-gray-400 text-4xl mb-4">⏳</div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Loading team members...</h3>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {teamMembers.map((member) => (
-            <div key={member._id} className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                  <span className="text-blue-600 font-semibold text-sm">
-                    {member.name.split(' ').map((n: string) => n[0]).join('')}
-                  </span>
-                </div>
-                <div className="flex space-x-2">
-                  <button 
-                    onClick={() => handleEditMember(member)}
-                    className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                  >
-                    Edit
-                  </button>
-                  <button 
-                    onClick={() => handleDeleteMember(member._id)}
-                    className="text-red-600 hover:text-red-800 text-sm font-medium"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-              
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">{member.name}</h3>
-              <p className="text-sm text-gray-600 mb-1">{member.role}</p>
-              <p className="text-sm text-gray-500 mb-1">{member.email}</p>
-              <p className="text-sm text-gray-500 mb-3">{member.phone}</p>
-              
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-gray-500">
-                  Joined: {member.joinDate ? new Date(member.joinDate).toLocaleDateString() : 'N/A'}
-                </span>
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                  member.status === 'active' 
-                    ? 'bg-green-100 text-green-800'
-                    : 'bg-red-100 text-red-800'
-                }`}>
-                  {member.status}
-                </span>
-              </div>
+      {/* Team Member Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Recovery Team Card */}
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-xl font-semibold text-gray-900">Recovery Team</h3>
+              <p className="text-gray-600 mt-1">Manage recovery team members who handle loan recovery operations</p>
             </div>
-          ))}
+            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+              <span className="text-red-600 text-xl">💰</span>
+            </div>
+          </div>
           
-          {teamMembers.length === 0 && (
-            <div className="col-span-3 text-center py-8">
-              <div className="text-gray-400 text-4xl mb-4">👥</div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No team members found</h3>
-              <p className="text-gray-600">Add your first team member to get started.</p>
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">Total Members</span>
+              <span className="text-lg font-semibold text-gray-900">{recoveryTeamMembers.length}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">Active Members</span>
+              <span className="text-lg font-semibold text-green-600">
+                {recoveryTeamMembers.filter(m => m.status === 'active').length}
+              </span>
+            </div>
+          </div>
+
+          <button 
+            onClick={handleAddRecoveryMember}
+            className="w-full mt-6 bg-red-600 text-white px-4 py-3 rounded-lg hover:bg-red-700 transition-colors font-medium"
+          >
+            Add Recovery Team Member
+          </button>
+        </div>
+
+        {/* Data Entry Operator Card */}
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-xl font-semibold text-gray-900">Data Entry Operators</h3>
+              <p className="text-gray-600 mt-1">Manage operators who handle customer data entry and management</p>
+            </div>
+            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+              <span className="text-blue-600 text-xl">📊</span>
+            </div>
+          </div>
+          
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">Total Operators</span>
+              <span className="text-lg font-semibold text-gray-900">{dataEntryOperators.length}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">Active Operators</span>
+              <span className="text-lg font-semibold text-green-600">
+                {dataEntryOperators.filter(m => m.status === 'active').length}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">Office Categories</span>
+              <span className="text-lg font-semibold text-purple-600">
+                {[...new Set(dataEntryOperators.map(m => m.officeCategory).filter(Boolean))].length}
+              </span>
+            </div>
+          </div>
+
+          <button 
+            onClick={handleAddDataEntryMember}
+            className="w-full mt-6 bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+          >
+            Add Data Entry Operator
+          </button>
+        </div>
+      </div>
+
+      {/* Team Members List */}
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900">All Team Members</h3>
+          <p className="text-gray-600 mt-1">Manage existing team members and their permissions</p>
+        </div>
+        
+        <div className="p-6">
+          {loading ? (
+            <div className="text-center py-8">
+              <div className="text-gray-400 text-4xl mb-4">⏳</div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Loading team members...</h3>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {teamMembers.map((member) => (
+                <div key={member._id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center space-x-4">
+                    <div className="flex-shrink-0">
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                        member.role === 'Recovery Team' ? 'bg-red-100' : 'bg-blue-100'
+                      }`}>
+                        <span className={`font-semibold text-sm ${
+                          member.role === 'Recovery Team' ? 'text-red-600' : 'text-blue-600'
+                        }`}>
+                          {member.name.split(' ').map((n: string) => n[0]).join('')}
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <h4 className="text-lg font-semibold text-gray-900">{member.name}</h4>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          member.role === 'Recovery Team' 
+                            ? 'bg-red-100 text-red-800' 
+                            : 'bg-blue-100 text-blue-800'
+                        }`}>
+                          {member.role}
+                        </span>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          member.status === 'active' 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {member.status}
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-4 mt-1">
+                        <p className="text-sm text-gray-600">{member.phone}</p>
+                        {member.officeCategory && (
+                          <p className="text-sm text-gray-600">
+                            Office: <span className="font-medium">{member.officeCategory}</span>
+                          </p>
+                        )}
+                        <p className="text-sm text-gray-500">
+                          Joined: {member.joinDate ? new Date(member.joinDate).toLocaleDateString() : 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <button 
+                      onClick={() => handleEditMember(member)}
+                      className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                    >
+                      Edit
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteMember(member._id)}
+                      className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+              
+              {teamMembers.length === 0 && (
+                <div className="text-center py-8">
+                  <div className="text-gray-400 text-4xl mb-4">👥</div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No team members found</h3>
+                  <p className="text-gray-600">Add your first team member using the cards above.</p>
+                </div>
+              )}
             </div>
           )}
         </div>
+      </div>
+
+      {/* Recovery Team Member Modal */}
+      {showRecoveryModal && (
+        <RecoveryTeamModal
+          member={editingMember}
+          onSave={(data) => handleSaveMember(data, true)}
+          onClose={() => {
+            setShowRecoveryModal(false);
+            setEditingMember(null);
+          }}
+        />
       )}
 
-      {/* Add/Edit Modal */}
-      {showAddModal && (
-        <TeamMemberModal
+      {/* Data Entry Operator Modal */}
+      {showDataEntryModal && (
+        <DataEntryOperatorModal
           member={editingMember}
-          onSave={handleSaveMember}
+          onSave={(data) => handleSaveMember(data, false)}
           onClose={() => {
-            setShowAddModal(false);
+            setShowDataEntryModal(false);
             setEditingMember(null);
           }}
         />
@@ -968,21 +1097,22 @@ function TeamManagementView({ onBack }: { onBack: () => void }) {
   );
 }
 
-// Team Member Modal Component
-function TeamMemberModal({ member, onSave, onClose }: { 
+// Recovery Team Member Modal Component
+function RecoveryTeamModal({ member, onSave, onClose }: { 
   member: any; 
   onSave: (data: any) => void;
   onClose: () => void;
 }) {
   const [formData, setFormData] = useState({
     name: member?.name || '',
-    email: member?.email || '',
-    role: member?.role || 'Data Entry Operator',
     phone: member?.phone || '',
-    status: member?.status || 'active',
+    whatsappNumber: member?.whatsappNumber || '',
+    email: member?.email || '',
+    address: member?.address || '',
     username: member?.username || '',
     password: member?.password || '',
-    confirmPassword: ''
+    confirmPassword: '',
+    status: member?.status || 'active'
   });
 
   const generateRandomPassword = () => {
@@ -1025,7 +1155,238 @@ function TeamMemberModal({ member, onSave, onClose }: {
       <div className="bg-white rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">
-            {member ? 'Edit Team Member' : 'Add Team Member'}
+            {member ? 'Edit Recovery Team Member' : 'Add Recovery Team Member'}
+          </h2>
+          
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Full Name *
+              </label>
+              <input
+                type="text"
+                required
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                placeholder="Enter full name"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phone Number *
+                </label>
+                <input
+                  type="tel"
+                  required
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  placeholder="Phone number"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  WhatsApp Number
+                </label>
+                <input
+                  type="tel"
+                  value={formData.whatsappNumber}
+                  onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  placeholder="WhatsApp number"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email Address
+              </label>
+              <input
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                placeholder="Email address"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Address
+              </label>
+              <textarea
+                value={formData.address}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                placeholder="Full address"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Username *
+              </label>
+              <input
+                type="text"
+                required
+                value={formData.username}
+                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                placeholder="Choose a unique username"
+              />
+            </div>
+
+            {/* Password Section */}
+            {!member && (
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Login Password *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleGeneratePassword}
+                    className="text-sm bg-red-100 text-red-700 px-3 py-1 rounded hover:bg-red-200"
+                  >
+                    Generate Password
+                  </button>
+                </div>
+                
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    required
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    placeholder="Click generate or enter password"
+                  />
+                  
+                  <input
+                    type="text"
+                    required
+                    value={formData.confirmPassword}
+                    onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    placeholder="Confirm password"
+                  />
+                </div>
+
+                {formData.password && (
+                  <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <p className="text-sm text-yellow-800">
+                      <strong>Important:</strong> Save this password securely. It will be shown only once.
+                    </p>
+                    <p className="text-xs text-yellow-700 mt-1">
+                      Password: <span className="font-mono">{formData.password}</span>
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Status
+              </label>
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+            
+            <div className="flex justify-end space-x-3 pt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                {member ? 'Update' : 'Create'} Member
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Data Entry Operator Modal Component
+function DataEntryOperatorModal({ member, onSave, onClose }: { 
+  member: any; 
+  onSave: (data: any) => void;
+  onClose: () => void;
+}) {
+  const [formData, setFormData] = useState({
+    name: member?.name || '',
+    phone: member?.phone || '',
+    whatsappNumber: member?.whatsappNumber || '',
+    email: member?.email || '',
+    address: member?.address || '',
+    officeCategory: member?.officeCategory || 'Office 1',
+    username: member?.username || '',
+    password: member?.password || '',
+    confirmPassword: '',
+    status: member?.status || 'active'
+  });
+
+  const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
+    let password = '';
+    for (let i = 0; i < 12; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return password;
+  };
+
+  const handleGeneratePassword = () => {
+    const newPassword = generateRandomPassword();
+    setFormData({
+      ...formData,
+      password: newPassword,
+      confirmPassword: newPassword
+    });
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!member && formData.password !== formData.confirmPassword) {
+      alert('Passwords do not match!');
+      return;
+    }
+
+    if (!member && !formData.password) {
+      alert('Please generate or enter a password!');
+      return;
+    }
+
+    const { confirmPassword, ...saveData } = formData;
+    onSave(saveData);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">
+            {member ? 'Edit Data Entry Operator' : 'Add Data Entry Operator'}
           </h2>
           
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -1039,20 +1400,83 @@ function TeamMemberModal({ member, onSave, onClose }: {
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Enter full name"
               />
             </div>
-            
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phone Number *
+                </label>
+                <input
+                  type="tel"
+                  required
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Phone number"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  WhatsApp Number
+                </label>
+                <input
+                  type="tel"
+                  value={formData.whatsappNumber}
+                  onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="WhatsApp number"
+                />
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email *
+                Email Address
               </label>
               <input
                 type="email"
-                required
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Email address"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Address
+              </label>
+              <textarea
+                value={formData.address}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Full address"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Office Category *
+              </label>
+              <select
+                required
+                value={formData.officeCategory}
+                onChange={(e) => setFormData({ ...formData, officeCategory: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="Office 1">Office 1</option>
+                <option value="Office 2">Office 2</option>
+                <option value="Office 3">Office 3</option>
+                <option value="Head Office">Head Office</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                This determines which customers the operator can access
+              </p>
             </div>
 
             <div>
@@ -1066,35 +1490,6 @@ function TeamMemberModal({ member, onSave, onClose }: {
                 onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 placeholder="Choose a unique username"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Role *
-              </label>
-              <select
-                value={formData.role}
-                onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="Data Entry Operator">Data Entry Operator</option>
-                <option value="Loan Officer">Loan Officer</option>
-                <option value="Manager">Manager</option>
-                <option value="Admin">Admin</option>
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Phone *
-              </label>
-              <input
-                type="tel"
-                required
-                value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
 
@@ -1173,7 +1568,7 @@ function TeamMemberModal({ member, onSave, onClose }: {
                 type="submit"
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
               >
-                {member ? 'Update' : 'Add'} Member
+                {member ? 'Update' : 'Create'} Operator
               </button>
             </div>
           </form>
