@@ -4127,38 +4127,41 @@ const renderDeleteConfirmationModal = () => {
 
       {/* Row 5 */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Category *</label>
-        // In the category field:
-<select 
-  className={`w-full px-3 py-2 border rounded-md ${
-    step1Errors.category ? 'border-red-500' : 'border-gray-300'
-  }`}
-  value={step1Data.category}
-  onChange={(e) => setStep1Data({...step1Data, category: e.target.value})}
-  required
->
-  <option value="">Select Category</option>
-  <option value="A">Category A</option>
-  <option value="B">Category B</option>
-  <option value="C">Category C</option>
-</select>
+  <label className="block text-sm font-medium text-gray-700 mb-2">Category *</label>
+  
+  {/* Category Field */}
+  <select 
+    className={`w-full px-3 py-2 border rounded-md ${
+      step1Errors.category ? 'border-red-500' : 'border-gray-300'
+    }`}
+    value={step1Data.category}
+    onChange={(e) => setStep1Data({...step1Data, category: e.target.value})}
+    required
+  >
+    <option value="">Select Category</option>
+    <option value="A">Category A</option>
+    <option value="B">Category B</option>
+    <option value="C">Category C</option>
+  </select>
+  {step1Errors.category && <p className="text-red-500 text-xs mt-1">{step1Errors.category}</p>}
+  <p className="text-xs text-gray-500 mt-1">Customer priority category</p>
 
-// In the officeCategory field:
-<select 
-  className={`w-full px-3 py-2 border rounded-md ${
-    step1Errors.officeCategory ? 'border-red-500' : 'border-gray-300'
-  }`}
-  value={step1Data.officeCategory}
-  onChange={(e) => setStep1Data({...step1Data, officeCategory: e.target.value})}
-  required
->
-  <option value="">Select Office Category</option>
-  <option value="Office 1">Office 1</option>
-  <option value="Office 2">Office 2</option>
-</select>
-        {step1Errors.officeCategory && <p className="text-red-500 text-xs mt-1">{step1Errors.officeCategory}</p>}
-        <p className="text-xs text-gray-500 mt-1">Assigned office location</p>
-      </div>
+  {/* Office Category Field */}
+  <select 
+    className={`w-full px-3 py-2 border rounded-md ${
+      step1Errors.officeCategory ? 'border-red-500' : 'border-gray-300'
+    }`}
+    value={step1Data.officeCategory}
+    onChange={(e) => setStep1Data({...step1Data, officeCategory: e.target.value})}
+    required
+  >
+    <option value="">Select Office Category</option>
+    <option value="Office 1">Office 1</option>
+    <option value="Office 2">Office 2</option>
+  </select>
+  {step1Errors.officeCategory && <p className="text-red-500 text-xs mt-1">{step1Errors.officeCategory}</p>}
+  <p className="text-xs text-gray-500 mt-1">Assigned office location</p>
+</div>
     </div>
 
     {/* File Upload Section */}
