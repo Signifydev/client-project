@@ -6354,15 +6354,25 @@ const renderDeleteConfirmationModal = () => {
     return matchesSearch && customer.status === 'active';
   });
 
-  // Sort EMI customers by customer number
+  // Sort EMI customers by customer number (numeric sorting)
   const sortedEMICustomers = [...filteredEMICustomers].sort((a, b) => {
-    const aNumber = a.customerNumber || '';
-    const bNumber = b.customerNumber || '';
+    // Extract and normalize numeric parts from customer numbers
+    const extractNumber = (customerNumber: string): number => {
+      if (!customerNumber) return 0;
+      
+      // Remove "CN" prefix and any leading zeros, then parse as number
+      const normalized = normalizeCustomerNumber(customerNumber);
+      const numericPart = normalized.replace(/^CN/, '');
+      return parseInt(numericPart) || 0;
+    };
+
+    const aNumber = extractNumber(a.customerNumber || '');
+    const bNumber = extractNumber(b.customerNumber || '');
     
     if (emiSortOrder === 'asc') {
-      return aNumber.localeCompare(bNumber);
+      return aNumber - bNumber; // Numeric ascending
     } else {
-      return bNumber.localeCompare(aNumber);
+      return bNumber - aNumber; // Numeric descending
     }
   });
 
