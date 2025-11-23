@@ -147,52 +147,59 @@ const checkForDuplicates = async (customerData) => {
 };
 
 async function approveNewCustomer(requestDoc, reason, processedBy) {
-  console.log('📝 Creating new customer from multi-step request data...');
+  console.log('📝 Creating new customer from multi-step request...');
   
-  // Use step data if available, otherwise fall back to requestedData
-  const step1Data = requestDoc.step1Data || requestDoc.requestedData;
-  const step2Data = requestDoc.step2Data || requestDoc.requestedData;
-  const step3Data = requestDoc.step3Data || requestDoc.requestedData;
+  // ✅ FIXED: Use step data structure
+  const step1Data = requestDoc.step1Data;
+  const step2Data = requestDoc.step2Data;
+  const step3Data = requestDoc.step3Data;
 
-  console.log('🔍 Using data:', {
-    step1Data: !!step1Data,
-    step2Data: !!step2Data,
-    step3Data: !!step3Data,
-    hasStep1Data: !!requestDoc.step1Data,
-    hasStep2Data: !!requestDoc.step2Data,
-    hasStep3Data: !!requestDoc.step3Data,
-    hasRequestedData: !!requestDoc.requestedData
+  console.log('🔍 Step data availability:', {
+    hasStep1Data: !!step1Data,
+    hasStep2Data: !!step2Data,
+    hasStep3Data: !!step3Data,
+    step1DataKeys: step1Data ? Object.keys(step1Data) : 'No step1Data',
+    step2DataKeys: step2Data ? Object.keys(step2Data) : 'No step2Data',
+    step3DataKeys: step3Data ? Object.keys(step3Data) : 'No step3Data'
   });
 
-  // Validate step data
-  if (!step1Data && !requestDoc.requestedData) {
+  // ✅ FIXED: Check for step data instead of data field
+  if (!step1Data || !step2Data || !step3Data) {
+    console.log('❌ Missing step data for new customer request:', {
+      missingStep1: !step1Data,
+      missingStep2: !step2Data,
+      missingStep3: !step3Data
+    });
     return NextResponse.json({ 
       success: false,
-      error: 'Missing required customer data'
+      error: 'Missing required customer data in step data structure'
     }, { status: 400 });
   }
 
-  // Extract data from step1Data or requestedData
-  const customerData = step1Data || requestDoc.requestedData;
-  const loanData = step2Data || requestDoc.requestedData;
-  const loginData = step3Data || requestDoc.requestedData;
-
-  // Validate required fields with fallbacks
-  if (!customerData.name || !customerData.customerNumber || !customerData.phone) {
+  // Validate required fields in step1Data
+  if (!step1Data.name || !step1Data.customerNumber || !step1Data.phone || !step1Data.businessName) {
+    console.log('❌ Missing required fields in step1Data:', {
+      name: !!step1Data.name,
+      customerNumber: !!step1Data.customerNumber,
+      phone: !!step1Data.phone,
+      businessName: !!step1Data.businessName
+    });
     return NextResponse.json({ 
       success: false,
-      error: 'Missing required customer fields: name, customerNumber, or phone'
+      error: 'Missing required customer fields: name, customerNumber, phone, or businessName'
     }, { status: 400 });
   }
 
-  if (!loanData.loanAmount || !loanData.emiAmount || !loanData.loanType) {
+  if (!step2Data.loanAmount || !step2Data.emiAmount || !step2Data.loanType) {
+    console.log('❌ Missing required loan data in step2Data');
     return NextResponse.json({ 
       success: false,
       error: 'Missing required loan fields: loanAmount, emiAmount, or loanType'
     }, { status: 400 });
   }
 
-  if (!loginData.loginId || !loginData.password) {
+  if (!step3Data.loginId || !step3Data.password) {
+    console.log('❌ Missing required login data in step3Data');
     return NextResponse.json({ 
       success: false,
       error: 'Missing required login fields: loginId or password'
@@ -200,17 +207,18 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
   }
 
   // NEW: Normalize customer number
-  const normalizedCustomerNumber = normalizeCustomerNumber(customerData.customerNumber);
+  const normalizedCustomerNumber = normalizeCustomerNumber(step1Data.customerNumber);
   console.log('🔧 Normalized customer number:', {
-    original: customerData.customerNumber,
+    original: step1Data.customerNumber,
     normalized: normalizedCustomerNumber
   });
 
   // NEW: Enhanced duplicate checking
+  const phoneArray = Array.isArray(step1Data.phone) ? step1Data.phone : [step1Data.phone];
   const hasDuplicates = await checkForDuplicates({
-    phone: Array.isArray(customerData.phone) ? customerData.phone : [customerData.phone],
+    phone: phoneArray,
     customerNumber: normalizedCustomerNumber,
-    loginId: loginData.loginId
+    loginId: step3Data.loginId
   });
 
   if (hasDuplicates) {
@@ -221,28 +229,28 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
   }
 
   // Hash password
-  const hashedPassword = await bcrypt.hash(loginData.password, 12);
+  const hashedPassword = await bcrypt.hash(step3Data.password, 12);
 
-  // Create customer WITHOUT loanNumber field
+  // Create customer data
   const customerDataToSave = {
-    name: customerData.name.trim(),
-    phone: Array.isArray(customerData.phone) ? customerData.phone : [customerData.phone],
-    whatsappNumber: customerData.whatsappNumber ? customerData.whatsappNumber.trim() : '',
-    businessName: customerData.businessName.trim(),
-    area: customerData.area.trim(),
-    customerNumber: normalizedCustomerNumber, // Use normalized number
-    address: customerData.address.trim(),
-    category: customerData.category || 'A',
-    officeCategory: customerData.officeCategory || 'Office 1',
+    name: step1Data.name.trim(),
+    phone: Array.isArray(step1Data.phone) ? step1Data.phone : [step1Data.phone],
+    whatsappNumber: step1Data.whatsappNumber ? step1Data.whatsappNumber.trim() : '',
+    businessName: step1Data.businessName.trim(),
+    area: step1Data.area.trim(),
+    customerNumber: normalizedCustomerNumber,
+    address: step1Data.address.trim(),
+    category: step1Data.category || 'A',
+    officeCategory: step1Data.officeCategory || 'Office 1',
     
-    // File fields
-    profilePicture: customerData.profilePicture || {
+    // File fields - use the object structure from step1Data
+    profilePicture: step1Data.profilePicture || {
       filename: null,
       url: null,
       originalName: null,
       uploadedAt: new Date()
     },
-    fiDocuments: customerData.fiDocuments || {
+    fiDocuments: step1Data.fiDocuments || {
       shop: {
         filename: null,
         url: null,
@@ -257,8 +265,12 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
       }
     },
     
+    // Additional fields
+    email: step1Data.email || '',
+    businessType: step1Data.businessType || '',
+    
     // Login credentials
-    loginId: loginData.loginId.trim(),
+    loginId: step3Data.loginId.trim(),
     password: hashedPassword,
     
     // Status and metadata
@@ -275,7 +287,8 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     name: customerDataToSave.name,
     customerNumber: customerDataToSave.customerNumber,
     phone: customerDataToSave.phone,
-    loginId: customerDataToSave.loginId
+    loginId: customerDataToSave.loginId,
+    businessName: customerDataToSave.businessName
   });
 
   const customer = new Customer(customerDataToSave);
@@ -286,10 +299,10 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
   try {
     const user = new User({
       customerId: customer._id,
-      loginId: loginData.loginId,
+      loginId: step3Data.loginId,
       password: hashedPassword,
       role: 'customer',
-      email: loginData.loginId + '@customer.com',
+      email: step3Data.loginId + '@customer.com',
       status: 'active',
       createdBy: requestDoc.createdBy
     });
@@ -300,7 +313,7 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     // Continue even if user creation fails
   }
 
-  // NEW: Use atomic loan number generation
+  // Generate loan number and create loan
   const loanNumber = await Loan.generateLoanNumber(customer._id);
   console.log('🔧 Generated loan number:', loanNumber);
 
@@ -325,7 +338,7 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
   // Fix date handling for emiStartDate
   let emiStartDate;
   try {
-    emiStartDate = loanData.emiStartDate ? new Date(loanData.emiStartDate) : new Date();
+    emiStartDate = step2Data.emiStartDate ? new Date(step2Data.emiStartDate) : new Date();
     if (isNaN(emiStartDate.getTime())) {
       emiStartDate = new Date();
     }
@@ -336,7 +349,7 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
   // Fix date handling for loanDate
   let loanDate;
   try {
-    loanDate = loanData.loanDate ? new Date(loanData.loanDate) : new Date();
+    loanDate = step2Data.loanDate ? new Date(step2Data.loanDate) : new Date();
     if (isNaN(loanDate.getTime())) {
       loanDate = new Date();
     }
@@ -346,13 +359,13 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
 
   // Calculate total loan amount based on EMI type
   let totalLoanAmount;
-  if (loanData.emiType === 'custom' && loanData.loanType !== 'Daily') {
-    const fixedPeriods = Number(loanData.loanDays) - 1;
-    const fixedAmount = Number(loanData.emiAmount) * fixedPeriods;
-    const lastAmount = Number(loanData.customEmiAmount || loanData.emiAmount);
+  if (step2Data.emiType === 'custom' && step2Data.loanType !== 'Daily') {
+    const fixedPeriods = Number(step2Data.loanDays) - 1;
+    const fixedAmount = Number(step2Data.emiAmount) * fixedPeriods;
+    const lastAmount = Number(step2Data.customEmiAmount || step2Data.emiAmount);
     totalLoanAmount = fixedAmount + lastAmount;
   } else {
-    totalLoanAmount = Number(loanData.emiAmount) * Number(loanData.loanDays);
+    totalLoanAmount = Number(step2Data.emiAmount) * Number(step2Data.loanDays);
   }
 
   const loanDataToSave = {
@@ -360,20 +373,20 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     customerName: customer.name,
     customerNumber: customer.customerNumber,
     loanNumber: loanNumber,
-    amount: parseFloat(loanData.loanAmount),
-    emiAmount: parseFloat(loanData.emiAmount),
-    loanType: loanData.loanType,
+    amount: parseFloat(step2Data.loanAmount),
+    emiAmount: parseFloat(step2Data.emiAmount),
+    loanType: step2Data.loanType,
     dateApplied: loanDate,
-    loanDays: parseInt(loanData.loanDays) || 30,
-    emiType: loanData.emiType || 'fixed',
-    customEmiAmount: loanData.customEmiAmount ? parseFloat(loanData.customEmiAmount) : null,
+    loanDays: parseInt(step2Data.loanDays) || 30,
+    emiType: step2Data.emiType || 'fixed',
+    customEmiAmount: step2Data.customEmiAmount ? parseFloat(step2Data.customEmiAmount) : null,
     emiStartDate: emiStartDate,
-    totalEmiCount: parseInt(loanData.loanDays) || 30,
+    totalEmiCount: parseInt(step2Data.loanDays) || 30,
     emiPaidCount: 0,
     lastEmiDate: null,
-    nextEmiDate: calculateNextEmiDate(emiStartDate, loanData.loanType),
+    nextEmiDate: calculateNextEmiDate(emiStartDate, step2Data.loanType),
     totalPaidAmount: 0,
-    remainingAmount: parseFloat(loanData.loanAmount),
+    remainingAmount: parseFloat(step2Data.loanAmount),
     status: 'active',
     createdBy: requestDoc.createdBy,
     totalLoanAmount: totalLoanAmount

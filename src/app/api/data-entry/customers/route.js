@@ -71,9 +71,9 @@ export async function POST(request) {
     
     console.log('📦 Received form data with fields:', Array.from(formData.keys()));
 
-    // Extract all form data
+    // Extract all form data with detailed logging
     const name = formData.get('name');
-    const phone = formData.getAll('phone[]').filter(p => p.trim() !== '');
+    const phone = formData.getAll('phone[]').filter(p => p && p.trim() !== '');
     const whatsappNumber = formData.get('whatsappNumber') || '';
     const businessName = formData.get('businessName');
     const area = formData.get('area');
@@ -81,6 +81,57 @@ export async function POST(request) {
     const address = formData.get('address');
     const category = formData.get('category');
     const officeCategory = formData.get('officeCategory');
+
+    // DEBUG: Log each extracted value with type and length
+    console.log('🔍 EXTRACTED FIELD ANALYSIS:');
+    const fieldAnalysis = {
+      name: { value: name, type: typeof name, length: name?.length, empty: !name?.trim() },
+      phone: { value: phone, type: 'array', length: phone.length, empty: phone.length === 0 },
+      whatsappNumber: { value: whatsappNumber, type: typeof whatsappNumber, length: whatsappNumber?.length },
+      businessName: { value: businessName, type: typeof businessName, length: businessName?.length, empty: !businessName?.trim() },
+      area: { value: area, type: typeof area, length: area?.length, empty: !area?.trim() },
+      customerNumber: { value: customerNumber, type: typeof customerNumber, length: customerNumber?.length, empty: !customerNumber?.trim() },
+      address: { value: address, type: typeof address, length: address?.length, empty: !address?.trim() },
+      category: { value: category, type: typeof category, length: category?.length, empty: !category?.trim() },
+      officeCategory: { value: officeCategory, type: typeof officeCategory, length: officeCategory?.length, empty: !officeCategory?.trim() }
+    };
+    
+    console.log('Field analysis:', JSON.stringify(fieldAnalysis, null, 2));
+
+    // Check for empty required fields
+    const requiredFields = {
+      name: name?.trim(),
+      phone: phone.length > 0,
+      businessName: businessName?.trim(),
+      area: area?.trim(),
+      customerNumber: customerNumber?.trim(),
+      address: address?.trim(),
+      category: category?.trim(),
+      officeCategory: officeCategory?.trim()
+    };
+
+    console.log('✅ REQUIRED FIELDS VALIDATION:');
+    const missingFields = [];
+    Object.entries(requiredFields).forEach(([field, value]) => {
+      const isValid = !!value;
+      console.log(`  ${field}: ${isValid ? '✅' : '❌ MISSING'} (value: "${value}")`);
+      if (!isValid) {
+        missingFields.push(field);
+      }
+    });
+
+    if (missingFields.length > 0) {
+      console.log('❌ MISSING REQUIRED FIELDS:', missingFields);
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'All customer details are required',
+          missingFields: missingFields,
+          fieldAnalysis: fieldAnalysis
+        },
+        { status: 400 }
+      );
+    }
     
     // Loan details
     const loanDate = formData.get('loanDate');
@@ -91,7 +142,20 @@ export async function POST(request) {
     const loanType = formData.get('loanType');
     const emiType = formData.get('emiType');
     const customEmiAmount = formData.get('customEmiAmount') || '';
-    
+
+    console.log('🔍 LOAN DATA ANALYSIS:');
+    const loanFieldAnalysis = {
+      loanDate: { value: loanDate, empty: !loanDate },
+      emiStartDate: { value: emiStartDate, empty: !emiStartDate },
+      loanAmount: { value: loanAmount, empty: !loanAmount },
+      emiAmount: { value: emiAmount, empty: !emiAmount },
+      loanDays: { value: loanDays, empty: !loanDays },
+      loanType: { value: loanType, empty: !loanType },
+      emiType: { value: emiType, empty: !emiType },
+      customEmiAmount: { value: customEmiAmount, empty: !customEmiAmount }
+    };
+    console.log('Loan field analysis:', JSON.stringify(loanFieldAnalysis, null, 2));
+
     // Login credentials
     const loginId = formData.get('loginId');
     const password = formData.get('password');
@@ -103,50 +167,42 @@ export async function POST(request) {
     const fiDocumentShop = formData.get('fiDocumentShop');
     const fiDocumentHome = formData.get('fiDocumentHome');
 
-    // Validate required customer fields - Make files optional
-if (!name || !phone || phone.length === 0 || !businessName || !area || !customerNumber || !address || !category || !officeCategory) {
-  return NextResponse.json(
-    { success: false, error: 'All customer details are required' },
-    { status: 400 }
-  );
-}
-
-// Loan validation based on loan type and EMI type
-if (!loanDate || !emiStartDate || !loanAmount || !loanDays || !loanType || !emiType) {
-  return NextResponse.json(
-    { success: false, error: 'All basic loan details are required' },
-    { status: 400 }
-  );
-}
-
-// Validate EMI amounts based on loan type and EMI type
-if (loanType === 'Daily') {
-  // Daily loans only need emiAmount
-  if (!emiAmount) {
-    return NextResponse.json(
-      { success: false, error: 'EMI Amount is required for Daily loans' },
-      { status: 400 }
-    );
-  }
-} else {
-  // Weekly/Monthly loans
-  if (emiType === 'fixed') {
-    if (!emiAmount) {
+    // Validate required loan fields
+    if (!loanDate || !emiStartDate || !loanAmount || !loanDays || !loanType || !emiType) {
       return NextResponse.json(
-        { success: false, error: 'EMI Amount is required for Fixed EMI type' },
+        { success: false, error: 'All basic loan details are required' },
         { status: 400 }
       );
     }
-  } else if (emiType === 'custom') {
-    // Custom EMI requires both fixed EMI amount and last EMI amount
-    if (!emiAmount || !customEmiAmount) {
-      return NextResponse.json(
-        { success: false, error: 'Both Fixed EMI Amount and Last EMI Amount are required for Custom EMI type' },
-        { status: 400 }
-      );
+
+    // Validate EMI amounts based on loan type and EMI type
+    if (loanType === 'Daily') {
+      // Daily loans only need emiAmount
+      if (!emiAmount) {
+        return NextResponse.json(
+          { success: false, error: 'EMI Amount is required for Daily loans' },
+          { status: 400 }
+        );
+      }
+    } else {
+      // Weekly/Monthly loans
+      if (emiType === 'fixed') {
+        if (!emiAmount) {
+          return NextResponse.json(
+            { success: false, error: 'EMI Amount is required for Fixed EMI type' },
+            { status: 400 }
+          );
+        }
+      } else if (emiType === 'custom') {
+        // Custom EMI requires both fixed EMI amount and last EMI amount
+        if (!emiAmount || !customEmiAmount) {
+          return NextResponse.json(
+            { success: false, error: 'Both Fixed EMI Amount and Last EMI Amount are required for Custom EMI type' },
+            { status: 400 }
+          );
+        }
+      }
     }
-  }
-}
 
     if (!loginId || !password || !confirmPassword) {
       return NextResponse.json(
@@ -231,9 +287,9 @@ if (loanType === 'Daily') {
     // Check if there's already a pending request for this customer
     const existingRequest = await Request.findOne({
       $or: [
-        { 'data.phone': { $in: phone } },
-        { 'data.customerNumber': customerNumber },
-        { 'data.loginId': loginId }
+        { 'step1Data.phone': { $in: phone } },
+        { 'step1Data.customerNumber': customerNumber },
+        { 'step3Data.loginId': loginId }
       ],
       status: 'Pending',
       type: 'New Customer'
@@ -307,7 +363,7 @@ if (loanType === 'Daily') {
       totalLoanAmount = parseFloat(emiAmount) * parseInt(loanDays);
     }
 
-    // Create request data
+    // ✅ FIXED: Create request data in MULTI-STEP STRUCTURE
     const requestData = {
       type: 'New Customer',
       customerName: name,
@@ -315,7 +371,9 @@ if (loanType === 'Daily') {
       status: 'Pending',
       createdBy: createdBy,
       createdByRole: 'data_entry',
-      data: {
+      
+      // ✅ STORE DATA IN STEP STRUCTURE (this is what the approval logic expects)
+      step1Data: {
         // Customer details
         name,
         phone,
@@ -326,12 +384,46 @@ if (loanType === 'Daily') {
         address,
         category,
         officeCategory,
-        profilePicture: profilePicturePath,
-        fiDocuments: {
-          shop: fiDocumentShopPath,
-          home: fiDocumentHomePath
+        profilePicture: profilePicturePath ? {
+          filename: path.basename(profilePicturePath),
+          url: profilePicturePath,
+          originalName: profilePicture.name || path.basename(profilePicturePath),
+          uploadedAt: new Date()
+        } : {
+          filename: null,
+          url: null,
+          originalName: null,
+          uploadedAt: new Date()
         },
-        
+        fiDocuments: {
+          shop: fiDocumentShopPath ? {
+            filename: path.basename(fiDocumentShopPath),
+            url: fiDocumentShopPath,
+            originalName: fiDocumentShop.name || path.basename(fiDocumentShopPath),
+            uploadedAt: new Date()
+          } : {
+            filename: null,
+            url: null,
+            originalName: null,
+            uploadedAt: new Date()
+          },
+          home: fiDocumentHomePath ? {
+            filename: path.basename(fiDocumentHomePath),
+            url: fiDocumentHomePath,
+            originalName: fiDocumentHome.name || path.basename(fiDocumentHomePath),
+            uploadedAt: new Date()
+          } : {
+            filename: null,
+            url: null,
+            originalName: null,
+            uploadedAt: new Date()
+          }
+        },
+        email: '',
+        businessType: ''
+      },
+      
+      step2Data: {
         // Loan details
         loanDate,
         emiStartDate,
@@ -341,35 +433,40 @@ if (loanType === 'Daily') {
         loanType,
         emiType,
         customEmiAmount: customEmiAmount ? parseFloat(customEmiAmount) : null,
-        totalLoanAmount: totalLoanAmount,
-        
+        totalLoanAmount: totalLoanAmount
+      },
+      
+      step3Data: {
         // Login credentials
         loginId,
         password,
-        
-        // Metadata
-        createdBy,
-        createdAt: new Date()
+        confirmPassword
       },
+      
       description: `New customer request for ${name} - ${businessName} (${customerNumber})`,
-      priority: category === 'A' ? 'High' : category === 'B' ? 'Medium' : 'Low'
+      priority: category === 'A' ? 'High' : category === 'B' ? 'Medium' : 'Low',
+      createdAt: new Date(),
+      updatedAt: new Date()
     };
 
-    console.log('📋 Creating new customer request:', {
+    console.log('📋 Creating new customer request with multi-step data:', {
       name,
       customerNumber,
       businessName,
       loanAmount,
       emiAmount,
       loanType,
-      emiType
+      emiType,
+      hasStep1Data: !!requestData.step1Data,
+      hasStep2Data: !!requestData.step2Data,
+      hasStep3Data: !!requestData.step3Data
     });
 
     // Create the request
     const newRequest = new Request(requestData);
     await newRequest.save();
 
-    console.log('✅ New customer request created successfully:', newRequest._id);
+    console.log('✅ New customer request created successfully with multi-step data:', newRequest._id);
 
     return NextResponse.json({
       success: true,
@@ -407,6 +504,73 @@ if (loanType === 'Daily') {
       { 
         success: false,
         error: 'Failed to create customer request: ' + error.message 
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT method for updating customer requests
+export async function PUT(request) {
+  try {
+    await connectDB();
+    
+    const { searchParams } = new URL(request.url);
+    const requestId = searchParams.get('requestId');
+    const action = searchParams.get('action'); // 'approve' or 'reject'
+
+    if (!requestId || !action) {
+      return NextResponse.json(
+        { success: false, error: 'Request ID and action are required' },
+        { status: 400 }
+      );
+    }
+
+    const requestDoc = await Request.findById(requestId);
+    if (!requestDoc) {
+      return NextResponse.json(
+        { success: false, error: 'Request not found' },
+        { status: 404 }
+      );
+    }
+
+    if (action === 'approve') {
+      // Update request status to approved
+      requestDoc.status = 'Approved';
+      requestDoc.reviewedAt = new Date();
+      requestDoc.updatedAt = new Date();
+      
+      await requestDoc.save();
+      
+      return NextResponse.json({
+        success: true,
+        message: 'Customer request approved successfully'
+      });
+    } else if (action === 'reject') {
+      // Update request status to rejected
+      requestDoc.status = 'Rejected';
+      requestDoc.reviewedAt = new Date();
+      requestDoc.updatedAt = new Date();
+      
+      await requestDoc.save();
+      
+      return NextResponse.json({
+        success: true,
+        message: 'Customer request rejected successfully'
+      });
+    } else {
+      return NextResponse.json(
+        { success: false, error: 'Invalid action. Use "approve" or "reject".' },
+        { status: 400 }
+      );
+    }
+
+  } catch (error) {
+    console.error('❌ Error updating customer request:', error);
+    return NextResponse.json(
+      { 
+        success: false,
+        error: 'Failed to update customer request: ' + error.message 
       },
       { status: 500 }
     );

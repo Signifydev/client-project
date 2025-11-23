@@ -418,10 +418,10 @@ export default function DataEntryDashboard() {
   whatsappNumber: '',
   businessName: '',
   area: '',
-  customerNumber: '',
+  customerNumber: 'CN', // Start with CN prefix
   address: '',
-  category: 'A', // Default value
-  officeCategory: 'Office 1', // Default value
+  category: 'A', // Set default value
+  officeCategory: 'Office 1', // Set default value
   profilePicture: null,
   fiDocuments: {
     shop: null,
@@ -1159,53 +1159,59 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
   return loans;
 };
   const validateStep1 = () => {
-    const errors: {[key: string]: string} = {};
-    
-    if (!step1Data.name.trim()) {
-      errors.name = 'Customer name is required';
-    }
-    
-    // Only validate primary phone (index 0)
-    if (!step1Data.phone[0] || !/^\d{10}$/.test(step1Data.phone[0])) {
+  const errors: {[key: string]: string} = {};
+  
+  if (!step1Data.name.trim()) {
+    errors.name = 'Customer name is required';
+  }
+  
+  // Enhanced phone validation
+  const validPhones = step1Data.phone.filter(p => p && p.trim() !== '');
+  if (validPhones.length === 0) {
+    errors.phone = 'At least one phone number is required';
+  } else {
+    // Validate primary phone (index 0)
+    if (!validPhones[0] || !/^\d{10}$/.test(validPhones[0])) {
       errors.phone = 'Valid primary phone number is required (10 digits)';
     }
 
     // Validate secondary phone if provided
-    if (step1Data.phone[1] && !/^\d{10}$/.test(step1Data.phone[1])) {
+    if (validPhones[1] && !/^\d{10}$/.test(validPhones[1])) {
       errors.phone = 'Secondary phone number must be a valid 10-digit number';
     }
+  }
 
-    if (step1Data.whatsappNumber && !/^\d{10}$/.test(step1Data.whatsappNumber)) {
-      errors.whatsappNumber = 'WhatsApp number must be a valid 10-digit number';
-    }
-    
-    if (!step1Data.businessName.trim()) {
-      errors.businessName = 'Business name is required';
-    }
-    
-    if (!step1Data.area.trim()) {
-      errors.area = 'Area is required';
-    }
-    
-    if (!step1Data.customerNumber.trim()) {
-      errors.customerNumber = 'Customer number is required';
-    }
-    
-    if (!step1Data.address.trim()) {
-      errors.address = 'Address is required';
-    }
+  if (step1Data.whatsappNumber && !/^\d{10}$/.test(step1Data.whatsappNumber)) {
+    errors.whatsappNumber = 'WhatsApp number must be a valid 10-digit number';
+  }
+  
+  if (!step1Data.businessName.trim()) {
+    errors.businessName = 'Business name is required';
+  }
+  
+  if (!step1Data.area.trim()) {
+    errors.area = 'Area is required';
+  }
+  
+  if (!step1Data.customerNumber.trim()) {
+    errors.customerNumber = 'Customer number is required';
+  }
+  
+  if (!step1Data.address.trim()) {
+    errors.address = 'Address is required';
+  }
 
-    if (!step1Data.category) {
-      errors.category = 'Category is required';
-    }
-    
-    if (!step1Data.officeCategory) {
-      errors.officeCategory = 'Office category is required';
-    }
-    
-    setStep1Errors(errors);
-    return Object.keys(errors).length === 0;
-  };
+  if (!step1Data.category) {
+    errors.category = 'Category is required';
+  }
+  
+  if (!step1Data.officeCategory) {
+    errors.officeCategory = 'Office category is required';
+  }
+  
+  setStep1Errors(errors);
+  return Object.keys(errors).length === 0;
+};
 
   const validateStep2 = () => {
   const errors: {[key: string]: string} = {};
@@ -2267,76 +2273,37 @@ const debugEMIPayments = () => {
   const handleAddCustomer = async () => {
   if (!validateStep3()) return;
 
-  // Enhanced validation for all required fields
-  const missingFields: string[] = [];
-  
-  // Step 1 validation
-  if (!step1Data.name?.trim()) missingFields.push('name');
-  if (!step1Data.phone?.[0]?.trim()) missingFields.push('primary phone');
-  if (!step1Data.businessName?.trim()) missingFields.push('businessName');
-  if (!step1Data.area?.trim()) missingFields.push('area');
-  if (!step1Data.customerNumber?.trim()) missingFields.push('customerNumber');
-  if (!step1Data.address?.trim()) missingFields.push('address');
-  if (!step1Data.category?.trim()) missingFields.push('category');
-  if (!step1Data.officeCategory?.trim()) missingFields.push('officeCategory');
-
-  if (missingFields.length > 0) {
-    alert(`Please fill all required fields. Missing: ${missingFields.join(', ')}`);
-    setCurrentStep(1);
-    return;
-  }
-
-  // Validate phone numbers
-  const validPhones = step1Data.phone.filter(p => p?.trim() !== '');
-  if (validPhones.length === 0) {
-    alert('Please provide at least one phone number');
-    setCurrentStep(1);
-    return;
-  }
-
-  for (const phone of validPhones) {
-    if (!/^\d{10}$/.test(phone)) {
-      alert('Please ensure all phone numbers are valid 10-digit numbers');
-      setCurrentStep(1);
-      return;
-    }
-  }
-
-  // Validate Step 2 data
-  const step2MissingFields: string[] = [];
-  if (!step2Data.loanDate) step2MissingFields.push('loanDate');
-  if (!step2Data.emiStartDate) step2MissingFields.push('emiStartDate');
-  if (!step2Data.loanAmount) step2MissingFields.push('loanAmount');
-  if (!step2Data.emiAmount) step2MissingFields.push('emiAmount');
-  if (!step2Data.loanDays) step2MissingFields.push('loanDays');
-  if (!step2Data.loanType) step2MissingFields.push('loanType');
-  if (!step2Data.emiType) step2MissingFields.push('emiType');
-
-  if (step2MissingFields.length > 0) {
-    alert(`Please fill all loan details. Missing: ${step2MissingFields.join(', ')}`);
-    setCurrentStep(2);
-    return;
-  }
-
   setIsLoading(true);
   try {
     console.log('🟡 Starting customer submission...');
+    
+    // Debug: Log phone data before sending
+    console.log('📱 PHONE DATA BEFORE SUBMISSION:', step1Data.phone);
+    console.log('🔍 FILTERED PHONES:', step1Data.phone.filter(phone => phone && phone.trim() !== ''));
 
     const formData = new FormData();
     
-    // Step 1: Customer Basic Details - FIXED
+    // Step 1: Customer Basic Details
     formData.append('name', step1Data.name.trim());
     
-    // Add phone numbers properly
-    step1Data.phone.forEach((phone, index) => {
-      if (phone && phone.trim()) {
-        formData.append(`phone[${index}]`, phone.trim());
-      }
+    // FIX: Properly add phone numbers to FormData
+    const validPhones = step1Data.phone.filter(phone => phone && phone.trim() !== '');
+    console.log('✅ VALID PHONES TO SEND:', validPhones);
+    
+    if (validPhones.length === 0) {
+      alert('Please provide at least one phone number');
+      setIsLoading(false);
+      return;
+    }
+    
+    // Add each phone number individually
+    validPhones.forEach((phone, index) => {
+      formData.append('phone[]', phone.trim());
+      console.log(`📞 Added phone[${index}]:`, phone.trim());
     });
     
-    // Add WhatsApp number (can be empty)
+    // Add other fields...
     formData.append('whatsappNumber', step1Data.whatsappNumber ? step1Data.whatsappNumber.trim() : '');
-    
     formData.append('businessName', step1Data.businessName.trim());
     formData.append('area', step1Data.area.trim());
     
@@ -2359,7 +2326,6 @@ const debugEMIPayments = () => {
     formData.append('loanType', step2Data.loanType);
     formData.append('emiType', step2Data.emiType);
     
-    // Custom EMI amount - only append if it exists
     if (step2Data.customEmiAmount) {
       formData.append('customEmiAmount', step2Data.customEmiAmount.toString());
     }
@@ -2370,22 +2336,19 @@ const debugEMIPayments = () => {
     formData.append('confirmPassword', step3Data.confirmPassword);
     formData.append('createdBy', 'data_entry_operator_1');
 
-    // File Uploads - FIXED: Use the correct field names
+    // File Uploads
     if (step1Data.profilePicture) {
       formData.append('profilePicture', step1Data.profilePicture);
-      console.log('📷 Profile picture added:', step1Data.profilePicture.name);
     }
     if (step1Data.fiDocuments?.shop) {
       formData.append('fiDocumentShop', step1Data.fiDocuments.shop);
-      console.log('📄 Shop FI document added:', step1Data.fiDocuments.shop.name);
     }
     if (step1Data.fiDocuments?.home) {
       formData.append('fiDocumentHome', step1Data.fiDocuments.home);
-      console.log('📄 Home FI document added:', step1Data.fiDocuments.home.name);
     }
 
-    // DEBUG: Log all form data
-    console.log('📤 FormData contents:');
+    // DEBUG: Log all form data being sent
+    console.log('📤 FormData contents being sent:');
     for (const [key, value] of formData.entries()) {
       if (key.includes('password')) {
         console.log(`  ${key}: *** (hidden)`);
@@ -2416,22 +2379,11 @@ const debugEMIPayments = () => {
     if (!response.ok) {
       console.error('❌ API error response:', data);
       
-      if (response.status === 409) {
-        if (data.field === 'phone') {
-          throw new Error('Customer with this phone number already exists');
-        } else if (data.field === 'customerNumber') {
-          throw new Error('Customer number already exists. Please use a unique customer number');
-        } else if (data.field === 'loginId') {
-          throw new Error('Login ID already exists. Please use a unique login ID');
-        } else {
-          throw new Error('A pending request already exists for this customer');
-        }
-      }
-      
-      if (data.error) {
+      // Enhanced error handling to show specific missing fields
+      if (data.missingFields) {
+        throw new Error(`Missing required fields: ${data.missingFields.join(', ')}`);
+      } else if (data.error) {
         throw new Error(data.error);
-      } else if (data.message) {
-        throw new Error(data.message);
       } else {
         throw new Error(`Failed to submit customer request: ${response.status} ${response.statusText}`);
       }
@@ -4022,46 +3974,47 @@ const renderDeleteConfirmationModal = () => {
       </div>
       
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Primary Phone Number *</label>
-        <input 
-          type="tel" 
-          className={`w-full px-3 py-2 border rounded-md ${
-            step1Errors.phone ? 'border-red-500' : 'border-gray-300'
-          }`}
-          value={step1Data.phone[0] || ''}
-          onChange={(e) => {
-            const value = e.target.value.replace(/\D/g, '');
-            if (value.length <= 10) {
-              const newPhones = [...step1Data.phone];
-              newPhones[0] = value;
-              setStep1Data({...step1Data, phone: newPhones});
-            }
-          }}
-          placeholder="Enter 10-digit primary phone number"
-          maxLength={10}
-        />
-        {step1Errors.phone && <p className="text-red-500 text-xs mt-1">{step1Errors.phone}</p>}
-      </div>
+    <label className="block text-sm font-medium text-gray-700 mb-2">Primary Phone Number *</label>
+    <input 
+      type="tel" 
+      className={`w-full px-3 py-2 border rounded-md ${
+        step1Errors.phone ? 'border-red-500' : 'border-gray-300'
+      }`}
+      value={step1Data.phone[0] || ''}
+      onChange={(e) => {
+        const value = e.target.value.replace(/\D/g, '');
+        if (value.length <= 10) {
+          const newPhones = [...step1Data.phone];
+          newPhones[0] = value;
+          setStep1Data({...step1Data, phone: newPhones});
+        }
+      }}
+      placeholder="Enter 10-digit primary phone number"
+      maxLength={10}
+      required
+    />
+    {step1Errors.phone && <p className="text-red-500 text-xs mt-1">{step1Errors.phone}</p>}
+  </div>
 
-      {/* Row 2 */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Secondary Phone Number</label>
-        <input 
-          type="tel" 
-          className="w-full px-3 py-2 border border-gray-300 rounded-md"
-          value={step1Data.phone[1] || ''}
-          onChange={(e) => {
-            const value = e.target.value.replace(/\D/g, '');
-            if (value.length <= 10) {
-              const newPhones = [...step1Data.phone];
-              newPhones[1] = value;
-              setStep1Data({...step1Data, phone: newPhones});
-            }
-          }}
-          placeholder="Secondary phone (optional)"
-          maxLength={10}
-        />
-      </div>
+  {/* Secondary Phone */}
+  <div>
+    <label className="block text-sm font-medium text-gray-700 mb-2">Secondary Phone Number</label>
+    <input 
+      type="tel" 
+      className="w-full px-3 py-2 border border-gray-300 rounded-md"
+      value={step1Data.phone[1] || ''}
+      onChange={(e) => {
+        const value = e.target.value.replace(/\D/g, '');
+        if (value.length <= 10) {
+          const newPhones = [...step1Data.phone];
+          newPhones[1] = value;
+          setStep1Data({...step1Data, phone: newPhones});
+        }
+      }}
+      placeholder="Secondary phone (optional)"
+      maxLength={10}
+    />
+  </div>
       
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -4122,7 +4075,7 @@ const renderDeleteConfirmationModal = () => {
       </div>
 
       {/* Row 4 */}
-      <div>
+<div>
   <label className="block text-sm font-medium text-gray-700 mb-2">Customer Number *</label>
   <div className="flex">
     <span className="inline-flex items-center px-3 py-2 border border-r-0 border-gray-300 bg-gray-50 text-gray-500 rounded-l-md">
@@ -4133,10 +4086,10 @@ const renderDeleteConfirmationModal = () => {
       className={`flex-1 px-3 py-2 border rounded-r-md ${
         step1Errors.customerNumber ? 'border-red-500' : 'border-gray-300'
       }`}
-      value={step1Data.customerNumber.replace('CN', '')} // Remove CN for input display
+      value={step1Data.customerNumber.replace('CN', '')}
       onChange={(e) => {
         const numbersOnly = e.target.value.replace(/\D/g, '');
-        // Store with CN prefix
+        // Always store with CN prefix
         setStep1Data({...step1Data, customerNumber: `CN${numbersOnly}`});
       }}
       placeholder="Enter numbers only"
@@ -4144,7 +4097,9 @@ const renderDeleteConfirmationModal = () => {
     />
   </div>
   {step1Errors.customerNumber && <p className="text-red-500 text-xs mt-1">{step1Errors.customerNumber}</p>}
-  <p className="text-xs text-gray-500 mt-1">Must be unique. Full customer number: {step1Data.customerNumber || 'CN___'}</p>
+  <p className="text-xs text-gray-500 mt-1">
+    Full customer number: {step1Data.customerNumber || 'CN___'}
+  </p>
 </div>
       
       <div>
@@ -4161,42 +4116,48 @@ const renderDeleteConfirmationModal = () => {
         {step1Errors.address && <p className="text-red-500 text-xs mt-1">{step1Errors.address}</p>}
       </div>
 
-      {/* Row 5 */}
-      <div>
-  <label className="block text-sm font-medium text-gray-700 mb-2">Category *</label>
-  
-  {/* Category Field */}
-  <select 
-    className={`w-full px-3 py-2 border rounded-md ${
-      step1Errors.category ? 'border-red-500' : 'border-gray-300'
-    }`}
-    value={step1Data.category}
-    onChange={(e) => setStep1Data({...step1Data, category: e.target.value})}
-    required
-  >
-    <option value="">Select Category</option>
-    <option value="A">Category A</option>
-    <option value="B">Category B</option>
-    <option value="C">Category C</option>
-  </select>
-  {step1Errors.category && <p className="text-red-500 text-xs mt-1">{step1Errors.category}</p>}
-  <p className="text-xs text-gray-500 mt-1">Customer priority category</p>
+      {/* Row 5 - Category and Office Category */}
+<div className="md:col-span-2">
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    {/* Category Field */}
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">Category *</label>
+      <select 
+        className={`w-full px-3 py-2 border rounded-md ${
+          step1Errors.category ? 'border-red-500' : 'border-gray-300'
+        }`}
+        value={step1Data.category}
+        onChange={(e) => setStep1Data({...step1Data, category: e.target.value})}
+        required
+      >
+        <option value="">Select Category</option>
+        <option value="A">Category A</option>
+        <option value="B">Category B</option>
+        <option value="C">Category C</option>
+      </select>
+      {step1Errors.category && <p className="text-red-500 text-xs mt-1">{step1Errors.category}</p>}
+      <p className="text-xs text-gray-500 mt-1">Customer priority category</p>
+    </div>
 
-  {/* Office Category Field */}
-  <select 
-    className={`w-full px-3 py-2 border rounded-md ${
-      step1Errors.officeCategory ? 'border-red-500' : 'border-gray-300'
-    }`}
-    value={step1Data.officeCategory}
-    onChange={(e) => setStep1Data({...step1Data, officeCategory: e.target.value})}
-    required
-  >
-    <option value="">Select Office Category</option>
-    <option value="Office 1">Office 1</option>
-    <option value="Office 2">Office 2</option>
-  </select>
-  {step1Errors.officeCategory && <p className="text-red-500 text-xs mt-1">{step1Errors.officeCategory}</p>}
-  <p className="text-xs text-gray-500 mt-1">Assigned office location</p>
+    {/* Office Category Field */}
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">Office Category *</label>
+      <select 
+        className={`w-full px-3 py-2 border rounded-md ${
+          step1Errors.officeCategory ? 'border-red-500' : 'border-gray-300'
+        }`}
+        value={step1Data.officeCategory}
+        onChange={(e) => setStep1Data({...step1Data, officeCategory: e.target.value})}
+        required
+      >
+        <option value="">Select Office Category</option>
+        <option value="Office 1">Office 1</option>
+        <option value="Office 2">Office 2</option>
+      </select>
+      {step1Errors.officeCategory && <p className="text-red-500 text-xs mt-1">{step1Errors.officeCategory}</p>}
+      <p className="text-xs text-gray-500 mt-1">Assigned office location</p>
+    </div>
+  </div>
 </div>
     </div>
 
@@ -7326,15 +7287,24 @@ const renderCollection = () => {
   );
 
   const renderCustomers = () => {
-  // Sort customers by customer number
+  // Sort customers by customer number (numeric sorting)
   const sortedCustomers = [...filteredCustomers].sort((a, b) => {
-    const aNumber = a.customerNumber || '';
-    const bNumber = b.customerNumber || '';
+    // Extract numeric parts from customer numbers
+    const extractNumber = (customerNumber: string): number => {
+      if (!customerNumber) return 0;
+      
+      // Remove "CN" prefix and any non-digit characters, then parse as number
+      const numericPart = customerNumber.replace(/^CN/, '').replace(/\D/g, '');
+      return parseInt(numericPart) || 0;
+    };
+
+    const aNumber = extractNumber(a.customerNumber || '');
+    const bNumber = extractNumber(b.customerNumber || '');
     
     if (customerSortOrder === 'asc') {
-      return aNumber.localeCompare(bNumber);
+      return aNumber - bNumber; // Numeric ascending
     } else {
-      return bNumber.localeCompare(aNumber);
+      return bNumber - aNumber; // Numeric descending
     }
   });
 
@@ -7404,7 +7374,7 @@ const renderCollection = () => {
           </div>
         </div>
 
-        {/* Filters Section - Updated without Customer Number and Loan Type */}
+        {/* Filters Section */}
         {showFilters && (
           <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm mb-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
