@@ -185,6 +185,10 @@ interface RenewLoanData {
   newLoanDays: string;
   newLoanType: string;
   remarks: string;
+  // Add these new fields to match Add Loan structure
+  emiStartDate: string;
+  emiType: 'fixed' | 'custom';
+  customEmiAmount?: string;
 }
 
 interface EMIUpdate {
@@ -372,18 +376,22 @@ export default function DataEntryDashboard() {
   });
 
   const [renewLoanData, setRenewLoanData] = useState<RenewLoanData>({
-    loanId: '',
-    customerId: '',
-    customerName: '',
-    customerNumber: '',
-    loanNumber: '',
-    renewalDate: new Date().toISOString().split('T')[0],
-    newLoanAmount: '',
-    newEmiAmount: '',
-    newLoanDays: '',
-    newLoanType: 'Monthly',
-    remarks: ''
-  });
+  loanId: '',
+  customerId: '',
+  customerName: '',
+  customerNumber: '',
+  loanNumber: '',
+  renewalDate: new Date().toISOString().split('T')[0],
+  newLoanAmount: '',
+  newEmiAmount: '',
+  newLoanDays: '',
+  newLoanType: 'Monthly',
+  remarks: '',
+  // Add new fields
+  emiStartDate: new Date().toISOString().split('T')[0],
+  emiType: 'fixed',
+  customEmiAmount: ''
+});
   
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<Filters>({
@@ -1583,21 +1591,25 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
   };
 
   const handleRenewLoan = (loan: Loan) => {
-    setRenewLoanData({
-      loanId: loan._id,
-      customerId: loan.customerId,
-      customerName: loan.customerName,
-      customerNumber: loan.customerNumber,
-      loanNumber: loan.loanNumber,
-      renewalDate: new Date().toISOString().split('T')[0],
-      newLoanAmount: loan.amount.toString(),
-      newEmiAmount: loan.emiAmount.toString(),
-      newLoanDays: loan.loanDays.toString(),
-      newLoanType: loan.loanType,
-      remarks: ''
-    });
-    setShowRenewLoan(true);
-  };
+  setRenewLoanData({
+    loanId: loan._id,
+    customerId: loan.customerId,
+    customerName: loan.customerName,
+    customerNumber: loan.customerNumber,
+    loanNumber: loan.loanNumber,
+    renewalDate: new Date().toISOString().split('T')[0],
+    newLoanAmount: loan.amount.toString(),
+    newEmiAmount: loan.emiAmount.toString(),
+    newLoanDays: loan.loanDays.toString(),
+    newLoanType: loan.loanType,
+    remarks: `Renewal of loan ${loan.loanNumber}`,
+    // Add new fields with default values
+    emiStartDate: new Date().toISOString().split('T')[0],
+    emiType: 'fixed',
+    customEmiAmount: ''
+  });
+  setShowRenewLoan(true);
+};
 
   const handleSaveEditLoan = async () => {
     setIsLoading(true);
@@ -1677,83 +1689,90 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
   };
 
   const handleSaveRenewLoan = async () => {
-    setIsLoading(true);
-    try {
-      console.log('🔄 Starting renew loan request...');
-      console.log('📦 Renew loan data:', renewLoanData);
+  setIsLoading(true);
+  try {
+    console.log('🔄 Starting renew loan request...');
+    console.log('📦 Renew loan data:', renewLoanData);
 
-      if (!renewLoanData.newLoanAmount || !renewLoanData.newEmiAmount || !renewLoanData.newLoanDays) {
-        alert('Please fill all required fields');
-        setIsLoading(false);
-        return;
-      }
-
-      const apiUrl = '/api/data-entry/renew-loan-request';
-      console.log('🌐 Calling API:', apiUrl);
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...renewLoanData,
-          newLoanAmount: Number(renewLoanData.newLoanAmount),
-          newEmiAmount: Number(renewLoanData.newEmiAmount),
-          newLoanDays: Number(renewLoanData.newLoanDays),
-          requestedBy: 'data_entry_operator_1',
-          requestType: 'renew_loan'
-        }),
-      });
-
-      console.log('📡 Response status:', response.status);
-
-      const responseText = await response.text();
-      console.log('📄 Raw response:', responseText);
-
-      if (responseText.trim().startsWith('<!') || responseText.trim().startsWith('<html')) {
-        console.error('❌ Server returned HTML instead of JSON. Likely a 404 error.');
-        throw new Error('API endpoint not found. Please check the server.');
-      }
-
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('❌ Failed to parse response as JSON:', parseError);
-        throw new Error('Server returned invalid JSON. Response: ' + responseText.substring(0, 200));
-      }
-
-      console.log('✅ Parsed response data:', data);
-      
-      if (!response.ok) {
-        throw new Error(data.error || `HTTP error! status: ${response.status}`);
-      }
-
-      alert('Loan renewal request submitted successfully! Waiting for admin approval.');
-      setShowRenewLoan(false);
-      setRenewLoanData({
-        loanId: '',
-        customerId: '',
-        customerName: '',
-        customerNumber: '',
-        loanNumber: '',
-        renewalDate: new Date().toISOString().split('T')[0],
-        newLoanAmount: '',
-        newEmiAmount: '',
-        newLoanDays: '',
-        newLoanType: 'Monthly',
-        remarks: ''
-      });
-      
-      if (activeTab === 'requests') fetchPendingRequests();
-    } catch (error: any) {
-      console.error('💥 Error in handleSaveRenewLoan:', error);
-      alert('Error: ' + error.message);
-    } finally {
+    if (!renewLoanData.newLoanAmount || !renewLoanData.newEmiAmount || !renewLoanData.newLoanDays) {
+      alert('Please fill all required fields');
       setIsLoading(false);
+      return;
     }
-  };
+
+    const apiUrl = '/api/data-entry/renew-loan-request';
+    console.log('🌐 Calling API:', apiUrl);
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ...renewLoanData,
+        newLoanAmount: Number(renewLoanData.newLoanAmount),
+        newEmiAmount: Number(renewLoanData.newEmiAmount),
+        newLoanDays: Number(renewLoanData.newLoanDays),
+        emiStartDate: renewLoanData.emiStartDate,
+        emiType: renewLoanData.emiType,
+        customEmiAmount: renewLoanData.customEmiAmount ? Number(renewLoanData.customEmiAmount) : null,
+        requestedBy: 'data_entry_operator_1',
+        requestType: 'renew_loan'
+      }),
+    });
+
+    // ... rest of the function remains the same
+    console.log('📡 Response status:', response.status);
+
+    const responseText = await response.text();
+    console.log('📄 Raw response:', responseText);
+
+    if (responseText.trim().startsWith('<!') || responseText.trim().startsWith('<html')) {
+      console.error('❌ Server returned HTML instead of JSON. Likely a 404 error.');
+      throw new Error('API endpoint not found. Please check the server.');
+    }
+
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('❌ Failed to parse response as JSON:', parseError);
+      throw new Error('Server returned invalid JSON. Response: ' + responseText.substring(0, 200));
+    }
+
+    console.log('✅ Parsed response data:', data);
+    
+    if (!response.ok) {
+      throw new Error(data.error || `HTTP error! status: ${response.status}`);
+    }
+
+    alert('Loan renewal request submitted successfully! A new loan will be added after admin approval.');
+    setShowRenewLoan(false);
+    setRenewLoanData({
+      loanId: '',
+      customerId: '',
+      customerName: '',
+      customerNumber: '',
+      loanNumber: '',
+      renewalDate: new Date().toISOString().split('T')[0],
+      newLoanAmount: '',
+      newEmiAmount: '',
+      newLoanDays: '',
+      newLoanType: 'Monthly',
+      remarks: '',
+      emiStartDate: new Date().toISOString().split('T')[0],
+      emiType: 'fixed',
+      customEmiAmount: ''
+    });
+    
+    if (activeTab === 'requests') fetchPendingRequests();
+  } catch (error: any) {
+    console.error('💥 Error in handleSaveRenewLoan:', error);
+    alert('Error: ' + error.message);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const handleDeleteLoan = async (loan: Loan) => {
     if (!confirm(`Are you sure you want to request deletion of Loan ${loan.loanNumber}? This action requires admin approval.`)) {
@@ -2501,7 +2520,7 @@ debugDataStorage(step1Data, step2Data, step3Data);
   }
 };
 
-  const handleUpdateEMI = async () => {
+    const handleUpdateEMI = async () => {
   if (!selectedCustomer || !selectedLoanForPayment) {
     alert('Please select a customer and loan first');
     return;
@@ -2523,6 +2542,57 @@ debugDataStorage(step1Data, step2Data, step3Data);
     // Validation for advance payment
     if (emiUpdate.paymentType === 'advance' && (!emiUpdate.amount || !emiUpdate.advanceFromDate || !emiUpdate.advanceToDate)) {
       alert('Please fill all required fields for advance payment');
+      setIsLoading(false);
+      return;
+    }
+
+    // Enhanced frontend duplicate check before API call
+    const checkExistingPayments = async () => {
+      if (emiUpdate.paymentType === 'single') {
+        // Check if payment already exists for this date
+        if (selectedLoanForPayment?.emiHistory) {
+          const existingPayment = selectedLoanForPayment.emiHistory.find(
+            (payment: EMIHistory) => {
+              const paymentDateStr = new Date(payment.paymentDate).toISOString().split('T')[0];
+              const emiDateStr = new Date(emiUpdate.paymentDate).toISOString().split('T')[0];
+              return paymentDateStr === emiDateStr;
+            }
+          );
+          
+          if (existingPayment) {
+            alert(`EMI payment for ${emiUpdate.paymentDate} already exists. Please use a different date or edit the existing payment.`);
+            return true;
+          }
+        }
+      } else if (emiUpdate.paymentType === 'advance') {
+        // Check advance period against existing payments
+        if (selectedLoanForPayment?.emiHistory && emiUpdate.advanceFromDate && emiUpdate.advanceToDate) {
+          const fromDate = new Date(emiUpdate.advanceFromDate);
+          const toDate = new Date(emiUpdate.advanceToDate);
+          
+          const conflictingPayments = selectedLoanForPayment.emiHistory.filter(
+            (payment: EMIHistory) => {
+              const paymentDate = new Date(payment.paymentDate);
+              return paymentDate >= fromDate && paymentDate <= toDate;
+            }
+          );
+          
+          if (conflictingPayments.length > 0) {
+            const conflictingDates = conflictingPayments.map(p => 
+              new Date(p.paymentDate).toISOString().split('T')[0]
+            );
+            
+            alert(`Advance payment period conflicts with existing payments on: ${conflictingDates.join(', ')}`);
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    // Run the duplicate check
+    const hasDuplicate = await checkExistingPayments();
+    if (hasDuplicate) {
       setIsLoading(false);
       return;
     }
@@ -2675,16 +2745,19 @@ debugDataStorage(step1Data, step2Data, step3Data);
     
     fetchDashboardData();
     
-  } catch (error: any) {
+    } catch (error: any) {
     console.error('💥 Error updating EMI:', error);
     
-    // More user-friendly error messages
-    if (error.message.includes('Loan not found')) {
+    // Enhanced error messages for duplicate payments
+    if (error.message.includes('already exists') || error.message.includes('conflicts with existing payments')) {
+      alert(`❌ Payment Conflict: ${error.message}\n\nPlease choose a different date or edit the existing payment.`);
+    } else if (error.message.includes('Loan not found')) {
       alert(`❌ Loan Issue: ${error.message}\n\nPlease ensure:\n• The customer has an approved loan\n• The loan exists in the system\n• Contact admin if this persists`);
     } else {
       alert('Error: ' + error.message);
     }
-  } finally {
+  }
+  finally {
     setIsLoading(false);
   }
 };
@@ -5330,64 +5403,57 @@ const renderDeleteConfirmationModal = () => {
   );
 
   const renderRenewLoanModal = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-bold">Renew Loan</h3>
-            <button 
-              onClick={() => setShowRenewLoan(false)}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              ✕
-            </button>
-          </div>
-          
-          <div className="space-y-6">
-            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-              <h4 className="text-lg font-semibold text-blue-900 mb-2">Customer Information</h4>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                <div>
-                  <span className="text-blue-700 font-medium">Customer Name:</span>
-                  <p className="text-blue-900">{renewLoanData.customerName}</p>
-                </div>
-                <div>
-                  <span className="text-blue-700 font-medium">Customer Number:</span>
-                  <p className="text-blue-900">{renewLoanData.customerNumber}</p>
-                </div>
-                <div>
-                  <span className="text-blue-700 font-medium">Renewal Date:</span>
-                  <p className="text-blue-900">{renewLoanData.renewalDate}</p>
-                </div>
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-bold">Renew Loan</h3>
+          <button 
+            onClick={() => setShowRenewLoan(false)}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            ✕
+          </button>
+        </div>
+        
+        <div className="space-y-6">
+          <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+            <h4 className="text-lg font-semibold text-blue-900 mb-2">Customer Information</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div>
+                <span className="text-blue-700 font-medium">Customer Name:</span>
+                <p className="text-blue-900">{renewLoanData.customerName}</p>
+              </div>
+              <div>
+                <span className="text-blue-700 font-medium">Customer Number:</span>
+                <p className="text-blue-900">{renewLoanData.customerNumber}</p>
+              </div>
+              <div>
+                <span className="text-blue-700 font-medium">Renewal Date:</span>
+                <p className="text-blue-900">{renewLoanData.renewalDate}</p>
               </div>
             </div>
+          </div>
 
-            <div>
-              <h4 className="text-lg font-semibold mb-4">Renew Loan Details</h4>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Renewal Date *</label>
-                  <input 
-                    type="date" 
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    value={renewLoanData.renewalDate}
-                    onChange={(e) => setRenewLoanData({...renewLoanData, renewalDate: e.target.value})}
-                    required
-                  />
-                </div>
-                
-                <div>
+          <div>
+            <h4 className="text-lg font-semibold mb-4">Renew Loan Details</h4>
+            
+            <div className="space-y-6">
+              {/* Loan Type Selection */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="md:col-span-2 lg:col-span-1">
                   <label className="block text-sm font-medium text-gray-700 mb-2">Loan Type *</label>
                   <select 
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     value={renewLoanData.newLoanType}
                     onChange={(e) => {
+                      const newLoanType = e.target.value;
                       setRenewLoanData({
                         ...renewLoanData, 
-                        newLoanType: e.target.value,
-                        newLoanDays: e.target.value === 'Monthly' ? '30' : 
-                                   e.target.value === 'Weekly' ? '7' : '30'
+                        newLoanType: newLoanType,
+                        newLoanDays: newLoanType === 'Monthly' ? '1' : 
+                                   newLoanType === 'Weekly' ? '1' : '30',
+                        emiType: newLoanType === 'Daily' ? 'fixed' : renewLoanData.emiType
                       });
                     }}
                     required
@@ -5398,34 +5464,142 @@ const renderDeleteConfirmationModal = () => {
                   </select>
                 </div>
                 
+                {/* EMI Collection Type - Only show for Weekly/Monthly */}
+                {renewLoanData.newLoanType !== 'Daily' && (
+                  <div className="md:col-span-2 lg:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">EMI Collection Type *</label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <label className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                        renewLoanData.emiType === 'fixed' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="emiType"
+                          value="fixed"
+                          checked={renewLoanData.emiType === 'fixed'}
+                          onChange={(e) => setRenewLoanData({...renewLoanData, emiType: e.target.value as 'fixed' | 'custom'})}
+                          className="mr-3 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div>
+                          <div className="font-medium text-gray-900">Fixed EMI</div>
+                          <div className="text-sm text-gray-600">Same EMI amount for all periods</div>
+                        </div>
+                      </label>
+                      
+                      <label className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                        renewLoanData.emiType === 'custom' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="emiType"
+                          value="custom"
+                          checked={renewLoanData.emiType === 'custom'}
+                          onChange={(e) => setRenewLoanData({...renewLoanData, emiType: e.target.value as 'fixed' | 'custom'})}
+                          className="mr-3 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div>
+                          <div className="font-medium text-gray-900">Custom EMI</div>
+                          <div className="text-sm text-gray-600">Different EMI for last period</div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Loan Details Form */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Common Fields */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">New Loan Amount *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Renewal Date *</label>
+                  <input 
+                    type="date" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={renewLoanData.renewalDate}
+                    onChange={(e) => setRenewLoanData({...renewLoanData, renewalDate: e.target.value})}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">EMI Starting Date *</label>
+                  <input 
+                    type="date" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={renewLoanData.emiStartDate}
+                    onChange={(e) => setRenewLoanData({...renewLoanData, emiStartDate: e.target.value})}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Amount *</label>
                   <input 
                     type="number" 
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     value={renewLoanData.newLoanAmount}
                     onChange={(e) => setRenewLoanData({...renewLoanData, newLoanAmount: e.target.value})}
-                    placeholder="New Amount"
+                    placeholder="Loan Amount"
                     min="0"
                     step="0.01"
                     required
                   />
                 </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">New EMI Amount *</label>
-                  <input 
-                    type="number" 
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    value={renewLoanData.newEmiAmount}
-                    onChange={(e) => setRenewLoanData({...renewLoanData, newEmiAmount: e.target.value})}
-                    placeholder="New EMI Amount"
-                    min="0"
-                    step="0.01"
-                    required
-                  />
-                </div>
-                
+
+                {/* EMI Amount Fields */}
+                {renewLoanData.emiType === 'fixed' || renewLoanData.newLoanType === 'Daily' ? (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">EMI Amount *</label>
+                    <input 
+                      type="number" 
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      value={renewLoanData.newEmiAmount}
+                      onChange={(e) => setRenewLoanData({...renewLoanData, newEmiAmount: e.target.value})}
+                      placeholder="EMI Amount"
+                      min="0"
+                      step="0.01"
+                      required
+                    />
+                  </div>
+                ) : (
+                  <>
+                    {/* Custom EMI Fields */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Fixed EMI Amount *</label>
+                      <input 
+                        type="number" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={renewLoanData.newEmiAmount}
+                        onChange={(e) => setRenewLoanData({...renewLoanData, newEmiAmount: e.target.value})}
+                        placeholder="Fixed EMI Amount"
+                        min="0"
+                        step="0.01"
+                        required
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        For first {Number(renewLoanData.newLoanDays || 1) - 1} {renewLoanData.newLoanType === 'Weekly' ? 'weeks' : 'months'}
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Last EMI Amount *</label>
+                      <input 
+                        type="number" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={renewLoanData.customEmiAmount || ''}
+                        onChange={(e) => setRenewLoanData({...renewLoanData, customEmiAmount: e.target.value})}
+                        placeholder="Last EMI Amount"
+                        min="0"
+                        step="0.01"
+                        required
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        For last 1 {renewLoanData.newLoanType === 'Weekly' ? 'week' : 'month'}
+                      </p>
+                    </div>
+                  </>
+                )}
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     {renewLoanData.newLoanType === 'Daily' ? 'No. of Days *' : 
@@ -5446,6 +5620,107 @@ const renderDeleteConfirmationModal = () => {
                      renewLoanData.newLoanType === 'Weekly' ? 'Total duration in weeks' : 'Total duration in months'}
                   </p>
                 </div>
+
+                {/* Total Loan Amount */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Total Loan Amount</label>
+                  <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                    <p className="text-gray-900 font-semibold text-lg">
+                      ₹{renewLoanData.emiType === 'custom' && renewLoanData.newLoanType !== 'Daily' ? (
+                        ((Number(renewLoanData.newEmiAmount || 0) * (Number(renewLoanData.newLoanDays || 1) - 1)) + 
+                         (Number(renewLoanData.customEmiAmount || 0) * 1)).toLocaleString()
+                      ) : (
+                        (Number(renewLoanData.newEmiAmount || 0) * Number(renewLoanData.newLoanDays || 1)).toLocaleString()
+                      )}
+                    </p>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {renewLoanData.emiType === 'custom' && renewLoanData.newLoanType !== 'Daily' ? (
+                      `Fixed Periods + Last Period (Auto-calculated)`
+                    ) : (
+                      `EMI × Duration (Auto-calculated)`
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              {/* Custom EMI Breakdown */}
+              {renewLoanData.emiType === 'custom' && renewLoanData.newLoanType !== 'Daily' && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+                  <h5 className="font-medium text-yellow-800 mb-3">Custom EMI Breakdown</h5>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                    <div className="text-center">
+                      <div className="font-semibold text-yellow-700">Fixed Periods</div>
+                      <div className="text-lg font-bold text-yellow-900">{Number(renewLoanData.newLoanDays || 1) - 1}</div>
+                      <div className="text-xs text-yellow-600">{renewLoanData.newLoanType === 'Weekly' ? 'weeks' : 'months'}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="font-semibold text-yellow-700">Fixed EMI</div>
+                      <div className="text-lg font-bold text-yellow-900">₹{renewLoanData.newEmiAmount || '0'}</div>
+                      <div className="text-xs text-yellow-600">per period</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="font-semibold text-yellow-700">Last Period</div>
+                      <div className="text-lg font-bold text-yellow-900">1</div>
+                      <div className="text-xs text-yellow-600">{renewLoanData.newLoanType === 'Weekly' ? 'week' : 'month'}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="font-semibold text-yellow-700">Last EMI</div>
+                      <div className="text-lg font-bold text-yellow-900">₹{renewLoanData.customEmiAmount || '0'}</div>
+                      <div className="text-xs text-yellow-600">final period</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Loan Summary */}
+              <div className="bg-green-50 border border-green-200 rounded-md p-4">
+                <h5 className="font-semibold text-green-900 mb-3">Renewal Summary</h5>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <span className="text-green-700 font-medium">Loan Amount:</span>
+                    <p className="font-semibold text-green-900">₹{renewLoanData.newLoanAmount || '0'}</p>
+                  </div>
+                  <div>
+                    <span className="text-green-700 font-medium">Total Loan:</span>
+                    <p className="font-semibold text-green-900">
+                      ₹{renewLoanData.emiType === 'custom' && renewLoanData.newLoanType !== 'Daily' ? (
+                        ((Number(renewLoanData.newEmiAmount || 0) * (Number(renewLoanData.newLoanDays || 1) - 1)) + 
+                         (Number(renewLoanData.customEmiAmount || 0) * 1)).toLocaleString()
+                      ) : (
+                        (Number(renewLoanData.newEmiAmount || 0) * Number(renewLoanData.newLoanDays || 1)).toLocaleString()
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-green-700 font-medium">Duration:</span>
+                    <p className="font-semibold text-green-900">
+                      {renewLoanData.newLoanDays || '0'} 
+                      {renewLoanData.newLoanType === 'Daily' ? ' days' : 
+                       renewLoanData.newLoanType === 'Weekly' ? ' weeks' : ' months'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-green-700 font-medium">EMI Starts From:</span>
+                    <p className="font-semibold text-green-900">
+                      {renewLoanData.emiStartDate ? formatDateToDDMMYYYY(renewLoanData.emiStartDate) : 'Not set'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* EMI Type Summary */}
+                <div className="mt-3 pt-3 border-t border-green-200">
+                  <span className="text-green-700 font-medium">EMI Type:</span>
+                  <p className="font-semibold text-green-900">
+                    {renewLoanData.newLoanType === 'Daily' ? (
+                      `Daily EMI - All ${renewLoanData.newLoanDays} days at ₹${renewLoanData.newEmiAmount || '0'}`
+                    ) : renewLoanData.emiType === 'fixed' ? (
+                      `Fixed EMI - All ${renewLoanData.newLoanDays} ${renewLoanData.newLoanType.toLowerCase()} periods at ₹${renewLoanData.newEmiAmount || '0'}`
+                    ) : (
+                      `Custom EMI - ${Number(renewLoanData.newLoanDays || 1) - 1} periods at ₹${renewLoanData.newEmiAmount || '0'} + 1 period at ₹${renewLoanData.customEmiAmount || '0'}`
+                    )}
+                  </p>
+                </div>
               </div>
 
               <div className="mt-4">
@@ -5459,61 +5734,37 @@ const renderDeleteConfirmationModal = () => {
                 />
               </div>
             </div>
-
-            <div className="bg-green-50 border border-green-200 rounded-md p-4">
-              <h5 className="font-semibold text-green-900 mb-2">Renewal Summary</h5>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div>
-                  <span className="text-green-700">New Loan Amount:</span>
-                  <p className="font-semibold">₹{renewLoanData.newLoanAmount || '0'}</p>
-                </div>
-                <div>
-                  <span className="text-green-700">New EMI Amount:</span>
-                  <p className="font-semibold">₹{renewLoanData.newEmiAmount || '0'}</p>
-                </div>
-                <div>
-                  <span className="text-green-700">Duration:</span>
-                  <p className="font-semibold">
-                    {renewLoanData.newLoanDays || '0'} 
-                    {renewLoanData.newLoanType === 'Daily' ? ' days' : 
-                     renewLoanData.newLoanType === 'Weekly' ? ' weeks' : ' months'}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-green-700">Type:</span>
-                  <p className="font-semibold">{renewLoanData.newLoanType} EMI</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-              <h5 className="font-semibold text-blue-900 mb-2">Note</h5>
-              <p className="text-sm text-blue-700">
-                This renewal request will be sent to the admin for approval. The renewed loan will only be created after admin approval.
-              </p>
-            </div>
           </div>
-          
-          <div className="flex justify-end space-x-3 mt-6">
-            <button 
-              onClick={() => setShowRenewLoan(false)}
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-              disabled={isLoading}
-            >
-              Cancel
-            </button>
-            <button 
-              onClick={handleSaveRenewLoan}
-              disabled={isLoading || !renewLoanData.newLoanAmount || !renewLoanData.newEmiAmount || !renewLoanData.newLoanDays}
-              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400"
-            >
-              {isLoading ? 'Submitting...' : 'Submit Renewal Request'}
-            </button>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+            <h5 className="font-semibold text-blue-900 mb-2">Note</h5>
+            <p className="text-sm text-blue-700">
+              This renewal request will create a new loan and add it to the customer's loan list. 
+              The original loan will be marked as "Renewed". This request requires admin approval.
+            </p>
           </div>
+        </div>
+        
+        <div className="flex justify-end space-x-3 mt-6">
+          <button 
+            onClick={() => setShowRenewLoan(false)}
+            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+            disabled={isLoading}
+          >
+            Cancel
+          </button>
+          <button 
+            onClick={handleSaveRenewLoan}
+            disabled={isLoading || !renewLoanData.newLoanAmount || !renewLoanData.newEmiAmount || !renewLoanData.newLoanDays}
+            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400"
+          >
+            {isLoading ? 'Submitting...' : 'Submit Renewal Request'}
+          </button>
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 
   const renderEditCustomer = () => {
   const phoneNumbers = Array.isArray(editCustomerData.phone) ? editCustomerData.phone : [editCustomerData.phone || ''];
@@ -8159,6 +8410,19 @@ const renderCollection = () => {
                     <label className="block text-sm font-medium text-gray-700">Office Category</label>
                     <p className="mt-1 text-sm text-gray-900">{customerDetails.officeCategory || 'Not specified'}</p>
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Customer Number</label>
+                    <p className="mt-1 text-sm text-gray-900 font-mono">{customerDetails.customerNumber}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Phone Numbers</label>
+                    <p className="mt-1 text-sm text-gray-900">
+                      {Array.isArray(customerDetails.phone) 
+                        ? customerDetails.phone.filter(p => p).join(', ')
+                        : customerDetails.phone
+                      }
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -8181,146 +8445,279 @@ const renderCollection = () => {
                 </div>
               </div>
 
+              {/* Contact Information Section */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="text-lg font-semibold text-gray-900 mb-4">Contact Information</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">WhatsApp Number</label>
+                    <p className="mt-1 text-sm text-gray-900 flex items-center">
+                      {customerDetails.whatsappNumber || 'Not provided'}
+                      {customerDetails.whatsappNumber && (
+                        <span className="ml-2 text-green-600">📱</span>
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Email</label>
+                    <p className="mt-1 text-sm text-gray-900">{customerDetails.email || 'Not provided'}</p>
+                  </div>
+                </div>
+              </div>
+
               {/* Loan Information Section */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <div className="flex justify-between items-center mb-4">
                   <h4 className="text-lg font-semibold text-gray-900">Loan Information</h4>
-                  <button 
-                    onClick={() => setShowAddLoanModal(true)}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm"
-                  >
-                    + Add New Loan
-                  </button>
+                  <div className="flex space-x-2">
+                    <button 
+                      onClick={() => setShowAddLoanModal(true)}
+                      className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm"
+                    >
+                      + Add New Loan
+                    </button>
+                    <button 
+                      onClick={() => handleViewEMICalendar(customerDetails)}
+                      className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 text-sm"
+                    >
+                      📅 EMI Calendar
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-4">
-                  {displayLoans.map((loan, index) => {
-                    const completion = calculateEMICompletion(loan);
-                    const behavior = calculatePaymentBehavior(loan);
-                    const totalLoanAmount = calculateTotalLoanAmount(loan);
-                    
-                    return (
-                      <div 
-                        key={loan._id} 
-                        className="border border-gray-200 rounded-lg p-4 bg-white"
-                      >
-                        {/* Loan Header */}
-                        <div className="flex justify-between items-start mb-3">
-                          <div>
-                            <div className="flex items-center gap-4">
-                              <h5 className="font-medium text-gray-900 text-lg">
-                                {loan.loanNumber}
-                              </h5>
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                {loan.loanType} Loan
-                              </span>
+                  {displayLoans.length > 0 ? (
+                    displayLoans.map((loan, index) => {
+                      const completion = calculateEMICompletion(loan);
+                      const behavior = calculatePaymentBehavior(loan);
+                      const totalLoanAmount = calculateTotalLoanAmount(loan);
+                      const isRenewed = loan.status === 'renewed' || (loan as any).isRenewed === true;
+                      
+                      return (
+                        <div 
+                          key={loan._id} 
+                          className={`border border-gray-200 rounded-lg p-4 bg-white ${
+                            isRenewed ? 'border-l-4 border-l-purple-500' : ''
+                          }`}
+                        >
+                          {/* Loan Header */}
+                          <div className="flex justify-between items-start mb-3">
+                            <div>
+                              <div className="flex items-center gap-4 flex-wrap">
+                                <h5 className="font-medium text-gray-900 text-lg">
+                                  {loan.loanNumber}
+                                </h5>
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                  {loan.loanType} Loan
+                                </span>
+                                {isRenewed && (
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                    🔄 Renewed
+                                  </span>
+                                )}
+                                {loan.status === 'active' && !isRenewed && (
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    Active
+                                  </span>
+                                )}
+                                {loan.status === 'completed' && (
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                    Completed
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm text-gray-500 mt-1">
+                                Loan Date: {formatDateToDDMMYYYY(loan.dateApplied)}
+                                {loan.emiStartDate && loan.emiStartDate !== loan.dateApplied && (
+                                  <span className="ml-2">
+                                    • EMI Start: {formatDateToDDMMYYYY(loan.emiStartDate)}
+                                  </span>
+                                )}
+                              </p>
                             </div>
-                            <p className="text-sm text-gray-500 mt-1">
-                              Loan Date: {formatDateToDDMMYYYY(loan.dateApplied)}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-xs font-medium text-gray-500">Behavior Score</div>
-                            <div className={`text-lg font-semibold ${
-                              behavior.punctualityScore >= 90 ? 'text-green-600' :
-                              behavior.punctualityScore >= 75 ? 'text-blue-600' :
-                              behavior.punctualityScore >= 60 ? 'text-yellow-600' : 'text-red-600'
-                            }`}>
-                              {behavior.punctualityScore.toFixed(0)}%
+                            <div className="text-right">
+                              <div className="text-xs font-medium text-gray-500">Behavior Score</div>
+                              <div className={`text-lg font-semibold ${
+                                behavior.punctualityScore >= 90 ? 'text-green-600' :
+                                behavior.punctualityScore >= 75 ? 'text-blue-600' :
+                                behavior.punctualityScore >= 60 ? 'text-yellow-600' : 'text-red-600'
+                              }`}>
+                                {behavior.punctualityScore.toFixed(0)}%
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {behavior.behaviorRating}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        
-                        {/* Completion Progress */}
-                        <div className="mb-4">
-                          <div className="flex justify-between text-sm mb-1">
-                            <span>Completion: {completion.completionPercentage.toFixed(1)}%</span>
-                            <span>{completion.remainingEmis} EMIs remaining</span>
+                          
+                          {/* Completion Progress */}
+                          <div className="mb-4">
+                            <div className="flex justify-between text-sm mb-1">
+                              <span>Completion: {completion.completionPercentage.toFixed(1)}%</span>
+                              <span>{completion.remainingEmis} EMIs remaining</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div 
+                                className={`h-2 rounded-full transition-all duration-300 ${
+                                  completion.isCompleted ? 'bg-green-600' : 'bg-blue-600'
+                                }`} 
+                                style={{width: `${Math.min(completion.completionPercentage, 100)}%`}}
+                              ></div>
+                            </div>
+                            <div className="flex justify-between text-xs text-gray-500 mt-1">
+                              <span>Paid: ₹{completion.totalPaid.toLocaleString()}</span>
+                              <span>Remaining: ₹{completion.remainingAmount.toLocaleString()} of ₹{completion.totalLoanAmount?.toLocaleString() || totalLoanAmount.toLocaleString()}</span>
+                            </div>
                           </div>
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div 
-                              className="bg-green-600 h-2 rounded-full transition-all duration-300" 
-                              style={{width: `${Math.min(completion.completionPercentage, 100)}%`}}
-                            ></div>
-                          </div>
-                          <div className="flex justify-between text-xs text-gray-500 mt-1">
-  <span>Paid: ₹{completion.totalPaid}</span>
-  <span>Remaining: ₹{completion.remainingAmount} of ₹{completion.totalLoanAmount || calculateTotalLoanAmount(loan)}</span>
-</div>
-                        </div>
 
-                        {/* Loan Details Grid */}
-                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500">
-                              Amount
-                            </label>
-                            <p className="text-gray-900 font-semibold">
-                              ₹{loan.amount?.toLocaleString()}
-                            </p>
+                          {/* Loan Details Grid */}
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500">
+                                Loan Amount
+                              </label>
+                              <p className="text-gray-900 font-semibold">
+                                ₹{loan.amount?.toLocaleString()}
+                              </p>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500">
+                                EMI Amount
+                              </label>
+                              <p className="text-gray-900 font-semibold">
+                                ₹{loan.emiAmount}
+                              </p>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500">
+                                {loan.loanType === 'Daily' ? 'No. of Days' : 
+                                 loan.loanType === 'Weekly' ? 'No. of Weeks' : 'No. of Months'}
+                              </label>
+                              <p className="text-gray-900 font-semibold">
+                                {loan.loanDays}
+                              </p>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500">
+                                Next EMI Date
+                              </label>
+                              <p className="text-gray-900 font-semibold">
+                                {formatDateToDDMMYYYY(loan.nextEmiDate)}
+                              </p>
+                            </div>
                           </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500">
-                              EMI Amount
-                            </label>
-                            <p className="text-gray-900 font-semibold">
-                              ₹{loan.emiAmount}
-                            </p>
+
+                          {/* Payment Statistics */}
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs bg-blue-50 p-3 rounded-md mb-4">
+                            <div>
+                              <span className="text-blue-700 font-medium">Total Paid:</span>
+                              <p className="text-blue-900">₹{loan.totalPaidAmount?.toLocaleString() || '0'}</p>
+                            </div>
+                            <div>
+                              <span className="text-blue-700 font-medium">EMI Paid:</span>
+                              <p className="text-blue-900">{loan.emiPaidCount || 0}/{loan.totalEmiCount || loan.loanDays}</p>
+                            </div>
+                            <div>
+                              <span className="text-blue-700 font-medium">On Time:</span>
+                              <p className="text-blue-900">{behavior.onTimePayments}/{behavior.totalPayments}</p>
+                            </div>
+                            <div>
+                              <span className="text-blue-700 font-medium">Last Payment:</span>
+                              <p className="text-blue-900">
+                                {loan.emiHistory && loan.emiHistory.length > 0 
+                                  ? formatDateToDDMMYYYY(loan.emiHistory[loan.emiHistory.length - 1].paymentDate)
+                                  : 'Never'
+                                }
+                              </p>
+                            </div>
                           </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500">
-                              {loan.loanType === 'Daily' ? 'No. of Days' : 
-                               loan.loanType === 'Weekly' ? 'No. of Weeks' : 'No. of Months'}
-                            </label>
-                            <p className="text-gray-900 font-semibold">
-                              {loan.loanDays}
-                            </p>
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500">
-                              Total Loan Amount
-                            </label>
-                            <p className="text-gray-900 font-semibold">
-                              ₹{totalLoanAmount.toLocaleString()}
-                            </p>
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500">
-                              Next EMI Date
-                            </label>
-                            <p className="text-gray-900 font-semibold">
-                              {formatDateToDDMMYYYY(loan.nextEmiDate)}
-                            </p>
+                          
+                          {/* Action Buttons */}
+                          <div className="flex justify-end space-x-2 mt-4 pt-4 border-t border-gray-200">
+                            {!isRenewed && loan.status !== 'completed' && (
+                              <>
+                                <button 
+                                  onClick={() => {
+                                    setSelectedCustomer(customerDetails);
+                                    setSelectedLoanForPayment(loan);
+                                    setShowUpdateEMI(true);
+                                    setShowCustomerDetails(false);
+                                  }}
+                                  className="bg-green-600 text-white px-3 py-1 rounded-md hover:bg-green-700 text-sm"
+                                >
+                                  Pay EMI
+                                </button>
+                                <button 
+                                  onClick={() => handleEditLoan(loan)}
+                                  className="bg-yellow-600 text-white px-3 py-1 rounded-md hover:bg-yellow-700 text-sm"
+                                >
+                                  Edit
+                                </button>
+                                <button 
+                                  onClick={() => handleRenewLoan(loan)}
+                                  className="bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 text-sm"
+                                >
+                                  Renew
+                                </button>
+                              </>
+                            )}
+                            <button 
+                              onClick={() => handleDeleteLoan(loan)}
+                              className="bg-red-600 text-white px-3 py-1 rounded-md hover:bg-red-700 text-sm"
+                              disabled={isLoading}
+                            >
+                              {isLoading ? 'Deleting...' : 'Delete'}
+                            </button>
                           </div>
                         </div>
-                        
-                        {/* Action Buttons */}
-                        <div className="flex justify-end space-x-2 mt-4">
-                          <button 
-                            onClick={() => handleEditLoan(loan)}
-                            className="bg-yellow-600 text-white px-3 py-1 rounded-md hover:bg-yellow-700 text-sm"
-                          >
-                            Edit
-                          </button>
-                          <button 
-                            onClick={() => handleRenewLoan(loan)}
-                            className="bg-green-600 text-white px-3 py-1 rounded-md hover:bg-green-700 text-sm"
-                          >
-                            Renew
-                          </button>
-                          <button 
-                            onClick={() => handleDeleteLoan(loan)}
-                            className="bg-red-600 text-white px-3 py-1 rounded-md hover:bg-red-700 text-sm"
-                            disabled={isLoading}
-                          >
-                            {isLoading ? 'Deleting...' : 'Delete'}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-8 bg-white border border-gray-200 rounded-lg">
+                      <div className="text-gray-400 text-4xl mb-4">💰</div>
+                      <p className="text-gray-600 text-lg">No loans found</p>
+                      <p className="text-sm text-gray-500 mt-2">This customer doesn't have any loans yet.</p>
+                      <button 
+                        onClick={() => setShowAddLoanModal(true)}
+                        className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                      >
+                        + Add First Loan
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {/* Summary Section */}
+              {displayLoans.length > 0 && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <h4 className="text-lg font-semibold text-green-900 mb-3">Loan Summary</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <span className="text-green-700 font-medium">Total Loans:</span>
+                      <p className="text-green-900 font-semibold">{displayLoans.length}</p>
+                    </div>
+                    <div>
+                      <span className="text-green-700 font-medium">Active Loans:</span>
+                      <p className="text-green-900 font-semibold">
+                        {displayLoans.filter(loan => loan.status === 'active').length}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-green-700 font-medium">Total Given:</span>
+                      <p className="text-green-900 font-semibold">
+                        ₹{displayLoans.reduce((sum, loan) => sum + (loan.amount || 0), 0).toLocaleString()}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-green-700 font-medium">Total Collected:</span>
+                      <p className="text-green-900 font-semibold">
+                        ₹{displayLoans.reduce((sum, loan) => sum + (loan.totalPaidAmount || 0), 0).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
                 <button 
@@ -8330,10 +8727,23 @@ const renderCollection = () => {
                   Close
                 </button>
                 <button 
-                  onClick={() => handleEditCustomer(customerDetails)}
+                  onClick={() => {
+                    handleEditCustomer(customerDetails);
+                    setShowCustomerDetails(false);
+                  }}
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                 >
                   Edit Profile
+                </button>
+                <button 
+                  onClick={() => {
+                    setSelectedCustomer(customerDetails);
+                    setShowUpdateEMI(true);
+                    setShowCustomerDetails(false);
+                  }}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                >
+                  Update EMI
                 </button>
               </div>
             </div>

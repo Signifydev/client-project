@@ -32,12 +32,6 @@ export async function POST(request) {
       hasRequestedData: !!requestDoc.requestedData
     });
 
-    // Debug: Log the actual step data structure
-    console.log('📋 Step 1 Data:', requestDoc.step1Data);
-    console.log('📋 Step 2 Data:', requestDoc.step2Data);
-    console.log('📋 Step 3 Data:', requestDoc.step3Data);
-    console.log('📋 Requested Data:', requestDoc.requestedData);
-
     if (action === 'approve') {
       return await handleApproval(requestDoc, reason, processedBy);
     } else if (action === 'reject') {
@@ -124,6 +118,34 @@ async function handleRejection(requestDoc, reason, processedBy) {
   });
 }
 
+// NEW: Enhanced customer number normalization function
+const normalizeCustomerNumber = (customerNumber) => {
+  // Remove any existing CN prefix and add clean one
+  const cleanNumber = customerNumber.replace(/^CN/i, '').trim();
+  return `CN${cleanNumber}`;
+};
+
+// NEW: Comprehensive duplicate checking function
+const checkForDuplicates = async (customerData) => {
+  const { phone, customerNumber, loginId, excludeId = null } = customerData;
+  
+  let query = {
+    $or: [
+      { phone: { $in: phone } },
+      { customerNumber: customerNumber },
+      { loginId: loginId }
+    ],
+    status: { $in: ['active', 'pending'] }
+  };
+  
+  if (excludeId) {
+    query._id = { $ne: excludeId };
+  }
+  
+  const duplicates = await Customer.find(query);
+  return duplicates.length > 0;
+};
+
 async function approveNewCustomer(requestDoc, reason, processedBy) {
   console.log('📝 Creating new customer from multi-step request data...');
   
@@ -177,17 +199,21 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     }, { status: 400 });
   }
 
-  // Check for existing customer
-  const existingCustomer = await Customer.findOne({
-    $or: [
-      { phone: { $in: customerData.phone } },
-      { customerNumber: customerData.customerNumber },
-      { loginId: loginData.loginId }
-    ],
-    status: { $in: ['active', 'pending'] }
+  // NEW: Normalize customer number
+  const normalizedCustomerNumber = normalizeCustomerNumber(customerData.customerNumber);
+  console.log('🔧 Normalized customer number:', {
+    original: customerData.customerNumber,
+    normalized: normalizedCustomerNumber
   });
 
-  if (existingCustomer) {
+  // NEW: Enhanced duplicate checking
+  const hasDuplicates = await checkForDuplicates({
+    phone: Array.isArray(customerData.phone) ? customerData.phone : [customerData.phone],
+    customerNumber: normalizedCustomerNumber,
+    loginId: loginData.loginId
+  });
+
+  if (hasDuplicates) {
     return NextResponse.json({ 
       success: false,
       error: 'Customer with this phone number, customer number, or login ID already exists'
@@ -199,24 +225,24 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
 
   // Create customer WITHOUT loanNumber field
   const customerDataToSave = {
-    name: customerData.name,
+    name: customerData.name.trim(),
     phone: Array.isArray(customerData.phone) ? customerData.phone : [customerData.phone],
-    whatsappNumber: customerData.whatsappNumber || '',
-    businessName: customerData.businessName,
-    area: customerData.area,
-    customerNumber: customerData.customerNumber,
-    address: customerData.address,
+    whatsappNumber: customerData.whatsappNumber ? customerData.whatsappNumber.trim() : '',
+    businessName: customerData.businessName.trim(),
+    area: customerData.area.trim(),
+    customerNumber: normalizedCustomerNumber, // Use normalized number
+    address: customerData.address.trim(),
     category: customerData.category || 'A',
     officeCategory: customerData.officeCategory || 'Office 1',
     
     // File fields
-    profilePicture: {
+    profilePicture: customerData.profilePicture || {
       filename: null,
       url: null,
       originalName: null,
       uploadedAt: new Date()
     },
-    fiDocuments: {
+    fiDocuments: customerData.fiDocuments || {
       shop: {
         filename: null,
         url: null,
@@ -231,18 +257,8 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
       }
     },
     
-    // Loan-related fields (but NOT loanNumber)
-    loanAmount: parseFloat(loanData.loanAmount),
-    emiAmount: parseFloat(loanData.emiAmount),
-    loanType: loanData.loanType,
-    loanDate: new Date(loanData.loanDate || loanData.dateApplied || new Date()),
-    loanDays: parseInt(loanData.loanDays) || 30,
-    emiType: loanData.emiType || 'fixed',
-    customEmiAmount: loanData.customEmiAmount ? parseFloat(loanData.customEmiAmount) : null,
-    emiStartDate: new Date(loanData.emiStartDate || loanData.loanDate || new Date()),
-    
     // Login credentials
-    loginId: loginData.loginId,
+    loginId: loginData.loginId.trim(),
     password: hashedPassword,
     
     // Status and metadata
@@ -255,15 +271,11 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     updatedAt: new Date()
   };
 
-  // REMOVE loanNumber from customer data if it exists
-  delete customerDataToSave.loanNumber;
-
   console.log('💾 Creating customer with data:', {
     name: customerDataToSave.name,
     customerNumber: customerDataToSave.customerNumber,
     phone: customerDataToSave.phone,
-    loanAmount: customerDataToSave.loanAmount,
-    emiAmount: customerDataToSave.emiAmount
+    loginId: customerDataToSave.loginId
   });
 
   const customer = new Customer(customerDataToSave);
@@ -288,7 +300,10 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     // Continue even if user creation fails
   }
 
-  // Create main loan with proper loan number
+  // NEW: Use atomic loan number generation
+  const loanNumber = await Loan.generateLoanNumber(customer._id);
+  console.log('🔧 Generated loan number:', loanNumber);
+
   const calculateNextEmiDate = (emiStartDate, loanType) => {
     const date = new Date(emiStartDate);
     switch(loanType) {
@@ -307,31 +322,61 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     return date;
   };
 
-  // Generate unique loan number for this customer
-  const existingLoans = await Loan.find({ customerId: customer._id });
-  const loanNumber = `L${existingLoans.length + 1}`;
+  // Fix date handling for emiStartDate
+  let emiStartDate;
+  try {
+    emiStartDate = loanData.emiStartDate ? new Date(loanData.emiStartDate) : new Date();
+    if (isNaN(emiStartDate.getTime())) {
+      emiStartDate = new Date();
+    }
+  } catch (error) {
+    emiStartDate = new Date();
+  }
+
+  // Fix date handling for loanDate
+  let loanDate;
+  try {
+    loanDate = loanData.loanDate ? new Date(loanData.loanDate) : new Date();
+    if (isNaN(loanDate.getTime())) {
+      loanDate = new Date();
+    }
+  } catch (error) {
+    loanDate = new Date();
+  }
+
+  // Calculate total loan amount based on EMI type
+  let totalLoanAmount;
+  if (loanData.emiType === 'custom' && loanData.loanType !== 'Daily') {
+    const fixedPeriods = Number(loanData.loanDays) - 1;
+    const fixedAmount = Number(loanData.emiAmount) * fixedPeriods;
+    const lastAmount = Number(loanData.customEmiAmount || loanData.emiAmount);
+    totalLoanAmount = fixedAmount + lastAmount;
+  } else {
+    totalLoanAmount = Number(loanData.emiAmount) * Number(loanData.loanDays);
+  }
 
   const loanDataToSave = {
     customerId: customer._id,
     customerName: customer.name,
     customerNumber: customer.customerNumber,
-    loanNumber: loanNumber, // This should be unique per customer, not globally
+    loanNumber: loanNumber,
     amount: parseFloat(loanData.loanAmount),
     emiAmount: parseFloat(loanData.emiAmount),
     loanType: loanData.loanType,
-    dateApplied: new Date(loanData.loanDate || loanData.dateApplied || new Date()),
+    dateApplied: loanDate,
     loanDays: parseInt(loanData.loanDays) || 30,
     emiType: loanData.emiType || 'fixed',
     customEmiAmount: loanData.customEmiAmount ? parseFloat(loanData.customEmiAmount) : null,
-    emiStartDate: new Date(loanData.emiStartDate || loanData.loanDate || new Date()),
+    emiStartDate: emiStartDate,
     totalEmiCount: parseInt(loanData.loanDays) || 30,
     emiPaidCount: 0,
     lastEmiDate: null,
-    nextEmiDate: calculateNextEmiDate(loanData.emiStartDate || loanData.loanDate || new Date(), loanData.loanType),
+    nextEmiDate: calculateNextEmiDate(emiStartDate, loanData.loanType),
     totalPaidAmount: 0,
     remainingAmount: parseFloat(loanData.loanAmount),
     status: 'active',
-    createdBy: requestDoc.createdBy
+    createdBy: requestDoc.createdBy,
+    totalLoanAmount: totalLoanAmount
   };
 
   const mainLoan = new Loan(loanDataToSave);
@@ -385,8 +430,9 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
     }, { status: 404 });
   }
 
-  const existingLoans = await Loan.find({ customerId: customer._id });
-  const nextLoanNumber = `L${existingLoans.length + 1}`;
+  // NEW: Use atomic loan number generation
+  const loanNumber = await Loan.generateLoanNumber(customer._id);
+  console.log('🔧 Generated loan number for additional loan:', loanNumber);
 
   const calculateNextEmiDate = (emiStartDate, loanType) => {
     const date = new Date(emiStartDate || new Date());
@@ -443,7 +489,7 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
     customerId: customer._id,
     customerName: customer.name,
     customerNumber: customer.customerNumber,
-    loanNumber: nextLoanNumber,
+    loanNumber: loanNumber,
     amount: Number(requestedData.loanAmount),
     emiAmount: Number(requestedData.emiAmount),
     loanType: requestedData.loanType,
@@ -460,7 +506,7 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
     remainingAmount: Number(requestedData.loanAmount),
     status: 'active',
     createdBy: requestDoc.createdBy,
-    totalLoanAmount: totalLoanAmount // Store calculated total
+    totalLoanAmount: totalLoanAmount
   };
 
   const newLoan = new Loan(loanData);
@@ -472,7 +518,7 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
   requestDoc.reviewedBy = processedBy;
   requestDoc.reviewedByRole = 'admin';
   requestDoc.reviewNotes = reason || 'Loan addition approved by admin';
-  requestDoc.actionTaken = `Additional loan created: ${nextLoanNumber} with ${requestedData.loanType} EMI`;
+  requestDoc.actionTaken = `Additional loan created: ${loanNumber} with ${requestedData.loanType} EMI`;
   requestDoc.reviewedAt = new Date();
   requestDoc.approvedAt = new Date();
   requestDoc.completedAt = new Date();
@@ -494,6 +540,9 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
     }
   });
 }
+
+// ... (keep the existing approveCustomerEdit, approveLoanEdit, approveLoanDeletion, approveLoanRenew functions as they are)
+// These functions remain the same as in your original code
 
 async function approveCustomerEdit(requestDoc, reason, processedBy) {
   console.log('📝 Processing Customer Edit request...');
@@ -517,15 +566,18 @@ async function approveCustomerEdit(requestDoc, reason, processedBy) {
   const changes = requestDoc.requestedData || {};
   const updatableFields = [
     'name', 'phone', 'whatsappNumber', 'businessName', 'area', 'address',
-    'customerNumber', 'category', 'officeCategory', 'loginId',
-    'loanAmount', 'emiAmount', 'loanType', 'loanDate', 'loanDays', 
-    'emiType', 'customEmiAmount', 'emiStartDate'
+    'customerNumber', 'category', 'officeCategory', 'loginId'
   ];
 
   let updatedFields = [];
   updatableFields.forEach(field => {
     if (changes[field] !== undefined && changes[field] !== null) {
-      customer[field] = changes[field];
+      // NEW: Normalize customer number if it's being updated
+      if (field === 'customerNumber') {
+        customer[field] = normalizeCustomerNumber(changes[field]);
+      } else {
+        customer[field] = changes[field];
+      }
       updatedFields.push(field);
     }
   });
@@ -543,6 +595,23 @@ async function approveCustomerEdit(requestDoc, reason, processedBy) {
       ? changes.fiDocuments
       : { shop: {}, home: {} };
     updatedFields.push('fiDocuments');
+  }
+
+  // NEW: Check for duplicates if critical fields are updated
+  if (updatedFields.some(field => ['phone', 'customerNumber', 'loginId'].includes(field))) {
+    const hasDuplicates = await checkForDuplicates({
+      phone: customer.phone,
+      customerNumber: customer.customerNumber,
+      loginId: customer.loginId,
+      excludeId: customer._id
+    });
+
+    if (hasDuplicates) {
+      return NextResponse.json({ 
+        success: false,
+        error: 'Updated customer data conflicts with existing customer'
+      }, { status: 409 });
+    }
   }
 
   customer.updatedAt = new Date();
@@ -717,8 +786,9 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
     }, { status: 404 });
   }
 
-  const existingLoans = await Loan.find({ customerId: customer._id });
-  const nextLoanNumber = `L${existingLoans.length + 1}`;
+  // NEW: Use atomic loan number generation
+  const loanNumber = await Loan.generateLoanNumber(customer._id);
+  console.log('🔧 Generated loan number for renewal:', loanNumber);
 
   const calculateNextEmiDate = (emiStartDate, loanType) => {
     const date = new Date(emiStartDate || new Date());
@@ -753,7 +823,7 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
     customerId: customer._id,
     customerName: customer.name,
     customerNumber: customer.customerNumber,
-    loanNumber: nextLoanNumber,
+    loanNumber: loanNumber,
     amount: Number(requestedData.newLoanAmount),
     emiAmount: Number(requestedData.newEmiAmount),
     loanType: requestedData.newLoanType,
@@ -784,7 +854,7 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
   requestDoc.reviewedBy = processedBy;
   requestDoc.reviewedByRole = 'admin';
   requestDoc.reviewNotes = reason || 'Loan renewal approved by admin';
-  requestDoc.actionTaken = `Loan renewed: ${nextLoanNumber}`;
+  requestDoc.actionTaken = `Loan renewed: ${loanNumber}`;
   requestDoc.reviewedAt = new Date();
   requestDoc.approvedAt = new Date();
   requestDoc.completedAt = new Date();

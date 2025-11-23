@@ -57,6 +57,60 @@ function calculateNextEmiDate(currentDate, loanType) {
   return date.toISOString().split('T')[0];
 }
 
+// Enhanced duplicate payment check for both single and advance payments
+const checkForDuplicatePayments = async (cleanedCustomerId, finalLoanId, finalLoanNumber, paymentType, paymentDate, advanceFromDate, advanceToDate) => {
+  const formattedPaymentDate = new Date(paymentDate).toISOString().split('T')[0];
+  
+  if (paymentType === 'single') {
+    // Single payment duplicate check (existing logic)
+    const existingPayment = await EMIPayment.findOne({
+      $or: [
+        { loanId: finalLoanId },
+        { customerId: cleanedCustomerId, loanNumber: finalLoanNumber }
+      ],
+      paymentDate: {
+        $gte: new Date(formattedPaymentDate + 'T00:00:00.000Z'),
+        $lt: new Date(formattedPaymentDate + 'T23:59:59.999Z')
+      },
+      status: { $ne: 'cancelled' }
+    });
+
+    return existingPayment;
+  } else if (paymentType === 'advance') {
+    // Advance payment duplicate check - check all dates in the advance period
+    const advanceFrom = new Date(advanceFromDate);
+    const advanceTo = new Date(advanceToDate);
+    
+    // Find any existing payments within the advance period
+    const existingPayments = await EMIPayment.find({
+      $or: [
+        { loanId: finalLoanId },
+        { customerId: cleanedCustomerId, loanNumber: finalLoanNumber }
+      ],
+      paymentDate: {
+        $gte: advanceFrom,
+        $lte: advanceTo
+      },
+      status: { $ne: 'cancelled' }
+    });
+
+    if (existingPayments.length > 0) {
+      // Group by date to show which specific dates have conflicts
+      const conflictingDates = existingPayments.map(p => 
+        new Date(p.paymentDate).toISOString().split('T')[0]
+      );
+      
+      return {
+        isDuplicate: true,
+        conflictingDates: [...new Set(conflictingDates)],
+        existingPayments: existingPayments
+      };
+    }
+  }
+  
+  return null;
+};
+
 export async function POST(request) {
   try {
     await connectDB();
@@ -230,33 +284,40 @@ export async function POST(request) {
       }
     }
 
-    // Format payment date to YYYY-MM-DD for comparison
-    const formattedPaymentDate = new Date(paymentDate).toISOString().split('T')[0];
+        // Enhanced duplicate payment check for both single and advance payments
+    const duplicateCheck = await checkForDuplicatePayments(
+      cleanedCustomerId, 
+      finalLoanId, 
+      finalLoanNumber, 
+      paymentType, 
+      paymentDate, 
+      advanceFromDate, 
+      advanceToDate
+    );
 
-    // Check if EMI payment already exists for this date (only if we have a loan ID and it's single payment)
-    if (finalLoanId && paymentType === 'single') {
-      const existingPayment = await EMIPayment.findOne({
-        $or: [
-          { loanId: finalLoanId },
-          { customerId: cleanedCustomerId, loanNumber: finalLoanNumber }
-        ],
-        paymentDate: {
-          $gte: new Date(formattedPaymentDate + 'T00:00:00.000Z'),
-          $lt: new Date(formattedPaymentDate + 'T23:59:59.999Z')
-        },
-        status: { $ne: 'cancelled' }
-      });
-
-      if (existingPayment) {
+    if (duplicateCheck) {
+      if (paymentType === 'single') {
         return NextResponse.json({ 
           success: false,
-          error: `EMI payment for date ${formattedPaymentDate} already exists. Please use a different date or edit the existing payment.`,
+          error: `EMI payment for date ${new Date(paymentDate).toISOString().split('T')[0]} already exists. Please use a different date or edit the existing payment.`,
           existingPayment: {
-            id: existingPayment._id,
-            amount: existingPayment.amount,
-            date: existingPayment.paymentDate,
-            status: existingPayment.status
+            id: duplicateCheck._id,
+            amount: duplicateCheck.amount,
+            date: duplicateCheck.paymentDate,
+            status: duplicateCheck.status
           }
+        }, { status: 409 });
+      } else if (paymentType === 'advance' && duplicateCheck.isDuplicate) {
+        return NextResponse.json({ 
+          success: false,
+          error: `Advance payment period conflicts with existing payments on dates: ${duplicateCheck.conflictingDates.join(', ')}`,
+          conflictingDates: duplicateCheck.conflictingDates,
+          existingPayments: duplicateCheck.existingPayments.map(p => ({
+            id: p._id,
+            date: p.paymentDate,
+            amount: p.amount,
+            status: p.status
+          }))
         }, { status: 409 });
       }
     }
