@@ -473,6 +473,8 @@ const [deletingPayment, setDeletingPayment] = useState<EMIHistory | null>(null);
 const [showDeleteConfirmationModal, setShowDeleteConfirmationModal] = useState(false);
 const [emiSearchQuery, setEmiSearchQuery] = useState('');
 const [emiSortOrder, setEmiSortOrder] = useState<'asc' | 'desc'>('asc');
+const [showEMIFilters, setShowEMIFilters] = useState(false);
+const [emiStatusFilter, setEmiStatusFilter] = useState<string>('all');
 const [customerSortOrder, setCustomerSortOrder] = useState<'asc' | 'desc'>('asc');
 const [selectedCustomerForEMI, setSelectedCustomerForEMI] = useState<Customer | null>(null);
   const [calendarFilter, setCalendarFilter] = useState<{
@@ -6354,28 +6356,6 @@ const renderDeleteConfirmationModal = () => {
     return matchesSearch && customer.status === 'active';
   });
 
-  // Sort EMI customers by customer number (numeric sorting)
-  const sortedEMICustomers = [...filteredEMICustomers].sort((a, b) => {
-    // Extract and normalize numeric parts from customer numbers
-    const extractNumber = (customerNumber: string): number => {
-      if (!customerNumber) return 0;
-      
-      // Remove "CN" prefix and any leading zeros, then parse as number
-      const normalized = normalizeCustomerNumber(customerNumber);
-      const numericPart = normalized.replace(/^CN/, '');
-      return parseInt(numericPart) || 0;
-    };
-
-    const aNumber = extractNumber(a.customerNumber || '');
-    const bNumber = extractNumber(b.customerNumber || '');
-    
-    if (emiSortOrder === 'asc') {
-      return aNumber - bNumber; // Numeric ascending
-    } else {
-      return bNumber - aNumber; // Numeric descending
-    }
-  });
-
   // Get EMI status for a customer with real data
   const getEMIStatus = (customer: Customer) => {
     const today = new Date().toISOString().split('T')[0];
@@ -6409,6 +6389,36 @@ const renderDeleteConfirmationModal = () => {
     if (hasPartial) return 'partial';
     return 'unpaid';
   };
+
+  // Apply EMI status filter
+  const getFilteredEMICustomers = () => {
+    if (emiStatusFilter === 'all') {
+      return filteredEMICustomers;
+    }
+    return filteredEMICustomers.filter(customer => getEMIStatus(customer) === emiStatusFilter);
+  };
+
+  // Sort EMI customers by customer number (numeric sorting)
+  const sortedEMICustomers = [...getFilteredEMICustomers()].sort((a, b) => {
+    // Extract and normalize numeric parts from customer numbers
+    const extractNumber = (customerNumber: string): number => {
+      if (!customerNumber) return 0;
+      
+      // Remove "CN" prefix and any leading zeros, then parse as number
+      const normalized = normalizeCustomerNumber(customerNumber);
+      const numericPart = normalized.replace(/^CN/, '');
+      return parseInt(numericPart) || 0;
+    };
+
+    const aNumber = extractNumber(a.customerNumber || '');
+    const bNumber = extractNumber(b.customerNumber || '');
+    
+    if (emiSortOrder === 'asc') {
+      return aNumber - bNumber; // Numeric ascending
+    } else {
+      return bNumber - aNumber; // Numeric descending
+    }
+  });
 
   const getEMIStatusColor = (status: string) => {
     switch (status) {
@@ -6493,6 +6503,73 @@ const renderDeleteConfirmationModal = () => {
                 </div>
                 
                 <div className="flex gap-2">
+                  {/* Filter Button */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowEMIFilters(!showEMIFilters)}
+                      className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      <span>Filter</span>
+                      <span className={`transform transition-transform ${showEMIFilters ? 'rotate-180' : ''}`}>
+                        ▼
+                      </span>
+                    </button>
+                    
+                    {/* Filter Dropdown */}
+                    {showEMIFilters && (
+                      <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                        <div className="p-2">
+                          <div className="space-y-1">
+                            <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                              <input
+                                type="radio"
+                                name="emiStatusFilter"
+                                value="all"
+                                checked={emiStatusFilter === 'all'}
+                                onChange={(e) => setEmiStatusFilter(e.target.value)}
+                                className="mr-3 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-sm text-gray-700">All Status</span>
+                            </label>
+                            <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                              <input
+                                type="radio"
+                                name="emiStatusFilter"
+                                value="paid"
+                                checked={emiStatusFilter === 'paid'}
+                                onChange={(e) => setEmiStatusFilter(e.target.value)}
+                                className="mr-3 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-sm text-green-700">Paid Only</span>
+                            </label>
+                            <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                              <input
+                                type="radio"
+                                name="emiStatusFilter"
+                                value="unpaid"
+                                checked={emiStatusFilter === 'unpaid'}
+                                onChange={(e) => setEmiStatusFilter(e.target.value)}
+                                className="mr-3 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-sm text-red-700">Unpaid Only</span>
+                            </label>
+                            <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                              <input
+                                type="radio"
+                                name="emiStatusFilter"
+                                value="partial"
+                                checked={emiStatusFilter === 'partial'}
+                                onChange={(e) => setEmiStatusFilter(e.target.value)}
+                                className="mr-3 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-sm text-yellow-700">Partial Only</span>
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
                   <button
                     onClick={() => setEmiSortOrder(emiSortOrder === 'asc' ? 'desc' : 'asc')}
                     className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
@@ -6502,9 +6579,57 @@ const renderDeleteConfirmationModal = () => {
                 </div>
               </div>
 
+              {/* Active Filter Display */}
+              {(emiStatusFilter !== 'all' || emiSearchQuery) && (
+                <div className="flex flex-wrap gap-2 items-center">
+                  <span className="text-sm text-gray-600">Active filters:</span>
+                  
+                  {emiStatusFilter !== 'all' && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      Status: {emiStatusFilter === 'paid' ? 'Paid' : emiStatusFilter === 'unpaid' ? 'Unpaid' : 'Partial'}
+                      <button 
+                        onClick={() => setEmiStatusFilter('all')}
+                        className="ml-1 text-blue-600 hover:text-blue-800"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                  
+                  {emiSearchQuery && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                      Search: "{emiSearchQuery}"
+                      <button 
+                        onClick={() => setEmiSearchQuery('')}
+                        className="ml-1 text-purple-600 hover:text-purple-800"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                  
+                  {(emiStatusFilter !== 'all' || emiSearchQuery) && (
+                    <button
+                      onClick={() => {
+                        setEmiStatusFilter('all');
+                        setEmiSearchQuery('');
+                      }}
+                      className="text-xs text-red-600 hover:text-red-800 underline"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
+              )}
+
               <div className="flex justify-between items-center">
                 <span className="text-sm text-gray-600">
-                  Showing {sortedEMICustomers.length} of {customers.filter(c => c.status === 'active').length} active customers
+                  Showing {sortedEMICustomers.length} of {getFilteredEMICustomers().length} customers
+                  {emiStatusFilter !== 'all' && (
+                    <span className="text-gray-500">
+                      {' '}({getFilteredEMICustomers().length} total after filter)
+                    </span>
+                  )}
                 </span>
                 
                 {emiSearchQuery && (
@@ -6673,8 +6798,8 @@ const renderDeleteConfirmationModal = () => {
                           <div className="text-gray-400 text-4xl mb-4">💰</div>
                           <p className="text-gray-500 text-lg">No customers found</p>
                           <p className="text-sm text-gray-400 mt-2">
-                            {emiSearchQuery 
-                              ? 'Try adjusting your search terms' 
+                            {emiSearchQuery || emiStatusFilter !== 'all'
+                              ? 'Try adjusting your search terms or filters' 
                               : 'No active customers available for EMI management'
                             }
                           </p>
