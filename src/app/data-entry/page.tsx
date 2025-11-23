@@ -413,21 +413,21 @@ export default function DataEntryDashboard() {
 
   const [currentStep, setCurrentStep] = useState(1);
   const [step1Data, setStep1Data] = useState<NewCustomerStep1>({
-    name: '',
-    phone: ['', ''],
-    whatsappNumber: '',
-    businessName: '',
-    area: '',
-    customerNumber: '',
-    address: '',
-    category: '',
-    officeCategory: '',
-    profilePicture: null,
-    fiDocuments: {
-      shop: null,
-      home: null
-    }
-  });
+  name: '',
+  phone: ['', ''],
+  whatsappNumber: '',
+  businessName: '',
+  area: '',
+  customerNumber: '',
+  address: '',
+  category: 'A', // Default value
+  officeCategory: 'Office 1', // Default value
+  profilePicture: null,
+  fiDocuments: {
+    shop: null,
+    home: null
+  }
+});
   const [step2Data, setStep2Data] = useState<NewCustomerStep2>({
     loanDate: new Date().toISOString().split('T')[0],
     emiStartDate: new Date().toISOString().split('T')[0],
@@ -2231,15 +2231,27 @@ const debugEMIPayments = () => {
   const handleAddCustomer = async () => {
   if (!validateStep3()) return;
 
-  if (!step1Data.name || !step1Data.businessName || !step1Data.area || 
-      !step1Data.customerNumber || !step1Data.address || !step1Data.category || 
-      !step1Data.officeCategory) {
-    alert('Please fill all required fields in Step 1');
+  // Enhanced validation for all required fields
+  const missingFields: string[] = [];
+  
+  // Step 1 validation
+  if (!step1Data.name?.trim()) missingFields.push('name');
+  if (!step1Data.phone?.[0]?.trim()) missingFields.push('primary phone');
+  if (!step1Data.businessName?.trim()) missingFields.push('businessName');
+  if (!step1Data.area?.trim()) missingFields.push('area');
+  if (!step1Data.customerNumber?.trim()) missingFields.push('customerNumber');
+  if (!step1Data.address?.trim()) missingFields.push('address');
+  if (!step1Data.category?.trim()) missingFields.push('category');
+  if (!step1Data.officeCategory?.trim()) missingFields.push('officeCategory');
+
+  if (missingFields.length > 0) {
+    alert(`Please fill all required fields. Missing: ${missingFields.join(', ')}`);
     setCurrentStep(1);
     return;
   }
 
-  const validPhones = step1Data.phone.filter(p => p.trim() !== '');
+  // Validate phone numbers
+  const validPhones = step1Data.phone.filter(p => p?.trim() !== '');
   if (validPhones.length === 0) {
     alert('Please provide at least one phone number');
     setCurrentStep(1);
@@ -2254,148 +2266,32 @@ const debugEMIPayments = () => {
     }
   }
 
-  const debugDataStorage = (step1Data: NewCustomerStep1, step2Data: NewCustomerStep2, step3Data: NewCustomerStep3) => {
-  console.log('🔍 DEBUG - Data Being Sent to API:');
-  
-  // Step 1 Data
-  console.log('📋 STEP 1 - Customer Details:');
-  console.log('- Name:', step1Data.name);
-  console.log('- Primary Phone:', step1Data.phone[0]);
-  console.log('- Secondary Phone:', step1Data.phone[1]);
-  console.log('- WhatsApp:', step1Data.whatsappNumber);
-  console.log('- Business Name:', step1Data.businessName);
-  console.log('- Area:', step1Data.area);
-  console.log('- Customer Number:', `CN${step1Data.customerNumber.replace('CN', '')}`);
-  console.log('- Address:', step1Data.address);
-  console.log('- Category:', step1Data.category);
-  console.log('- Office Category:', step1Data.officeCategory);
-  console.log('- Profile Picture:', step1Data.profilePicture?.name || 'None');
-  console.log('- FI Shop Doc:', step1Data.fiDocuments.shop?.name || 'None');
-  console.log('- FI Home Doc:', step1Data.fiDocuments.home?.name || 'None');
-  
-  // Step 2 Data
-  console.log('💰 STEP 2 - Loan Details:');
-  console.log('- Loan Type:', step2Data.loanType);
-  console.log('- EMI Collection Type:', step2Data.emiType);
-  console.log('- Loan Date:', step2Data.loanDate);
-  console.log('- EMI Start Date:', step2Data.emiStartDate);
-  console.log('- Loan Amount:', step2Data.loanAmount);
-  console.log('- EMI Amount:', step2Data.emiAmount);
-  console.log('- Loan Days:', step2Data.loanDays);
-  console.log('- Custom EMI Amount:', step2Data.customEmiAmount || 'N/A');
-  
-  // Step 3 Data
-  console.log('🔐 STEP 3 - Login Credentials:');
-  console.log('- Login ID:', step3Data.loginId);
-  console.log('- Password:', step3Data.password ? '***' : 'Not set');
-  console.log('- Confirm Password:', step3Data.confirmPassword ? '***' : 'Not set');
-  
-  // Calculated fields
-  console.log('🧮 CALCULATED FIELDS:');
-  console.log('- Final Customer Number:', `CN${step1Data.customerNumber.replace('CN', '')}`);
-  console.log('- First Loan Number:', 'L1 (should be auto-assigned)');
-  console.log('- Total Loan Amount:', 
-    step2Data.emiType === 'custom' && step2Data.loanType !== 'Daily' 
-      ? ((Number(step2Data.emiAmount || 0) * (Number(step2Data.loanDays || 1) - 1)) + 
-         (Number(step2Data.customEmiAmount || 0) * 1)).toLocaleString()
-      : (Number(step2Data.emiAmount || 0) * Number(step2Data.loanDays || 1)).toLocaleString()
-  );
-};
+  // Validate Step 2 data
+  const step2MissingFields: string[] = [];
+  if (!step2Data.loanDate) step2MissingFields.push('loanDate');
+  if (!step2Data.emiStartDate) step2MissingFields.push('emiStartDate');
+  if (!step2Data.loanAmount) step2MissingFields.push('loanAmount');
+  if (!step2Data.emiAmount) step2MissingFields.push('emiAmount');
+  if (!step2Data.loanDays) step2MissingFields.push('loanDays');
+  if (!step2Data.loanType) step2MissingFields.push('loanType');
+  if (!step2Data.emiType) step2MissingFields.push('emiType');
 
-// Call this in handleAddCustomer before the API call
-debugDataStorage(step1Data, step2Data, step3Data);
-
-  // ENHANCED: Validate Step 2 data with detailed checks
-  console.log('🔍 DEBUG - Validating Step 2 data before submission:');
-  const step2Validation = {
-    loanDate: step2Data.loanDate,
-    emiStartDate: step2Data.emiStartDate,
-    loanAmount: step2Data.loanAmount,
-    emiAmount: step2Data.emiAmount,
-    loanDays: step2Data.loanDays,
-    loanType: step2Data.loanType,
-    emiType: step2Data.emiType
-  };
-
-  console.log('Step 2 Data:', step2Validation);
-
-  // Fix TypeScript error by using type-safe field access
-  const missingFields: string[] = [];
-  if (!step2Data.loanDate) missingFields.push('loanDate');
-  if (!step2Data.emiStartDate) missingFields.push('emiStartDate');
-  if (!step2Data.loanAmount) missingFields.push('loanAmount');
-  if (!step2Data.emiAmount) missingFields.push('emiAmount');
-  if (!step2Data.loanDays) missingFields.push('loanDays');
-  if (!step2Data.loanType) missingFields.push('loanType');
-  if (!step2Data.emiType) missingFields.push('emiType');
-
-  if (missingFields.length > 0) {
-    console.error('❌ Missing Step 2 fields:', missingFields);
-    alert(`Please fill all loan details. Missing: ${missingFields.join(', ')}`);
-    setCurrentStep(2);
-    return;
-  }
-
-  // Validate numbers are positive - type-safe access
-  const invalidNumbers: string[] = [];
-  const loanAmountNum = parseFloat(step2Data.loanAmount);
-  const emiAmountNum = parseFloat(step2Data.emiAmount);
-  const loanDaysNum = parseFloat(step2Data.loanDays);
-
-  if (isNaN(loanAmountNum) || loanAmountNum <= 0) invalidNumbers.push('loanAmount');
-  if (isNaN(emiAmountNum) || emiAmountNum <= 0) invalidNumbers.push('emiAmount');
-  if (isNaN(loanDaysNum) || loanDaysNum <= 0) invalidNumbers.push('loanDays');
-
-  if (invalidNumbers.length > 0) {
-    alert(`Please enter valid positive numbers for: ${invalidNumbers.join(', ')}`);
-    setCurrentStep(2);
-    return;
-  }
-
-  // Validate custom EMI
-  if (step2Data.emiType === 'custom' && step2Data.loanType !== 'Daily') {
-    if (!step2Data.customEmiAmount || parseFloat(step2Data.customEmiAmount) <= 0) {
-      alert('Custom EMI amount is required for custom EMI type with Weekly/Monthly loans');
-      setCurrentStep(2);
-      return;
-    }
-  }
-
-  // Validate dates
-  if (new Date(step2Data.emiStartDate) < new Date(step2Data.loanDate)) {
-    alert('EMI start date cannot be before loan date');
+  if (step2MissingFields.length > 0) {
+    alert(`Please fill all loan details. Missing: ${step2MissingFields.join(', ')}`);
     setCurrentStep(2);
     return;
   }
 
   setIsLoading(true);
   try {
-    // DEBUG: Log all data before creating FormData
-    console.log('📦 DEBUG - All data before API call:');
-    console.log('Step 1:', {
-      name: step1Data.name,
-      phone: step1Data.phone,
-      whatsappNumber: step1Data.whatsappNumber,
-      businessName: step1Data.businessName,
-      area: step1Data.area,
-      customerNumber: step1Data.customerNumber,
-      address: step1Data.address,
-      category: step1Data.category,
-      officeCategory: step1Data.officeCategory
-    });
-    console.log('Step 2:', step2Validation);
-    console.log('Step 3:', {
-      loginId: step3Data.loginId,
-      password: step3Data.password ? '***' : 'missing',
-      confirmPassword: step3Data.confirmPassword ? '***' : 'missing'
-    });
+    console.log('🟡 Starting customer submission...');
 
     const formData = new FormData();
     
-    // Step 1: Customer Basic Details
+    // Step 1: Customer Basic Details - FIXED
     formData.append('name', step1Data.name.trim());
     
-    // Add phone numbers - ensure at least primary phone exists
+    // Add phone numbers properly
     step1Data.phone.forEach((phone, index) => {
       if (phone && phone.trim()) {
         formData.append(`phone[${index}]`, phone.trim());
@@ -2407,12 +2303,18 @@ debugDataStorage(step1Data, step2Data, step3Data);
     
     formData.append('businessName', step1Data.businessName.trim());
     formData.append('area', step1Data.area.trim());
-    formData.append('customerNumber', `CN${step1Data.customerNumber.replace('CN', '')}`.trim());
+    
+    // Ensure customer number has CN prefix
+    const customerNumber = step1Data.customerNumber.startsWith('CN') 
+      ? step1Data.customerNumber 
+      : `CN${step1Data.customerNumber}`;
+    formData.append('customerNumber', customerNumber.trim());
+    
     formData.append('address', step1Data.address.trim());
     formData.append('category', step1Data.category);
     formData.append('officeCategory', step1Data.officeCategory);
     
-    // Step 2: Loan Details - ALL FIELDS ARE REQUIRED
+    // Step 2: Loan Details
     formData.append('loanDate', step2Data.loanDate);
     formData.append('emiStartDate', step2Data.emiStartDate);
     formData.append('loanAmount', step2Data.loanAmount.toString());
@@ -2424,8 +2326,6 @@ debugDataStorage(step1Data, step2Data, step3Data);
     // Custom EMI amount - only append if it exists
     if (step2Data.customEmiAmount) {
       formData.append('customEmiAmount', step2Data.customEmiAmount.toString());
-    } else {
-      formData.append('customEmiAmount', ''); // Send empty string if not applicable
     }
     
     // Step 3: Login Credentials
@@ -2434,33 +2334,31 @@ debugDataStorage(step1Data, step2Data, step3Data);
     formData.append('confirmPassword', step3Data.confirmPassword);
     formData.append('createdBy', 'data_entry_operator_1');
 
-    // File Uploads
+    // File Uploads - FIXED: Use the correct field names
     if (step1Data.profilePicture) {
       formData.append('profilePicture', step1Data.profilePicture);
       console.log('📷 Profile picture added:', step1Data.profilePicture.name);
     }
-    if (step1Data.fiDocuments.shop) {
+    if (step1Data.fiDocuments?.shop) {
       formData.append('fiDocumentShop', step1Data.fiDocuments.shop);
       console.log('📄 Shop FI document added:', step1Data.fiDocuments.shop.name);
     }
-    if (step1Data.fiDocuments.home) {
+    if (step1Data.fiDocuments?.home) {
       formData.append('fiDocumentHome', step1Data.fiDocuments.home);
       console.log('📄 Home FI document added:', step1Data.fiDocuments.home.name);
     }
 
-    // DEBUG: Verify all form data is properly set
-    console.log('📤 DEBUG - FormData contents:');
+    // DEBUG: Log all form data
+    console.log('📤 FormData contents:');
     for (const [key, value] of formData.entries()) {
       if (key.includes('password')) {
         console.log(`  ${key}: *** (hidden)`);
+      } else if (value instanceof File) {
+        console.log(`  ${key}: File - ${value.name}`);
       } else {
         console.log(`  ${key}:`, value);
       }
     }
-
-    // Count the number of fields to ensure all are present
-    const fieldCount = Array.from(formData.entries()).length;
-    console.log(`✅ FormData prepared with ${fieldCount} fields`);
 
     console.log('🟡 Sending customer data to API...');
     const response = await fetch('/api/data-entry/customers', {
@@ -2512,7 +2410,7 @@ debugDataStorage(step1Data, step2Data, step3Data);
     fetchDashboardData();
     if (activeTab === 'requests') fetchPendingRequests();
     
-  } catch (error: any) { // Fix TypeScript error by specifying error type
+  } catch (error: any) {
     console.error('❌ Error submitting customer:', error);
     alert('Error: ' + (error.message || 'Unknown error occurred'));
   } finally {
@@ -4230,37 +4128,34 @@ const renderDeleteConfirmationModal = () => {
       {/* Row 5 */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">Category *</label>
-        <select 
-          className={`w-full px-3 py-2 border rounded-md ${
-            step1Errors.category ? 'border-red-500' : 'border-gray-300'
-          }`}
-          value={step1Data.category}
-          onChange={(e) => setStep1Data({...step1Data, category: e.target.value})}
-          required
-        >
-          <option value="">Select Category</option>
-          <option value="A">Category A</option>
-          <option value="B">Category B</option>
-          <option value="C">Category C</option>
-        </select>
-        {step1Errors.category && <p className="text-red-500 text-xs mt-1">{step1Errors.category}</p>}
-        <p className="text-xs text-gray-500 mt-1">Customer priority category</p>
-      </div>
-      
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Office Category *</label>
-        <select 
-          className={`w-full px-3 py-2 border rounded-md ${
-            step1Errors.officeCategory ? 'border-red-500' : 'border-gray-300'
-          }`}
-          value={step1Data.officeCategory}
-          onChange={(e) => setStep1Data({...step1Data, officeCategory: e.target.value})}
-          required
-        >
-          <option value="">Select Office Category</option>
-          <option value="Office 1">Office 1</option>
-          <option value="Office 2">Office 2</option>
-        </select>
+        // In the category field:
+<select 
+  className={`w-full px-3 py-2 border rounded-md ${
+    step1Errors.category ? 'border-red-500' : 'border-gray-300'
+  }`}
+  value={step1Data.category}
+  onChange={(e) => setStep1Data({...step1Data, category: e.target.value})}
+  required
+>
+  <option value="">Select Category</option>
+  <option value="A">Category A</option>
+  <option value="B">Category B</option>
+  <option value="C">Category C</option>
+</select>
+
+// In the officeCategory field:
+<select 
+  className={`w-full px-3 py-2 border rounded-md ${
+    step1Errors.officeCategory ? 'border-red-500' : 'border-gray-300'
+  }`}
+  value={step1Data.officeCategory}
+  onChange={(e) => setStep1Data({...step1Data, officeCategory: e.target.value})}
+  required
+>
+  <option value="">Select Office Category</option>
+  <option value="Office 1">Office 1</option>
+  <option value="Office 2">Office 2</option>
+</select>
         {step1Errors.officeCategory && <p className="text-red-500 text-xs mt-1">{step1Errors.officeCategory}</p>}
         <p className="text-xs text-gray-500 mt-1">Assigned office location</p>
       </div>
