@@ -1208,40 +1208,64 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
   };
 
   const validateStep2 = () => {
-    const errors: {[key: string]: string} = {};
-    
-    if (!step2Data.loanDate) {
-      errors.loanDate = 'Loan date is required';
-    }
-    
-    if (!step2Data.emiStartDate) {
-      errors.emiStartDate = 'EMI starting date is required';
-    } else if (new Date(step2Data.emiStartDate) < new Date(step2Data.loanDate)) {
-      errors.emiStartDate = 'EMI start date cannot be before loan date';
-    }
-    
-    const loanAmount = Number(step2Data.loanAmount);
-    if (!step2Data.loanAmount || isNaN(loanAmount) || loanAmount <= 0) {
-      errors.loanAmount = 'Valid loan amount is required';
-    }
-    
+  const errors: {[key: string]: string} = {};
+  
+  if (!step2Data.loanDate) {
+    errors.loanDate = 'Loan date is required';
+  }
+  
+  if (!step2Data.emiStartDate) {
+    errors.emiStartDate = 'EMI starting date is required';
+  } else if (new Date(step2Data.emiStartDate) < new Date(step2Data.loanDate)) {
+    errors.emiStartDate = 'EMI start date cannot be before loan date';
+  }
+  
+  const loanAmount = Number(step2Data.loanAmount);
+  if (!step2Data.loanAmount || isNaN(loanAmount) || loanAmount <= 0) {
+    errors.loanAmount = 'Valid loan amount is required';
+  }
+  
+  const loanDays = Number(step2Data.loanDays);
+  if (!step2Data.loanDays || isNaN(loanDays) || loanDays <= 0) {
+    errors.loanDays = `Valid number of ${step2Data.loanType === 'Daily' ? 'days' : step2Data.loanType === 'Weekly' ? 'weeks' : 'months'} is required`;
+  }
+  
+  if (!step2Data.loanType) {
+    errors.loanType = 'Loan type is required';
+  }
+
+  // EMI validation based on loan type and EMI type
+  if (step2Data.loanType === 'Daily') {
+    // Daily loans only need emiAmount
     const emiAmount = Number(step2Data.emiAmount);
     if (!step2Data.emiAmount || isNaN(emiAmount) || emiAmount <= 0) {
-      errors.emiAmount = 'Valid EMI amount is required';
+      errors.emiAmount = 'Valid EMI amount is required for Daily loans';
     }
-    
-    const loanDays = Number(step2Data.loanDays);
-    if (!step2Data.loanDays || isNaN(loanDays) || loanDays <= 0) {
-      errors.loanDays = 'Valid number of days is required';
+  } else {
+    // Weekly/Monthly loans
+    if (step2Data.emiType === 'fixed') {
+      const emiAmount = Number(step2Data.emiAmount);
+      if (!step2Data.emiAmount || isNaN(emiAmount) || emiAmount <= 0) {
+        errors.emiAmount = 'Valid EMI amount is required for Fixed EMI type';
+      }
+    } else if (step2Data.emiType === 'custom') {
+      // Custom EMI requires both amounts
+      const emiAmount = Number(step2Data.emiAmount);
+      const customEmiAmount = Number(step2Data.customEmiAmount);
+      
+      if (!step2Data.emiAmount || isNaN(emiAmount) || emiAmount <= 0) {
+        errors.emiAmount = 'Valid fixed EMI amount is required for Custom EMI type';
+      }
+      
+      if (!step2Data.customEmiAmount || isNaN(customEmiAmount) || customEmiAmount <= 0) {
+        errors.customEmiAmount = 'Valid last EMI amount is required for Custom EMI type';
+      }
     }
-    
-    if (!step2Data.loanType) {
-      errors.loanType = 'Loan type is required';
-    }
-    
-    setStep2Errors(errors);
-    return Object.keys(errors).length === 0;
-  };
+  }
+  
+  setStep2Errors(errors);
+  return Object.keys(errors).length === 0;
+};
 
   const validateStep3 = (): boolean => {
     const errors: {[key: string]: string} = {};
@@ -1844,20 +1868,32 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
   setIsLoading(true);
   try {
     // Enhanced validation for all required fields
-    const missingFields: string[] = [];
-    if (!newLoanData.loanDate) missingFields.push('loanDate');
-    if (!newLoanData.emiStartDate) missingFields.push('emiStartDate');
-    if (!newLoanData.loanAmount) missingFields.push('loanAmount');
-    if (!newLoanData.emiAmount) missingFields.push('emiAmount');
-    if (!newLoanData.loanDays) missingFields.push('loanDays');
-    if (!newLoanData.loanType) missingFields.push('loanType');
-    if (!newLoanData.emiType) missingFields.push('emiType');
+    // Validate Step 2 data based on loan type and EMI type
+const step2MissingFields: string[] = [];
+if (!step2Data.loanDate) step2MissingFields.push('loanDate');
+if (!step2Data.emiStartDate) step2MissingFields.push('emiStartDate');
+if (!step2Data.loanAmount) step2MissingFields.push('loanAmount');
+if (!step2Data.loanDays) step2MissingFields.push('loanDays');
+if (!step2Data.loanType) step2MissingFields.push('loanType');
+if (!step2Data.emiType) step2MissingFields.push('emiType');
 
-    if (missingFields.length > 0) {
-      alert(`Please fill all required fields. Missing: ${missingFields.join(', ')}`);
-      setIsLoading(false);
-      return;
-    }
+// EMI amount validation
+if (step2Data.loanType === 'Daily') {
+  if (!step2Data.emiAmount) step2MissingFields.push('emiAmount');
+} else {
+  if (step2Data.emiType === 'fixed') {
+    if (!step2Data.emiAmount) step2MissingFields.push('emiAmount');
+  } else if (step2Data.emiType === 'custom') {
+    if (!step2Data.emiAmount) step2MissingFields.push('fixed EMI amount');
+    if (!step2Data.customEmiAmount) step2MissingFields.push('last EMI amount');
+  }
+}
+
+    if (step2MissingFields.length > 0) {
+  alert(`Please fill all loan details. Missing: ${step2MissingFields.join(', ')}`);
+  setCurrentStep(2);
+  return;
+}
 
     // Validate numbers are positive
     const invalidNumbers: string[] = [];
@@ -4400,64 +4436,68 @@ const renderDeleteConfirmationModal = () => {
         </div>
 
         {/* EMI Amount Fields */}
-        {step2Data.emiType === 'fixed' || step2Data.loanType === 'Daily' ? (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">EMI Amount *</label>
-            <input 
-              type="number" 
-              className={`w-full px-3 py-2 border rounded-md ${
-                step2Errors.emiAmount ? 'border-red-500' : 'border-gray-300'
-              }`}
-              value={step2Data.emiAmount}
-              onChange={(e) => setStep2Data({...step2Data, emiAmount: e.target.value})}
-              placeholder="EMI Amount"
-              min="0"
-              step="0.01"
-              required
-            />
-            {step2Errors.emiAmount && <p className="text-red-500 text-xs mt-1">{step2Errors.emiAmount}</p>}
-          </div>
-        ) : (
-          <>
-            {/* Custom EMI Fields */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Fixed EMI Amount *</label>
-              <input 
-                type="number" 
-                className={`w-full px-3 py-2 border rounded-md ${
-                  step2Errors.emiAmount ? 'border-red-500' : 'border-gray-300'
-                }`}
-                value={step2Data.emiAmount}
-                onChange={(e) => setStep2Data({...step2Data, emiAmount: e.target.value})}
-                placeholder="Fixed EMI Amount"
-                min="0"
-                step="0.01"
-                required
-              />
-              {step2Errors.emiAmount && <p className="text-red-500 text-xs mt-1">{step2Errors.emiAmount}</p>}
-              <p className="text-xs text-gray-500 mt-1">
-                For first {Number(step2Data.loanDays || 1) - 1} {step2Data.loanType === 'Weekly' ? 'weeks' : 'months'}
-              </p>
-            </div>
+        {/* EMI Amount Fields - Dynamic based on loan type and EMI type */}
+{(step2Data.emiType === 'fixed' || step2Data.loanType === 'Daily') ? (
+  <div>
+    <label className="block text-sm font-medium text-gray-700 mb-2">EMI Amount *</label>
+    <input 
+      type="number" 
+      className={`w-full px-3 py-2 border rounded-md ${
+        step2Errors.emiAmount ? 'border-red-500' : 'border-gray-300'
+      }`}
+      value={step2Data.emiAmount}
+      onChange={(e) => setStep2Data({...step2Data, emiAmount: e.target.value})}
+      placeholder="EMI Amount"
+      min="0"
+      step="0.01"
+      required
+    />
+    {step2Errors.emiAmount && <p className="text-red-500 text-xs mt-1">{step2Errors.emiAmount}</p>}
+  </div>
+) : (
+  <>
+    {/* Custom EMI Fields for Weekly/Monthly */}
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">Fixed EMI Amount *</label>
+      <input 
+        type="number" 
+        className={`w-full px-3 py-2 border rounded-md ${
+          step2Errors.emiAmount ? 'border-red-500' : 'border-gray-300'
+        }`}
+        value={step2Data.emiAmount}
+        onChange={(e) => setStep2Data({...step2Data, emiAmount: e.target.value})}
+        placeholder="Fixed EMI Amount"
+        min="0"
+        step="0.01"
+        required
+      />
+      {step2Errors.emiAmount && <p className="text-red-500 text-xs mt-1">{step2Errors.emiAmount}</p>}
+      <p className="text-xs text-gray-500 mt-1">
+        For first {Number(step2Data.loanDays || 1) - 1} {step2Data.loanType === 'Weekly' ? 'weeks' : 'months'}
+      </p>
+    </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Last EMI Amount *</label>
-              <input 
-                type="number" 
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                value={step2Data.customEmiAmount || ''}
-                onChange={(e) => setStep2Data({...step2Data, customEmiAmount: e.target.value})}
-                placeholder="Last EMI Amount"
-                min="0"
-                step="0.01"
-                required
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                For last 1 {step2Data.loanType === 'Weekly' ? 'week' : 'month'}
-              </p>
-            </div>
-          </>
-        )}
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">Last EMI Amount *</label>
+      <input 
+        type="number" 
+        className={`w-full px-3 py-2 border rounded-md ${
+          step2Errors.customEmiAmount ? 'border-red-500' : 'border-gray-300'
+        }`}
+        value={step2Data.customEmiAmount || ''}
+        onChange={(e) => setStep2Data({...step2Data, customEmiAmount: e.target.value})}
+        placeholder="Last EMI Amount"
+        min="0"
+        step="0.01"
+        required
+      />
+      {step2Errors.customEmiAmount && <p className="text-red-500 text-xs mt-1">{step2Errors.customEmiAmount}</p>}
+      <p className="text-xs text-gray-500 mt-1">
+        For last 1 {step2Data.loanType === 'Weekly' ? 'week' : 'month'}
+      </p>
+    </div>
+  </>
+)}
 
         {/* Total Loan Amount */}
         <div>

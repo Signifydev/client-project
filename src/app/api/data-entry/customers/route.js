@@ -103,20 +103,50 @@ export async function POST(request) {
     const fiDocumentShop = formData.get('fiDocumentShop');
     const fiDocumentHome = formData.get('fiDocumentHome');
 
-    // Validate required fields
-    if (!name || !phone || phone.length === 0 || !businessName || !area || !customerNumber || !address || !category || !officeCategory) {
-      return NextResponse.json(
-        { success: false, error: 'All customer details are required' },
-        { status: 400 }
-      );
-    }
+    // Validate required customer fields - Make files optional
+if (!name || !phone || phone.length === 0 || !businessName || !area || !customerNumber || !address || !category || !officeCategory) {
+  return NextResponse.json(
+    { success: false, error: 'All customer details are required' },
+    { status: 400 }
+  );
+}
 
-    if (!loanDate || !emiStartDate || !loanAmount || !emiAmount || !loanDays || !loanType || !emiType) {
+// Loan validation based on loan type and EMI type
+if (!loanDate || !emiStartDate || !loanAmount || !loanDays || !loanType || !emiType) {
+  return NextResponse.json(
+    { success: false, error: 'All basic loan details are required' },
+    { status: 400 }
+  );
+}
+
+// Validate EMI amounts based on loan type and EMI type
+if (loanType === 'Daily') {
+  // Daily loans only need emiAmount
+  if (!emiAmount) {
+    return NextResponse.json(
+      { success: false, error: 'EMI Amount is required for Daily loans' },
+      { status: 400 }
+    );
+  }
+} else {
+  // Weekly/Monthly loans
+  if (emiType === 'fixed') {
+    if (!emiAmount) {
       return NextResponse.json(
-        { success: false, error: 'All loan details are required' },
+        { success: false, error: 'EMI Amount is required for Fixed EMI type' },
         { status: 400 }
       );
     }
+  } else if (emiType === 'custom') {
+    // Custom EMI requires both fixed EMI amount and last EMI amount
+    if (!emiAmount || !customEmiAmount) {
+      return NextResponse.json(
+        { success: false, error: 'Both Fixed EMI Amount and Last EMI Amount are required for Custom EMI type' },
+        { status: 400 }
+      );
+    }
+  }
+}
 
     if (!loginId || !password || !confirmPassword) {
       return NextResponse.json(
