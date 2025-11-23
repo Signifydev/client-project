@@ -8501,6 +8501,162 @@ const renderCollection = () => {
   const renderCustomerDetails = () => {
   const displayLoans = customerDetails ? getAllCustomerLoans(customerDetails, customerDetails) : [];
 
+  // Helper function to render loan details based on type and EMI type
+  const renderLoanDetails = (loan: Loan) => {
+    const loanData = loan as any; // Use any to access custom properties
+    
+    // Check if it's a custom EMI type
+    const isCustomEMI = loanData.emiType === 'custom' && loanData.loanType !== 'Daily';
+    const fixedEMIAmount = loanData.fixedEmiAmount || loan.emiAmount;
+    const lastEMIAmount = loanData.customEmiAmount;
+    
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
+        {/* Loan Amount - Always shown */}
+        <div>
+          <label className="block text-xs font-medium text-gray-500">
+            Loan Amount
+          </label>
+          <p className="text-gray-900 font-semibold">
+            ₹{loan.amount?.toLocaleString()}
+          </p>
+        </div>
+
+        {/* EMI Details based on loan type and EMI type */}
+        {loan.loanType === 'Daily' && (
+          <>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                EMI Amount
+              </label>
+              <p className="text-gray-900 font-semibold">
+                ₹{loan.emiAmount}
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                No. of Days
+              </label>
+              <p className="text-gray-900 font-semibold">
+                {loan.loanDays}
+              </p>
+            </div>
+          </>
+        )}
+
+        {loan.loanType === 'Weekly' && isCustomEMI && (
+          <>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                Fixed EMI Amount
+              </label>
+              <p className="text-gray-900 font-semibold">
+                ₹{fixedEMIAmount}
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                No. of Weeks
+              </label>
+              <p className="text-gray-900 font-semibold">
+                {loan.loanDays}
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                Last EMI Amount
+              </label>
+              <p className="text-gray-900 font-semibold">
+                ₹{lastEMIAmount}
+              </p>
+            </div>
+          </>
+        )}
+
+        {loan.loanType === 'Weekly' && !isCustomEMI && (
+          <>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                EMI Amount
+              </label>
+              <p className="text-gray-900 font-semibold">
+                ₹{loan.emiAmount}
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                No. of Weeks
+              </label>
+              <p className="text-gray-900 font-semibold">
+                {loan.loanDays}
+              </p>
+            </div>
+          </>
+        )}
+
+        {loan.loanType === 'Monthly' && isCustomEMI && (
+          <>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                Fixed EMI Amount
+              </label>
+              <p className="text-gray-900 font-semibold">
+                ₹{fixedEMIAmount}
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                No. of Months
+              </label>
+              <p className="text-gray-900 font-semibold">
+                {loan.loanDays}
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                Last EMI Amount
+              </label>
+              <p className="text-gray-900 font-semibold">
+                ₹{lastEMIAmount}
+              </p>
+            </div>
+          </>
+        )}
+
+        {loan.loanType === 'Monthly' && !isCustomEMI && (
+          <>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                EMI Amount
+              </label>
+              <p className="text-gray-900 font-semibold">
+                ₹{loan.emiAmount}
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                No. of Months
+              </label>
+              <p className="text-gray-900 font-semibold">
+                {loan.loanDays}
+              </p>
+            </div>
+          </>
+        )}
+
+        {/* Next EMI Date - Always shown as the last item */}
+        <div>
+          <label className="block text-xs font-medium text-gray-500">
+            Next EMI Date
+          </label>
+          <p className="text-gray-900 font-semibold">
+            {formatDateToDDMMYYYY(loan.nextEmiDate)}
+          </p>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -8560,12 +8716,32 @@ const renderCollection = () => {
                     <p className="mt-1 text-sm text-gray-900 font-mono">{customerDetails.customerNumber}</p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Phone Numbers</label>
+                    <label className="block text-sm font-medium text-gray-700">Primary Phone Number</label>
                     <p className="mt-1 text-sm text-gray-900">
                       {Array.isArray(customerDetails.phone) 
-                        ? customerDetails.phone.filter(p => p).join(', ')
+                        ? customerDetails.phone[0] || 'Not provided'
                         : customerDetails.phone
                       }
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Secondary Phone Number</label>
+                    <p className="mt-1 text-sm text-gray-900">
+                      {Array.isArray(customerDetails.phone) && customerDetails.phone.length > 1
+                        ? customerDetails.phone[1] || 'Not provided'
+                        : 'Not provided'
+                      }
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      <span className="flex items-center gap-1">
+                        <span>WhatsApp Number</span>
+                        <span className="text-green-600">📱</span>
+                      </span>
+                    </label>
+                    <p className="mt-1 text-sm text-gray-900">
+                      {customerDetails.whatsappNumber || 'Not provided'}
                     </p>
                   </div>
                 </div>
@@ -8586,26 +8762,6 @@ const renderCollection = () => {
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700">Address</label>
                     <p className="mt-1 text-sm text-gray-900">{customerDetails.address || 'Not provided'}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Contact Information Section */}
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h4 className="text-lg font-semibold text-gray-900 mb-4">Contact Information</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">WhatsApp Number</label>
-                    <p className="mt-1 text-sm text-gray-900 flex items-center">
-                      {customerDetails.whatsappNumber || 'Not provided'}
-                      {customerDetails.whatsappNumber && (
-                        <span className="ml-2 text-green-600">📱</span>
-                      )}
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Email</label>
-                    <p className="mt-1 text-sm text-gray-900">{customerDetails.email || 'Not provided'}</p>
                   </div>
                 </div>
               </div>
@@ -8637,6 +8793,8 @@ const renderCollection = () => {
                       const behavior = calculatePaymentBehavior(loan);
                       const totalLoanAmount = calculateTotalLoanAmount(loan);
                       const isRenewed = loan.status === 'renewed' || (loan as any).isRenewed === true;
+                      const loanData = loan as any;
+                      const isCustomEMI = loanData.emiType === 'custom' && loanData.loanType !== 'Daily';
                       
                       return (
                         <div 
@@ -8653,7 +8811,7 @@ const renderCollection = () => {
                                   {loan.loanNumber}
                                 </h5>
                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                  {loan.loanType} Loan
+                                  {loan.loanType} Loan {isCustomEMI ? '(Custom EMI)' : '(Fixed EMI)'}
                                 </span>
                                 {isRenewed && (
                                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
@@ -8715,42 +8873,8 @@ const renderCollection = () => {
                             </div>
                           </div>
 
-                          {/* Loan Details Grid */}
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
-                            <div>
-                              <label className="block text-xs font-medium text-gray-500">
-                                Loan Amount
-                              </label>
-                              <p className="text-gray-900 font-semibold">
-                                ₹{loan.amount?.toLocaleString()}
-                              </p>
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-gray-500">
-                                EMI Amount
-                              </label>
-                              <p className="text-gray-900 font-semibold">
-                                ₹{loan.emiAmount}
-                              </p>
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-gray-500">
-                                {loan.loanType === 'Daily' ? 'No. of Days' : 
-                                 loan.loanType === 'Weekly' ? 'No. of Weeks' : 'No. of Months'}
-                              </label>
-                              <p className="text-gray-900 font-semibold">
-                                {loan.loanDays}
-                              </p>
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-gray-500">
-                                Next EMI Date
-                              </label>
-                              <p className="text-gray-900 font-semibold">
-                                {formatDateToDDMMYYYY(loan.nextEmiDate)}
-                              </p>
-                            </div>
-                          </div>
+                          {/* Dynamic Loan Details based on type and EMI type */}
+                          {renderLoanDetails(loan)}
 
                           {/* Payment Statistics */}
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs bg-blue-50 p-3 rounded-md mb-4">
@@ -8879,16 +9003,6 @@ const renderCollection = () => {
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                 >
                   Edit Profile
-                </button>
-                <button 
-                  onClick={() => {
-                    setSelectedCustomer(customerDetails);
-                    setShowUpdateEMI(true);
-                    setShowCustomerDetails(false);
-                  }}
-                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
-                >
-                  Update EMI
                 </button>
               </div>
             </div>
