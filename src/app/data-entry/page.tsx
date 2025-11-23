@@ -590,6 +590,45 @@ const calculateTotalAmount = (emiAmount: string | number, emiCount: string | num
   return (amount * count).toFixed(2);
 };
 
+// ========== CUSTOMER NUMBER VALIDATION FUNCTIONS ==========
+
+// Function to normalize customer number (remove leading zeros after CN)
+const normalizeCustomerNumber = (customerNumber: string): string => {
+  if (!customerNumber) return '';
+  
+  // Remove CN prefix and any leading zeros, then add CN back
+  const numericPart = customerNumber.replace(/^CN/, '').replace(/^0+/, '');
+  return `CN${numericPart}`;
+};
+
+// Function to check if customer number already exists
+const isCustomerNumberExists = (customerNumber: string): boolean => {
+  const normalizedInput = normalizeCustomerNumber(customerNumber);
+  
+  return customers.some(customer => {
+    const normalizedExisting = normalizeCustomerNumber(customer.customerNumber || '');
+    return normalizedExisting === normalizedInput;
+  });
+};
+
+// Function to get the next available customer number
+const getNextAvailableCustomerNumber = (): string => {
+  if (customers.length === 0) return 'CN001';
+  
+  // Get all numeric parts and find the maximum
+  const allNumbers = customers.map(customer => {
+    const normalized = normalizeCustomerNumber(customer.customerNumber || '');
+    return parseInt(normalized.replace(/^CN/, '')) || 0;
+  });
+  
+  const maxNumber = Math.max(...allNumbers);
+  const nextNumber = maxNumber + 1;
+  
+  // Format with leading zeros (3 digits)
+  return `CN${nextNumber.toString().padStart(3, '0')}`;
+};
+
+// ========== END CUSTOMER NUMBER VALIDATION FUNCTIONS ==========
 
 
   // Fix the calculateNextEmiDate function
@@ -1354,13 +1393,15 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
 
   const resetCustomerForm = (): void => {
   setCurrentStep(1);
+  const nextCustomerNumber = getNextAvailableCustomerNumber();
+  
   setStep1Data({
     name: '',
     phone: ['', ''],
     whatsappNumber: '',
     businessName: '',
     area: '',
-    customerNumber: '',
+    customerNumber: nextCustomerNumber, // Auto-populate with next available
     address: '',
     category: '',
     officeCategory: '',
@@ -1377,7 +1418,7 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
     emiAmount: '',
     loanDays: '',
     loanType: 'Daily',
-    emiType: 'fixed', // Make sure this has a default value
+    emiType: 'fixed',
     customEmiAmount: ''
   });
   setStep3Data({
@@ -4089,17 +4130,46 @@ const renderDeleteConfirmationModal = () => {
       value={step1Data.customerNumber.replace('CN', '')}
       onChange={(e) => {
         const numbersOnly = e.target.value.replace(/\D/g, '');
-        // Always store with CN prefix
-        setStep1Data({...step1Data, customerNumber: `CN${numbersOnly}`});
+        const newCustomerNumber = `CN${numbersOnly}`;
+        
+        // Check for duplicates
+        if (numbersOnly && isCustomerNumberExists(newCustomerNumber)) {
+          setStep1Errors(prev => ({
+            ...prev,
+            customerNumber: 'Customer number already exists'
+          }));
+        } else {
+          setStep1Errors(prev => ({
+            ...prev,
+            customerNumber: ''
+          }));
+        }
+        
+        setStep1Data({...step1Data, customerNumber: newCustomerNumber});
       }}
       placeholder="Enter numbers only"
       maxLength={10}
     />
   </div>
-  {step1Errors.customerNumber && <p className="text-red-500 text-xs mt-1">{step1Errors.customerNumber}</p>}
-  <p className="text-xs text-gray-500 mt-1">
-    Full customer number: {step1Data.customerNumber || 'CN___'}
-  </p>
+  {step1Errors.customerNumber && (
+    <p className="text-red-500 text-xs mt-1">{step1Errors.customerNumber}</p>
+  )}
+  <div className="flex justify-between items-center mt-1">
+    <p className="text-xs text-gray-500">
+      Full customer number: {step1Data.customerNumber || 'CN___'}
+    </p>
+    <button
+      type="button"
+      onClick={() => {
+        const nextNumber = getNextAvailableCustomerNumber();
+        setStep1Data({...step1Data, customerNumber: nextNumber});
+        setStep1Errors(prev => ({...prev, customerNumber: ''}));
+      }}
+      className="text-xs text-blue-600 hover:text-blue-800 underline"
+    >
+      Suggest Next Available
+    </button>
+  </div>
 </div>
       
       <div>
@@ -7287,14 +7357,28 @@ const renderCollection = () => {
   );
 
   const renderCustomers = () => {
+  // Check for duplicate customer numbers
+  const hasDuplicateCustomerNumbers = () => {
+    const seen = new Set();
+    return customers.some(customer => {
+      const normalized = normalizeCustomerNumber(customer.customerNumber || '');
+      if (seen.has(normalized)) {
+        return true;
+      }
+      seen.add(normalized);
+      return false;
+    });
+  };
+
   // Sort customers by customer number (numeric sorting)
   const sortedCustomers = [...filteredCustomers].sort((a, b) => {
-    // Extract numeric parts from customer numbers
+    // Extract and normalize numeric parts from customer numbers
     const extractNumber = (customerNumber: string): number => {
       if (!customerNumber) return 0;
       
-      // Remove "CN" prefix and any non-digit characters, then parse as number
-      const numericPart = customerNumber.replace(/^CN/, '').replace(/\D/g, '');
+      // Remove "CN" prefix and any leading zeros, then parse as number
+      const normalized = normalizeCustomerNumber(customerNumber);
+      const numericPart = normalized.replace(/^CN/, '');
       return parseInt(numericPart) || 0;
     };
 
@@ -7336,6 +7420,24 @@ const renderCollection = () => {
             </div>
           </div>
         </div>
+
+        {/* Duplicate Customer Number Warning */}
+        {hasDuplicateCustomerNumbers() && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <span className="text-yellow-400 text-lg">⚠️</span>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-yellow-800">Duplicate Customer Numbers Detected</h3>
+                <div className="mt-1 text-sm text-yellow-700">
+                  <p>Some customer numbers have duplicates when ignoring leading zeros.</p>
+                  <p className="text-xs mt-1">New customers will be validated to prevent duplicates.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* Search, Filter and Sort in one line */}
         <div className="flex flex-col sm:flex-row gap-4 mb-4">
