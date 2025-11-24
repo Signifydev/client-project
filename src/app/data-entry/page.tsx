@@ -634,6 +634,7 @@ const getNextAvailableCustomerNumber = (): string => {
 
 
   // Fix the calculateNextEmiDate function
+// Fix the calculateNextEmiDate function
 const calculateNextEmiDate = (currentDate: string, loanType: string): string => {
   const date = new Date(currentDate);
   
@@ -645,9 +646,11 @@ const calculateNextEmiDate = (currentDate: string, loanType: string): string => 
       date.setDate(date.getDate() + 1);
       break;
     case 'Weekly':
+      // FIX: Add 7 days (exclude current date)
       date.setDate(date.getDate() + 7);
       break;
     case 'Monthly':
+      // FIX: Add 1 month (exclude current date)
       date.setMonth(date.getMonth() + 1);
       break;
     default:
@@ -1090,7 +1093,6 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
       if (loan._id && loan._id.length === 24 && /^[0-9a-fA-F]{24}$/.test(loan._id.replace(/_default$/, ''))) {
         const cleanLoanId = loan._id.replace(/_default$/, '');
         
-        // CRITICAL DEBUG: Check what's actually in the database
         console.log(`🚨 DEBUG Loan ${loan.loanNumber}:`, {
           // Database fields
           nextEmiDate: loan.nextEmiDate,
@@ -1109,9 +1111,6 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
           emiAmount: loan.emiAmount
         });
 
-        // SIMPLE FIX: Always calculate next EMI date based on actual data
-        let nextEmiDate;
-        
         // Check if EMIs have been paid using ALL indicators
         const hasPaidEMIs = (loan.emiPaidCount > 0) || 
                            (loan.totalPaidAmount > 0) ||
@@ -1124,24 +1123,29 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
           emiHistoryCount: loan.emiHistory?.length || 0
         });
 
+        let nextEmiDate;
+        
         if (hasPaidEMIs) {
-          // EMIs HAVE been paid - calculate from lastEmiDate
-          if (loan.lastEmiDate && loan.lastEmiDate !== loan.dateApplied) {
-            nextEmiDate = calculateNextEmiDate(loan.lastEmiDate, loan.loanType);
-            console.log(`💰 Loan ${loan.loanNumber}: EMIs PAID, calculating from lastEmiDate:`, {
-              lastEmiDate: loan.lastEmiDate,
-              calculatedNextEmiDate: nextEmiDate
-            });
-          } else {
-            // Fallback: Use emiStartDate and add one period
-            nextEmiDate = calculateNextEmiDate(loan.emiStartDate || loan.dateApplied, loan.loanType);
-            console.log(`⚠️ Loan ${loan.loanNumber}: EMIs PAID but no valid lastEmiDate, calculating from emiStartDate:`, {
-              emiStartDate: loan.emiStartDate,
-              calculatedNextEmiDate: nextEmiDate
-            });
-          }
-        } else {
-          // NO EMIs paid - use EMI start date
+  // EMIs HAVE been paid - calculate from lastEmiDate + 1 period
+  const actualLastEmiDate = calculateLastEmiDate(loan);
+  if (actualLastEmiDate) {
+    const lastPaymentDate = new Date(actualLastEmiDate);
+    nextEmiDate = calculateNextEmiDateProperly(lastPaymentDate, loan.loanType);
+    console.log(`💰 Loan ${loan.loanNumber}: EMIs PAID, calculating from actualLastEmiDate:`, {
+      actualLastEmiDate,
+      calculatedNextEmiDate: nextEmiDate
+    });
+  } else {
+    // Fallback: Use emiStartDate and add one period
+    const startDate = new Date(loan.emiStartDate || loan.dateApplied);
+    nextEmiDate = calculateNextEmiDateProperly(startDate, loan.loanType);
+    console.log(`⚠️ Loan ${loan.loanNumber}: EMIs PAID but no valid lastEmiDate, calculating from emiStartDate:`, {
+      emiStartDate: loan.emiStartDate,
+      calculatedNextEmiDate: nextEmiDate
+    });
+  }
+} else {
+          // NO EMIs paid - use EMI start date as next EMI date
           nextEmiDate = loan.emiStartDate || loan.dateApplied;
           console.log(`🆕 Loan ${loan.loanNumber}: NO EMIs paid, using emiStartDate:`, nextEmiDate);
         }
@@ -1198,6 +1202,42 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
   }
   
   return loans;
+};
+
+// Add this proper EMI date calculation function
+const calculateNextEmiDateProperly = (lastDate: Date, loanType: string): string => {
+  const nextDate = new Date(lastDate);
+  
+  switch(loanType) {
+    case 'Daily':
+      // For daily loans, next EMI is the next day
+      nextDate.setDate(nextDate.getDate() + 1);
+      break;
+    case 'Weekly':
+      // For weekly loans, next EMI is exactly 7 days after last payment
+      nextDate.setDate(nextDate.getDate() + 7);
+      break;
+    case 'Monthly':
+      // For monthly loans, next EMI is exactly 1 month after last payment
+      nextDate.setMonth(nextDate.getMonth() + 1);
+      break;
+    default:
+      nextDate.setDate(nextDate.getDate() + 1);
+  }
+  
+  return nextDate.toISOString().split('T')[0];
+};
+const calculateLastEmiDate = (loan: any): string => {
+  if (!loan.emiHistory || loan.emiHistory.length === 0) {
+    return loan.emiStartDate || loan.dateApplied;
+  }
+  
+  // Sort payments by date and get the most recent one
+  const sortedPayments = [...loan.emiHistory].sort((a, b) => 
+    new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime()
+  );
+  
+  return sortedPayments[0].paymentDate;
 };
   const validateStep1 = () => {
   const errors: {[key: string]: string} = {};
