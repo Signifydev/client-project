@@ -83,6 +83,10 @@ export async function POST(request) {
       loanType: loanData.loanType || 'Monthly',
       dateApplied: dateApplied,
       loanDays: parseInt(loanDays),
+      // Add the new EMI fields
+  emiType: loanData.emiType || 'fixed',
+  customEmiAmount: loanData.customEmiAmount ? parseFloat(loanData.customEmiAmount) : null,
+  emiStartDate: loanData.emiStartDate ? new Date(loanData.emiStartDate) : dateApplied,
       
       // Backward compatibility fields
       interestRate: loanData.interestRate || 0,
