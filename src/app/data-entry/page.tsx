@@ -2015,36 +2015,36 @@ const calculateLastEmiDate = (loan: any): string => {
       return;
     }
 
-    console.log('🟡 Creating enhanced loan addition request for:', customerDetails.name);
+    console.log('🟡 Creating loan addition request for:', customerDetails.name);
     console.log('📦 Loan data being submitted:', newLoanData);
 
     console.log('🔍 FRONTEND DEBUG - Customer Details:', {
-  _id: customerDetails._id,
-  name: customerDetails.name,
-  customerNumber: customerDetails.customerNumber,
-  hasCustomerNumber: !!customerDetails.customerNumber
-});
+      _id: customerDetails._id,
+      name: customerDetails.name,
+      customerNumber: customerDetails.customerNumber,
+      hasCustomerNumber: !!customerDetails.customerNumber
+    });
 
-    // Use the loans API endpoint
+    // Use the loans API endpoint to create a REQUEST, not a loan
     const loanResponse = await fetch('/api/data-entry/loans', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-  customerId: customerDetails._id,
-  customerName: customerDetails.name,
-  customerNumber: customerDetails.customerNumber, // ADD THIS LINE
-  loanAmount: Number(newLoanData.loanAmount),
-  emiAmount: Number(newLoanData.emiAmount),
-  loanType: newLoanData.loanType,
-  loanDays: Number(newLoanData.loanDays),
-  dateApplied: newLoanData.loanDate,
-  emiStartDate: newLoanData.emiStartDate,
-  emiType: newLoanData.emiType,
-  customEmiAmount: newLoanData.customEmiAmount ? Number(newLoanData.customEmiAmount) : null,
-  createdBy: 'data_entry_operator_1'
-}),
+        customerId: customerDetails._id,
+        customerName: customerDetails.name,
+        customerNumber: customerDetails.customerNumber,
+        loanAmount: Number(newLoanData.loanAmount),
+        emiAmount: Number(newLoanData.emiAmount),
+        loanType: newLoanData.loanType,
+        loanDays: Number(newLoanData.loanDays),
+        dateApplied: newLoanData.loanDate,
+        emiStartDate: newLoanData.emiStartDate,
+        emiType: newLoanData.emiType,
+        customEmiAmount: newLoanData.customEmiAmount ? Number(newLoanData.customEmiAmount) : null,
+        createdBy: 'data_entry_operator_1'
+      }),
     });
 
     console.log('📡 Loan response status:', loanResponse.status);
@@ -2065,39 +2065,37 @@ const calculateLastEmiDate = (loan: any): string => {
     }
 
     if (!loanData.success) {
-      throw new Error(loanData.error || 'Failed to create loan');
+      throw new Error(loanData.error || 'Failed to create loan addition request');
     }
 
-    console.log('✅ Loan created successfully:', loanData.data);
+    console.log('✅ Loan addition request created successfully:', loanData.data);
 
+    // SUCCESS: Show message and reset form
     alert('Loan addition request submitted successfully! Waiting for admin approval.');
-    
+
     // Reset form and close modal
-    alert('Loan addition request submitted successfully! Waiting for admin approval.');
+    setShowAddLoanModal(false);
+    setNewLoanData({
+      loanAmount: '',
+      loanDate: new Date().toISOString().split('T')[0],
+      emiStartDate: new Date().toISOString().split('T')[0],
+      emiAmount: '',
+      loanType: 'Monthly',
+      loanDays: '30',
+      emiType: 'fixed',
+      customEmiAmount: ''
+    });
 
-// Reset form and close modal
-setShowAddLoanModal(false);
-setNewLoanData({
-  loanAmount: '',
-  loanDate: new Date().toISOString().split('T')[0],
-  emiStartDate: new Date().toISOString().split('T')[0],
-  emiAmount: '',
-  loanType: 'Monthly',
-  loanDays: '30',
-  emiType: 'fixed',
-  customEmiAmount: ''
-});
+    // Refresh requests to show the new pending request
+    if (activeTab === 'requests') {
+      fetchPendingRequests();
+    }
 
-// Refresh requests to show the new pending request
-if (activeTab === 'requests') {
-  fetchPendingRequests();
-}
-
-// Close customer details modal - the loan won't appear until approved
-setShowCustomerDetails(false);
+    // Close customer details modal - the loan won't appear until approved
+    setShowCustomerDetails(false);
     
   } catch (error: any) {
-    console.error('❌ Error adding new loan:', error);
+    console.error('❌ Error adding new loan request:', error);
     alert('Error: ' + error.message);
   } finally {
     setIsLoading(false);

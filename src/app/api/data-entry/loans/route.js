@@ -5,12 +5,13 @@ import Request from '@/lib/models/Request';
 import { connectDB } from '@/lib/db';
 
 // POST method to add new loan
+// POST method to add new loan REQUEST (not create loan directly)
 export async function POST(request) {
   try {
     await connectDB();
     const loanData = await request.json();
     
-    console.log('Received loan data:', loanData);
+    console.log('Received loan addition request data:', loanData);
 
     // Handle both 'amount' and 'loanAmount' fields for backward compatibility
     const loanAmount = loanData.loanAmount || loanData.amount;
@@ -43,33 +44,33 @@ export async function POST(request) {
     }
 
     // DEBUG: Check customer data
-console.log('🔍 CUSTOMER DATA DEBUG:');
-console.log('Customer from DB:', {
-  _id: customer._id,
-  name: customer.name,
-  customerNumber: customer.customerNumber,
-  hasCustomerNumber: !!customer.customerNumber
-});
+    console.log('🔍 CUSTOMER DATA DEBUG:');
+    console.log('Customer from DB:', {
+      _id: customer._id,
+      name: customer.name,
+      customerNumber: customer.customerNumber,
+      hasCustomerNumber: !!customer.customerNumber
+    });
 
-console.log('🔍 LOAN DATA DEBUG:');
-console.log('Received loanData:', {
-  customerId: loanData.customerId,
-  customerName: loanData.customerName,
-  customerNumber: loanData.customerNumber,
-  hasCustomerNumberInRequest: !!loanData.customerNumber
-});
+    console.log('🔍 LOAN DATA DEBUG:');
+    console.log('Received loanData:', {
+      customerId: loanData.customerId,
+      customerName: loanData.customerName,
+      customerNumber: loanData.customerNumber,
+      hasCustomerNumberInRequest: !!loanData.customerNumber
+    });
 
-// Ensure customerNumber is set
-const finalCustomerNumber = loanData.customerNumber || customer.customerNumber;
+    // Ensure customerNumber is set
+    const finalCustomerNumber = loanData.customerNumber || customer.customerNumber;
 
-if (!finalCustomerNumber) {
-  return NextResponse.json({ 
-    success: false,
-    error: 'Customer number not found for customer'
-  }, { status: 400 });
-}
+    if (!finalCustomerNumber) {
+      return NextResponse.json({ 
+        success: false,
+        error: 'Customer number not found for customer'
+      }, { status: 400 });
+    }
 
-console.log('✅ Using customerNumber:', finalCustomerNumber);
+    console.log('✅ Using customerNumber:', finalCustomerNumber);
 
     // Check if customer is active
     if (customer.status !== 'active') {
@@ -79,15 +80,26 @@ console.log('✅ Using customerNumber:', finalCustomerNumber);
       }, { status: 400 });
     }
 
-    // Generate unique loan number
-    // Generate unique loan number
-const existingLoans = await Loan.find({ customerId: loanData.customerId });
-const loanCount = existingLoans.length;
+    // Check for existing pending loan addition request for this customer
+    const existingPendingRequest = await Request.findOne({
+      customerId: customer._id,
+      type: 'Loan Addition',
+      status: 'Pending'
+    });
 
-// Use customer's customerNumber instead of loanNumber (which might be undefined)
-const loanNumber = `L${loanCount + 1}`;
+    if (existingPendingRequest) {
+      return NextResponse.json({ 
+        success: false,
+        error: 'A pending loan addition request already exists for this customer. Please wait for admin approval.'
+      }, { status: 409 });
+    }
 
-    // Calculate additional loan fields for backward compatibility
+    // Generate proposed loan number (but don't create the loan yet)
+    const existingLoans = await Loan.find({ customerId: loanData.customerId });
+    const loanCount = existingLoans.length;
+    const proposedLoanNumber = `L${loanCount + 1}`;
+
+    // Calculate additional loan fields for the request
     const dateApplied = new Date(loanData.dateApplied || new Date());
     const endDate = new Date(dateApplied);
     endDate.setDate(endDate.getDate() + parseInt(loanDays));
@@ -102,95 +114,73 @@ const loanNumber = `L${loanCount + 1}`;
 
     const totalEMI = parseInt(loanDays) * dailyEMI;
 
-    // Create new loan
-    const loan = new Loan({
-      customerId: loanData.customerId,
-      customerName: loanData.customerName || customer.name,
-      customerNumber: finalCustomerNumber, // Use the ensured value
-      loanNumber: loanNumber,
-      amount: parseFloat(loanAmount),
-      loanAmount: parseFloat(loanAmount), // Add loanAmount field for consistency
-      emiAmount: parseFloat(emiAmount),
-      loanType: loanData.loanType || 'Monthly',
-      dateApplied: dateApplied,
-      loanDays: parseInt(loanDays),
-      // Add the new EMI fields
-  emiType: loanData.emiType || 'fixed',
-  customEmiAmount: loanData.customEmiAmount ? parseFloat(loanData.customEmiAmount) : null,
-  emiStartDate: loanData.emiStartDate ? new Date(loanData.emiStartDate) : dateApplied,
-      
-      // Backward compatibility fields
-      interestRate: loanData.interestRate || 0,
-      tenure: parseInt(loanDays),
-      tenureType: (loanData.loanType || 'Monthly').toLowerCase(),
-      startDate: dateApplied,
-      endDate: endDate,
-      dailyEMI: dailyEMI,
-      totalEMI: totalEMI,
-      emiPending: totalEMI,
-      totalPending: parseFloat(loanAmount),
-      
-      status: 'active',
-      createdBy: loanData.createdBy || 'data_entry_operator'
+    // Create approval request for the new loan (DO NOT CREATE LOAN YET)
+    const approvalRequest = new Request({
+      type: 'Loan Addition',
+      customerName: customer.name,
+      customerId: customer._id,
+      customerNumber: finalCustomerNumber,
+      // Store all loan data in requestedData - this will be used to create the loan after approval
+      requestedData: {
+        // Basic loan info
+        customerId: customer._id,
+        customerName: customer.name,
+        customerNumber: finalCustomerNumber,
+        loanNumber: proposedLoanNumber,
+        amount: parseFloat(loanAmount),
+        loanAmount: parseFloat(loanAmount),
+        emiAmount: parseFloat(emiAmount),
+        loanType: loanData.loanType || 'Monthly',
+        dateApplied: dateApplied,
+        loanDays: parseInt(loanDays),
+        
+        // New EMI fields
+        emiStartDate: loanData.emiStartDate ? new Date(loanData.emiStartDate) : dateApplied,
+        emiType: loanData.emiType || 'fixed',
+        customEmiAmount: loanData.customEmiAmount ? parseFloat(loanData.customEmiAmount) : null,
+        
+        // Backward compatibility fields
+        interestRate: loanData.interestRate || 0,
+        tenure: parseInt(loanDays),
+        tenureType: (loanData.loanType || 'Monthly').toLowerCase(),
+        startDate: dateApplied,
+        endDate: endDate,
+        dailyEMI: dailyEMI,
+        totalEMI: totalEMI,
+        
+        // System fields
+        status: 'active',
+        createdBy: loanData.createdBy || 'data_entry_operator'
+      },
+      description: `New ${loanData.loanType || 'Monthly'} loan addition for ${customer.name} - Customer: ${finalCustomerNumber} - Amount: ₹${loanAmount}`,
+      priority: parseFloat(loanAmount) > 50000 ? 'High' : 'Medium',
+      createdBy: loanData.createdBy || 'data_entry_operator',
+      status: 'Pending',
+      createdByRole: 'data_entry',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    await approvalRequest.save();
+
+    console.log('✅ Loan addition request created successfully. Waiting for admin approval. Request ID:', approvalRequest._id);
+
+    return NextResponse.json({ 
+      success: true,
+      message: 'Loan addition request submitted successfully! Waiting for admin approval.',
+      data: {
+        requestId: approvalRequest._id,
+        customerName: customer.name,
+        customerNumber: finalCustomerNumber,
+        proposedLoanNumber: proposedLoanNumber,
+        loanAmount: parseFloat(loanAmount),
+        // IMPORTANT: Return request data, not loan data
+        isPendingApproval: true
+      }
     });
     
-    await loan.save();
-
-    // Create approval request for the new loan
-    const approvalRequest = new Request({
-  type: 'Loan Addition',
-  customerName: customer.name,
-  customerId: customer._id,
-  customerNumber: finalCustomerNumber,
-  // REMOVED: loanId (since we're not creating the loan yet)
-  // REMOVED: loanNumber from main object
-  currentData: null,
-  requestedData: {
-    loanNumber: `L${loanCount + 1}`, // Simple loan number like L2, L3
-    amount: parseFloat(loanAmount),
-    loanAmount: parseFloat(loanAmount),
-    emiAmount: parseFloat(emiAmount),
-    loanType: loanData.loanType || 'Monthly',
-    loanDays: parseInt(loanDays),
-    dateApplied: dateApplied,
-    // ADDED: New EMI fields
-    emiStartDate: loanData.emiStartDate ? new Date(loanData.emiStartDate) : dateApplied,
-    emiType: loanData.emiType || 'fixed',
-    customEmiAmount: loanData.customEmiAmount ? parseFloat(loanData.customEmiAmount) : null,
-    // Backward compatibility fields for when loan is created
-    interestRate: loanData.interestRate || 0,
-    tenure: parseInt(loanDays),
-    tenureType: (loanData.loanType || 'Monthly').toLowerCase(),
-    startDate: dateApplied,
-    endDate: endDate,
-    dailyEMI: dailyEMI,
-    totalEMI: totalEMI
-  },
-  description: `New ${loanData.loanType || 'Monthly'} loan addition for ${customer.name} - Customer: ${finalCustomerNumber} - Amount: ₹${loanAmount}`,
-  priority: parseFloat(loanAmount) > 50000 ? 'High' : 'Medium',
-  createdBy: loanData.createdBy || 'data_entry_operator',
-  status: 'Pending',
-  createdByRole: 'data_entry'
-});
-
-await approvalRequest.save();
-
-console.log('✅ Loan addition request created successfully. Waiting for admin approval. Request ID:', approvalRequest._id);
-
-return NextResponse.json({ 
-  success: true,
-  message: 'Loan addition request submitted successfully! Waiting for admin approval.',
-  data: {
-    requestId: approvalRequest._id,
-    customerName: customer.name,
-    customerNumber: finalCustomerNumber,
-    proposedLoanNumber: `L${loanCount + 1}`,
-    loanAmount: parseFloat(loanAmount)
-  }
-});
-    
   } catch (error) {
-    console.error('Error in loan API:', error);
+    console.error('Error in loan addition request API:', error);
     return NextResponse.json({ 
       success: false, 
       error: error.message 
