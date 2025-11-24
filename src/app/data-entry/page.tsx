@@ -2025,18 +2025,19 @@ const calculateLastEmiDate = (loan: any): string => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        customerId: customerDetails._id,
-        customerName: customerDetails.name,
-        loanAmount: Number(newLoanData.loanAmount),
-        emiAmount: Number(newLoanData.emiAmount),
-        loanType: newLoanData.loanType,
-        loanDays: Number(newLoanData.loanDays),
-        dateApplied: newLoanData.loanDate,
-        emiStartDate: newLoanData.emiStartDate,
-        emiType: newLoanData.emiType,
-        customEmiAmount: newLoanData.customEmiAmount ? Number(newLoanData.customEmiAmount) : null,
-        createdBy: 'data_entry_operator_1'
-      }),
+  customerId: customerDetails._id,
+  customerName: customerDetails.name,
+  customerNumber: customerDetails.customerNumber, // ADD THIS LINE
+  loanAmount: Number(newLoanData.loanAmount),
+  emiAmount: Number(newLoanData.emiAmount),
+  loanType: newLoanData.loanType,
+  loanDays: Number(newLoanData.loanDays),
+  dateApplied: newLoanData.loanDate,
+  emiStartDate: newLoanData.emiStartDate,
+  emiType: newLoanData.emiType,
+  customEmiAmount: newLoanData.customEmiAmount ? Number(newLoanData.customEmiAmount) : null,
+  createdBy: 'data_entry_operator_1'
+}),
     });
 
     console.log('📡 Loan response status:', loanResponse.status);
