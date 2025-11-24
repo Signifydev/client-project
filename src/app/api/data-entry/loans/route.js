@@ -80,11 +80,12 @@ console.log('✅ Using customerNumber:', finalCustomerNumber);
     }
 
     // Generate unique loan number
-    const loanCount = await Loan.countDocuments({
-      customerId: loanData.customerId
-    });
-    
-    const loanNumber = `${customer.loanNumber}-L${loanCount + 1}`;
+    // Generate unique loan number
+const existingLoans = await Loan.find({ customerId: loanData.customerId });
+const loanCount = existingLoans.length;
+
+// Use customer's customerNumber instead of loanNumber (which might be undefined)
+const loanNumber = `L${loanCount + 1}`;
 
     // Calculate additional loan fields for backward compatibility
     const dateApplied = new Date(loanData.dateApplied || new Date());
@@ -137,43 +138,56 @@ console.log('✅ Using customerNumber:', finalCustomerNumber);
 
     // Create approval request for the new loan
     const approvalRequest = new Request({
-      type: 'Loan Addition',
-      customerName: customer.name,
-      customerId: customer._id,
-      loanId: loan._id,
-      loanNumber: loanNumber,
-      currentData: null, // No current data for new loan
-      requestedData: {
-        loanNumber: loanNumber,
-        amount: parseFloat(loanAmount),
-        loanAmount: parseFloat(loanAmount),
-        emiAmount: parseFloat(emiAmount),
-        loanType: loanData.loanType || 'Monthly',
-        loanDays: parseInt(loanDays),
-        dateApplied: dateApplied
-      },
-      description: `New ${loanData.loanType || 'Monthly'} loan application for ${customer.name} - Amount: ₹${loanAmount}`,
-      priority: parseFloat(loanAmount) > 50000 ? 'High' : 'Medium',
-      createdBy: loanData.createdBy || 'data_entry_operator',
-      status: 'Pending'
-    });
-    
-    await approvalRequest.save();
+  type: 'Loan Addition',
+  customerName: customer.name,
+  customerId: customer._id,
+  customerNumber: finalCustomerNumber,
+  // REMOVED: loanId (since we're not creating the loan yet)
+  // REMOVED: loanNumber from main object
+  currentData: null,
+  requestedData: {
+    loanNumber: `L${loanCount + 1}`, // Simple loan number like L2, L3
+    amount: parseFloat(loanAmount),
+    loanAmount: parseFloat(loanAmount),
+    emiAmount: parseFloat(emiAmount),
+    loanType: loanData.loanType || 'Monthly',
+    loanDays: parseInt(loanDays),
+    dateApplied: dateApplied,
+    // ADDED: New EMI fields
+    emiStartDate: loanData.emiStartDate ? new Date(loanData.emiStartDate) : dateApplied,
+    emiType: loanData.emiType || 'fixed',
+    customEmiAmount: loanData.customEmiAmount ? parseFloat(loanData.customEmiAmount) : null,
+    // Backward compatibility fields for when loan is created
+    interestRate: loanData.interestRate || 0,
+    tenure: parseInt(loanDays),
+    tenureType: (loanData.loanType || 'Monthly').toLowerCase(),
+    startDate: dateApplied,
+    endDate: endDate,
+    dailyEMI: dailyEMI,
+    totalEMI: totalEMI
+  },
+  description: `New ${loanData.loanType || 'Monthly'} loan addition for ${customer.name} - Customer: ${finalCustomerNumber} - Amount: ₹${loanAmount}`,
+  priority: parseFloat(loanAmount) > 50000 ? 'High' : 'Medium',
+  createdBy: loanData.createdBy || 'data_entry_operator',
+  status: 'Pending',
+  createdByRole: 'data_entry'
+});
 
-    // Update customer's loans array
-    if (!customer.loans) {
-      customer.loans = [];
-    }
-    customer.loans.push(loan._id);
-    await customer.save();
+await approvalRequest.save();
 
-    console.log('New loan created successfully:', loanNumber);
+console.log('✅ Loan addition request created successfully. Waiting for admin approval. Request ID:', approvalRequest._id);
 
-    return NextResponse.json({ 
-      success: true,
-      message: 'New loan added successfully! Waiting for admin approval.',
-      data: loan
-    });
+return NextResponse.json({ 
+  success: true,
+  message: 'Loan addition request submitted successfully! Waiting for admin approval.',
+  data: {
+    requestId: approvalRequest._id,
+    customerName: customer.name,
+    customerNumber: finalCustomerNumber,
+    proposedLoanNumber: `L${loanCount + 1}`,
+    loanAmount: parseFloat(loanAmount)
+  }
+});
     
   } catch (error) {
     console.error('Error in loan API:', error);

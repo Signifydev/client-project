@@ -2070,28 +2070,31 @@ const calculateLastEmiDate = (loan: any): string => {
 
     console.log('✅ Loan created successfully:', loanData.data);
 
-    alert('New loan added successfully!');
+    alert('Loan addition request submitted successfully! Waiting for admin approval.');
     
     // Reset form and close modal
-    setShowAddLoanModal(false);
-    setNewLoanData({
-      loanAmount: '',
-      loanDate: new Date().toISOString().split('T')[0],
-      emiStartDate: new Date().toISOString().split('T')[0],
-      emiAmount: '',
-      loanType: 'Monthly',
-      loanDays: '30',
-      emiType: 'fixed',
-      customEmiAmount: ''
-    });
-    
-    // Refresh customer details to show the new loan
-    if (customerDetails._id) {
-      await refreshCustomerData(customerDetails._id);
-    }
+    alert('Loan addition request submitted successfully! Waiting for admin approval.');
 
-    // Close customer details modal
-    setShowCustomerDetails(false);
+// Reset form and close modal
+setShowAddLoanModal(false);
+setNewLoanData({
+  loanAmount: '',
+  loanDate: new Date().toISOString().split('T')[0],
+  emiStartDate: new Date().toISOString().split('T')[0],
+  emiAmount: '',
+  loanType: 'Monthly',
+  loanDays: '30',
+  emiType: 'fixed',
+  customEmiAmount: ''
+});
+
+// Refresh requests to show the new pending request
+if (activeTab === 'requests') {
+  fetchPendingRequests();
+}
+
+// Close customer details modal - the loan won't appear until approved
+setShowCustomerDetails(false);
     
   } catch (error: any) {
     console.error('❌ Error adding new loan:', error);
