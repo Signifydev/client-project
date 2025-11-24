@@ -2018,6 +2018,13 @@ const calculateLastEmiDate = (loan: any): string => {
     console.log('🟡 Creating enhanced loan addition request for:', customerDetails.name);
     console.log('📦 Loan data being submitted:', newLoanData);
 
+    console.log('🔍 FRONTEND DEBUG - Customer Details:', {
+  _id: customerDetails._id,
+  name: customerDetails.name,
+  customerNumber: customerDetails.customerNumber,
+  hasCustomerNumber: !!customerDetails.customerNumber
+});
+
     // Use the loans API endpoint
     const loanResponse = await fetch('/api/data-entry/loans', {
       method: 'POST',

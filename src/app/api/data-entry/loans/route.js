@@ -42,6 +42,35 @@ export async function POST(request) {
       }, { status: 404 });
     }
 
+    // DEBUG: Check customer data
+console.log('🔍 CUSTOMER DATA DEBUG:');
+console.log('Customer from DB:', {
+  _id: customer._id,
+  name: customer.name,
+  customerNumber: customer.customerNumber,
+  hasCustomerNumber: !!customer.customerNumber
+});
+
+console.log('🔍 LOAN DATA DEBUG:');
+console.log('Received loanData:', {
+  customerId: loanData.customerId,
+  customerName: loanData.customerName,
+  customerNumber: loanData.customerNumber,
+  hasCustomerNumberInRequest: !!loanData.customerNumber
+});
+
+// Ensure customerNumber is set
+const finalCustomerNumber = loanData.customerNumber || customer.customerNumber;
+
+if (!finalCustomerNumber) {
+  return NextResponse.json({ 
+    success: false,
+    error: 'Customer number not found for customer'
+  }, { status: 400 });
+}
+
+console.log('✅ Using customerNumber:', finalCustomerNumber);
+
     // Check if customer is active
     if (customer.status !== 'active') {
       return NextResponse.json({ 
@@ -76,6 +105,7 @@ export async function POST(request) {
     const loan = new Loan({
       customerId: loanData.customerId,
       customerName: loanData.customerName || customer.name,
+      customerNumber: finalCustomerNumber, // Use the ensured value
       loanNumber: loanNumber,
       amount: parseFloat(loanAmount),
       loanAmount: parseFloat(loanAmount), // Add loanAmount field for consistency
