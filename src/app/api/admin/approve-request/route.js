@@ -603,8 +603,10 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
     loanDays: loanData.loanDays
   });
 
+  // FIXED: Define newLoan variable properly
+  let newLoan;
   try {
-    const newLoan = new Loan(loanData);
+    newLoan = new Loan(loanData);
     await newLoan.save();
     console.log('✅ Additional loan created with enhanced details');
   } catch (error) {
@@ -615,7 +617,7 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
       loanData.emiStartDate = new Date(loanData.dateApplied);
       loanData.emiStartDate.setHours(0, 0, 0, 0);
       
-      const newLoan = new Loan(loanData);
+      newLoan = new Loan(loanData);
       await newLoan.save();
       console.log('✅ Additional loan created with adjusted dates');
     } else {
