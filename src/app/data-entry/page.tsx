@@ -1956,35 +1956,34 @@ const calculateLastEmiDate = (loan: any): string => {
 
   setIsLoading(true);
   try {
-    // Enhanced validation for all required fields
-    // Validate Step 2 data based on loan type and EMI type
-const step2MissingFields: string[] = [];
-if (!step2Data.loanDate) step2MissingFields.push('loanDate');
-if (!step2Data.emiStartDate) step2MissingFields.push('emiStartDate');
-if (!step2Data.loanAmount) step2MissingFields.push('loanAmount');
-if (!step2Data.loanDays) step2MissingFields.push('loanDays');
-if (!step2Data.loanType) step2MissingFields.push('loanType');
-if (!step2Data.emiType) step2MissingFields.push('emiType');
+    // Use newLoanData for validation (since the modal uses this state)
+    const missingFields: string[] = [];
+    if (!newLoanData.loanDate) missingFields.push('loanDate');
+    if (!newLoanData.emiStartDate) missingFields.push('emiStartDate');
+    if (!newLoanData.loanAmount) missingFields.push('loanAmount');
+    if (!newLoanData.loanDays) missingFields.push('loanDays');
+    if (!newLoanData.loanType) missingFields.push('loanType');
+    if (!newLoanData.emiType) missingFields.push('emiType');
 
-// EMI amount validation
-if (step2Data.loanType === 'Daily') {
-  if (!step2Data.emiAmount) step2MissingFields.push('emiAmount');
-} else {
-  if (step2Data.emiType === 'fixed') {
-    if (!step2Data.emiAmount) step2MissingFields.push('emiAmount');
-  } else if (step2Data.emiType === 'custom') {
-    if (!step2Data.emiAmount) step2MissingFields.push('fixed EMI amount');
-    if (!step2Data.customEmiAmount) step2MissingFields.push('last EMI amount');
-  }
-}
+    // EMI validation based on loan type and EMI type
+    if (newLoanData.loanType === 'Daily') {
+      if (!newLoanData.emiAmount) missingFields.push('emiAmount');
+    } else {
+      if (newLoanData.emiType === 'fixed') {
+        if (!newLoanData.emiAmount) missingFields.push('emiAmount');
+      } else if (newLoanData.emiType === 'custom') {
+        if (!newLoanData.emiAmount) missingFields.push('fixed EMI amount');
+        if (!newLoanData.customEmiAmount) missingFields.push('last EMI amount');
+      }
+    }
 
-    if (step2MissingFields.length > 0) {
-  alert(`Please fill all loan details. Missing: ${step2MissingFields.join(', ')}`);
-  setCurrentStep(2);
-  return;
-}
+    if (missingFields.length > 0) {
+      alert(`Please fill all loan details. Missing: ${missingFields.join(', ')}`);
+      setIsLoading(false);
+      return;
+    }
 
-    // Validate numbers are positive
+    // Validate numbers are positive - using newLoanData
     const invalidNumbers: string[] = [];
     const loanAmountNum = parseFloat(newLoanData.loanAmount);
     const emiAmountNum = parseFloat(newLoanData.emiAmount);
@@ -2000,7 +1999,7 @@ if (step2Data.loanType === 'Daily') {
       return;
     }
 
-    // Validate custom EMI
+    // Validate custom EMI - using newLoanData
     if (newLoanData.emiType === 'custom' && newLoanData.loanType !== 'Daily') {
       if (!newLoanData.customEmiAmount || parseFloat(newLoanData.customEmiAmount) <= 0) {
         alert('Custom EMI amount is required for custom EMI type with Weekly/Monthly loans');
@@ -2009,7 +2008,7 @@ if (step2Data.loanType === 'Daily') {
       }
     }
 
-    // Validate dates
+    // Validate dates - using newLoanData
     if (new Date(newLoanData.emiStartDate) < new Date(newLoanData.loanDate)) {
       alert('EMI start date cannot be before loan date');
       setIsLoading(false);
@@ -2019,67 +2018,51 @@ if (step2Data.loanType === 'Daily') {
     console.log('🟡 Creating enhanced loan addition request for:', customerDetails.name);
     console.log('📦 Loan data being submitted:', newLoanData);
 
-    const requestResponse = await fetch('/api/data-entry/requests', {
+    // Use the loans API endpoint
+    const loanResponse = await fetch('/api/data-entry/loans', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        type: 'Loan Addition',
         customerId: customerDetails._id,
         customerName: customerDetails.name,
-        customerNumber: customerDetails.customerNumber,
-        loanNumber: `L${(customerDetails.loans?.length || 0) + 1}`,
-        requestedData: {
-          // Enhanced loan data matching Step 2 structure
-          loanAmount: Number(newLoanData.loanAmount),
-          emiAmount: Number(newLoanData.emiAmount),
-          loanType: newLoanData.loanType,
-          loanDays: Number(newLoanData.loanDays),
-          loanDate: newLoanData.loanDate,
-          emiStartDate: newLoanData.emiStartDate,
-          emiType: newLoanData.emiType,
-          customEmiAmount: newLoanData.customEmiAmount ? Number(newLoanData.customEmiAmount) : null,
-          customerId: customerDetails._id,
-          customerName: customerDetails.name,
-          customerNumber: customerDetails.customerNumber,
-          createdBy: 'data_entry_operator_1',
-          requestType: 'loan_addition'
-        },
-        description: `Additional ${newLoanData.loanType} loan request for ${customerDetails.name} - Customer: ${customerDetails.customerNumber}`,
-        priority: 'Medium',
-        status: 'Pending',
-        createdBy: 'data_entry_operator_1',
-        createdByRole: 'data_entry',
-        requiresCustomerNotification: false,
-        estimatedImpact: 'Medium'
+        loanAmount: Number(newLoanData.loanAmount),
+        emiAmount: Number(newLoanData.emiAmount),
+        loanType: newLoanData.loanType,
+        loanDays: Number(newLoanData.loanDays),
+        dateApplied: newLoanData.loanDate,
+        emiStartDate: newLoanData.emiStartDate,
+        emiType: newLoanData.emiType,
+        customEmiAmount: newLoanData.customEmiAmount ? Number(newLoanData.customEmiAmount) : null,
+        createdBy: 'data_entry_operator_1'
       }),
     });
 
-    console.log('📡 Request response status:', requestResponse.status);
+    console.log('📡 Loan response status:', loanResponse.status);
 
-    const responseText = await requestResponse.text();
+    const responseText = await loanResponse.text();
     console.log('📄 Raw response:', responseText);
 
-    let requestData;
+    let loanData;
     try {
-      requestData = JSON.parse(responseText);
+      loanData = JSON.parse(responseText);
     } catch (parseError: any) {
       console.error('Failed to parse response as JSON:', parseError);
       throw new Error('Server returned invalid JSON response');
     }
 
-    if (!requestResponse.ok) {
-      throw new Error(requestData.error || `HTTP error! status: ${requestResponse.status}`);
+    if (!loanResponse.ok) {
+      throw new Error(loanData.error || `HTTP error! status: ${loanResponse.status}`);
     }
 
-    if (!requestData.success) {
-      throw new Error(requestData.error || 'Failed to create loan addition request');
+    if (!loanData.success) {
+      throw new Error(loanData.error || 'Failed to create loan');
     }
 
-    console.log('✅ Loan addition request created successfully:', requestData.data);
+    console.log('✅ Loan created successfully:', loanData.data);
 
-    alert('Loan addition request submitted successfully! Waiting for admin approval.');
+    alert('New loan added successfully!');
     
     // Reset form and close modal
     setShowAddLoanModal(false);
@@ -2094,9 +2077,9 @@ if (step2Data.loanType === 'Daily') {
       customEmiAmount: ''
     });
     
-    // Refresh requests if on requests tab
-    if (activeTab === 'requests') {
-      fetchPendingRequests();
+    // Refresh customer details to show the new loan
+    if (customerDetails._id) {
+      await refreshCustomerData(customerDetails._id);
     }
 
     // Close customer details modal
