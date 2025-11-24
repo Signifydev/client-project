@@ -155,7 +155,7 @@ console.log('✅ Using customerNumber:', finalCustomerNumber);
       description: `New ${loanData.loanType || 'Monthly'} loan application for ${customer.name} - Amount: ₹${loanAmount}`,
       priority: parseFloat(loanAmount) > 50000 ? 'High' : 'Medium',
       createdBy: loanData.createdBy || 'data_entry_operator',
-      status: 'pending'
+      status: 'Pending'
     });
     
     await approvalRequest.save();
