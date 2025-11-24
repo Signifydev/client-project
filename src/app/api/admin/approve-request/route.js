@@ -335,26 +335,47 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     return date;
   };
 
-  // Fix date handling for emiStartDate
+  // FIXED: Enhanced date handling to prevent validation errors
   let emiStartDate;
-  try {
-    emiStartDate = step2Data.emiStartDate ? new Date(step2Data.emiStartDate) : new Date();
-    if (isNaN(emiStartDate.getTime())) {
-      emiStartDate = new Date();
-    }
-  } catch (error) {
-    emiStartDate = new Date();
-  }
-
-  // Fix date handling for loanDate
   let loanDate;
+
   try {
+    // Handle loan date
     loanDate = step2Data.loanDate ? new Date(step2Data.loanDate) : new Date();
     if (isNaN(loanDate.getTime())) {
       loanDate = new Date();
     }
+    
+    // Handle EMI start date - ensure it's not before loan date
+    emiStartDate = step2Data.emiStartDate ? new Date(step2Data.emiStartDate) : new Date(loanDate);
+    if (isNaN(emiStartDate.getTime())) {
+      emiStartDate = new Date(loanDate);
+    }
+    
+    // FIX: Normalize dates to avoid timezone comparison issues
+    // Set both dates to start of day (00:00:00) for consistent comparison
+    loanDate.setHours(0, 0, 0, 0);
+    emiStartDate.setHours(0, 0, 0, 0);
+    
+    // FIX: If EMI start date is before loan date, set it to loan date
+    if (emiStartDate < loanDate) {
+      console.log('⚠️ Adjusting EMI start date to match loan date');
+      emiStartDate = new Date(loanDate);
+    }
+    
+    console.log('📅 Date validation:', {
+      loanDate: loanDate.toISOString(),
+      emiStartDate: emiStartDate.toISOString(),
+      isValid: emiStartDate >= loanDate
+    });
+    
   } catch (error) {
+    console.error('❌ Error processing dates:', error);
+    // Fallback to current date
     loanDate = new Date();
+    emiStartDate = new Date();
+    loanDate.setHours(0, 0, 0, 0);
+    emiStartDate.setHours(0, 0, 0, 0);
   }
 
   // Calculate total loan amount based on EMI type
@@ -392,9 +413,37 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     totalLoanAmount: totalLoanAmount
   };
 
-  const mainLoan = new Loan(loanDataToSave);
-  await mainLoan.save();
-  console.log('✅ Main loan created:', loanNumber);
+  console.log('💾 Creating loan with data:', {
+    loanNumber: loanDataToSave.loanNumber,
+    amount: loanDataToSave.amount,
+    emiAmount: loanDataToSave.emiAmount,
+    loanType: loanDataToSave.loanType,
+    dateApplied: loanDataToSave.dateApplied.toISOString(),
+    emiStartDate: loanDataToSave.emiStartDate.toISOString(),
+    emiType: loanDataToSave.emiType,
+    loanDays: loanDataToSave.loanDays
+  });
+
+  let mainLoan;
+  try {
+    mainLoan = new Loan(loanDataToSave);
+    await mainLoan.save();
+    console.log('✅ Main loan created:', loanNumber);
+  } catch (error) {
+    console.error('❌ Error creating loan:', error);
+    // If validation still fails, try with adjusted dates
+    if (error.message.includes('EMI start date cannot be before loan date')) {
+      console.log('🔄 Retrying with adjusted dates...');
+      loanDataToSave.emiStartDate = new Date(loanDataToSave.dateApplied);
+      loanDataToSave.emiStartDate.setHours(0, 0, 0, 0);
+      
+      mainLoan = new Loan(loanDataToSave);
+      await mainLoan.save();
+      console.log('✅ Main loan created with adjusted dates');
+    } else {
+      throw error;
+    }
+  }
 
   // Update request
   requestDoc.status = 'Approved';
@@ -465,26 +514,47 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
     return date;
   };
 
-  // Fix date handling for emiStartDate
+  // FIXED: Enhanced date handling to prevent validation errors
   let emiStartDate;
-  try {
-    emiStartDate = requestedData.emiStartDate ? new Date(requestedData.emiStartDate) : new Date();
-    if (isNaN(emiStartDate.getTime())) {
-      emiStartDate = new Date();
-    }
-  } catch (error) {
-    emiStartDate = new Date();
-  }
-
-  // Fix date handling for loanDate
   let loanDate;
+  
   try {
-    loanDate = requestedData.loanDate ? new Date(requestedData.loanDate) : new Date();
+    // Handle loan date
+    loanDate = requestedData.dateApplied ? new Date(requestedData.dateApplied) : new Date();
     if (isNaN(loanDate.getTime())) {
       loanDate = new Date();
     }
+    
+    // Handle EMI start date - ensure it's not before loan date
+    emiStartDate = requestedData.emiStartDate ? new Date(requestedData.emiStartDate) : new Date(loanDate);
+    if (isNaN(emiStartDate.getTime())) {
+      emiStartDate = new Date(loanDate);
+    }
+    
+    // FIX: Normalize dates to avoid timezone comparison issues
+    // Set both dates to start of day (00:00:00) for consistent comparison
+    loanDate.setHours(0, 0, 0, 0);
+    emiStartDate.setHours(0, 0, 0, 0);
+    
+    // FIX: If EMI start date is before loan date, set it to loan date
+    if (emiStartDate < loanDate) {
+      console.log('⚠️ Adjusting EMI start date to match loan date');
+      emiStartDate = new Date(loanDate);
+    }
+    
+    console.log('📅 Date validation:', {
+      loanDate: loanDate.toISOString(),
+      emiStartDate: emiStartDate.toISOString(),
+      isValid: emiStartDate >= loanDate
+    });
+    
   } catch (error) {
+    console.error('❌ Error processing dates:', error);
+    // Fallback to current date
     loanDate = new Date();
+    emiStartDate = new Date();
+    loanDate.setHours(0, 0, 0, 0);
+    emiStartDate.setHours(0, 0, 0, 0);
   }
 
   // Calculate total loan amount based on EMI type
@@ -522,9 +592,36 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
     totalLoanAmount: totalLoanAmount
   };
 
-  const newLoan = new Loan(loanData);
-  await newLoan.save();
-  console.log('✅ Additional loan created with enhanced details');
+  console.log('💾 Creating loan with data:', {
+    loanNumber: loanData.loanNumber,
+    amount: loanData.amount,
+    emiAmount: loanData.emiAmount,
+    loanType: loanData.loanType,
+    dateApplied: loanData.dateApplied.toISOString(),
+    emiStartDate: loanData.emiStartDate.toISOString(),
+    emiType: loanData.emiType,
+    loanDays: loanData.loanDays
+  });
+
+  try {
+    const newLoan = new Loan(loanData);
+    await newLoan.save();
+    console.log('✅ Additional loan created with enhanced details');
+  } catch (error) {
+    console.error('❌ Error creating loan:', error);
+    // If validation still fails, try with adjusted dates
+    if (error.message.includes('EMI start date cannot be before loan date')) {
+      console.log('🔄 Retrying with adjusted dates...');
+      loanData.emiStartDate = new Date(loanData.dateApplied);
+      loanData.emiStartDate.setHours(0, 0, 0, 0);
+      
+      const newLoan = new Loan(loanData);
+      await newLoan.save();
+      console.log('✅ Additional loan created with adjusted dates');
+    } else {
+      throw error;
+    }
+  }
 
   // Update request
   requestDoc.status = 'Approved';
