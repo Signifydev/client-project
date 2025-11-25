@@ -5249,10 +5249,10 @@ const renderDeleteConfirmationModal = () => {
 
   const completeLoanData = getCompleteLoanData();
   
-  // Determine EMI type and custom EMI amount
-  const emiType = completeLoanData?.emiType || editLoanData.emiType || 'fixed';
-const customEmiAmount = completeLoanData?.customEmiAmount?.toString() || editLoanData.customEmiAmount || '';
-  const emiStartDate = completeLoanData?.emiStartDate || editLoanData.dateApplied;
+  // Determine EMI type and custom EMI amount - UPDATED to use editLoanData state
+  const emiType = editLoanData.emiType || completeLoanData?.emiType || 'fixed';
+  const customEmiAmount = editLoanData.customEmiAmount || completeLoanData?.customEmiAmount?.toString() || '';
+  const emiStartDate = editLoanData.emiStartDate || completeLoanData?.emiStartDate || editLoanData.dateApplied;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -5329,7 +5329,6 @@ const customEmiAmount = completeLoanData?.customEmiAmount?.toString() || editLoa
                             value="fixed"
                             checked={emiType === 'fixed'}
                             onChange={(e) => {
-                              // Update the state to track EMI type
                               setEditLoanData(prev => ({
                                 ...prev,
                                 emiType: e.target.value as 'fixed' | 'custom'
@@ -5389,7 +5388,10 @@ const customEmiAmount = completeLoanData?.customEmiAmount?.toString() || editLoa
                       type="date" 
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       value={formatDateForInput(emiStartDate)}
-                      onChange={(e) => setEditLoanData({...editLoanData, emiStartDate: e.target.value})}
+                      onChange={(e) => setEditLoanData(prev => ({
+                        ...prev,
+                        emiStartDate: e.target.value
+                      }))}
                       required
                     />
                   </div>
@@ -5449,7 +5451,12 @@ const customEmiAmount = completeLoanData?.customEmiAmount?.toString() || editLoa
                           type="number" 
                           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           value={customEmiAmount || ''}
-                          onChange={(e) => setEditLoanData({...editLoanData, customEmiAmount: e.target.value})}
+                          onChange={(e) => {
+                            setEditLoanData(prev => ({
+                              ...prev,
+                              customEmiAmount: e.target.value
+                            }));
+                          }}
                           placeholder="Last EMI Amount"
                           min="0"
                           step="0.01"
