@@ -7606,8 +7606,8 @@ const renderCollection = () => {
           </div>
         )}
         
-        {/* Search, Filter and Sort in one line */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-4">
+        {/* Search and Status Filter - Office Category Filter Removed */}
+        <div className="flex flex-col sm:flex-row gap-4 justify-between">
           <div className="flex-1">
             <div className="relative">
               <input
@@ -7624,15 +7624,61 @@ const renderCollection = () => {
           </div>
           
           <div className="flex gap-2">
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              <span>Filters</span>
-              <span className={`transform transition-transform ${showFilters ? 'rotate-180' : ''}`}>
-                ▼
-              </span>
-            </button>
+            {/* Status Filter Button */}
+            <div className="relative">
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <span>Status Filter</span>
+                <span className={`transform transition-transform ${showFilters ? 'rotate-180' : ''}`}>
+                  ▼
+                </span>
+              </button>
+              
+              {/* Status Filter Dropdown */}
+              {showFilters && (
+                <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                  <div className="p-2">
+                    <div className="space-y-1">
+                      <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                        <input
+                          type="radio"
+                          name="statusFilter"
+                          value="all"
+                          checked={filters.status === ''}
+                          onChange={(e) => setFilters(prev => ({ ...prev, status: '' }))}
+                          className="mr-3 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">All Status</span>
+                      </label>
+                      <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                        <input
+                          type="radio"
+                          name="statusFilter"
+                          value="active"
+                          checked={filters.status === 'active'}
+                          onChange={(e) => setFilters(prev => ({ ...prev, status: 'active' }))}
+                          className="mr-3 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-green-700">Active Only</span>
+                      </label>
+                      <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                        <input
+                          type="radio"
+                          name="statusFilter"
+                          value="inactive"
+                          checked={filters.status === 'inactive'}
+                          onChange={(e) => setFilters(prev => ({ ...prev, status: 'inactive' }))}
+                          className="mr-3 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-red-700">Inactive Only</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
             
             <button
               onClick={() => setCustomerSortOrder(customerSortOrder === 'asc' ? 'desc' : 'asc')}
@@ -7643,93 +7689,65 @@ const renderCollection = () => {
           </div>
         </div>
 
-        {/* Filters Section */}
-        {showFilters && (
-          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm mb-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Status
-                </label>
-                <select
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  value={filters.status}
-                  onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
+        {/* Active Filter Display */}
+        {(filters.status !== '' || searchQuery) && (
+          <div className="flex flex-wrap gap-2 items-center mt-4">
+            <span className="text-sm text-gray-600">Active filters:</span>
+            
+            {filters.status !== '' && (
+              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                Status: {filters.status === 'active' ? 'Active' : 'Inactive'}
+                <button 
+                  onClick={() => setFilters(prev => ({ ...prev, status: '' }))}
+                  className="ml-1 text-blue-600 hover:text-blue-800"
                 >
-                  <option value="">All Status</option>
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                  <option value="pending">Pending</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Office Category
-                </label>
-                <select
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  value={filters.officeCategory}
-                  onChange={(e) => setFilters(prev => ({ ...prev, officeCategory: e.target.value }))}
+                  ×
+                </button>
+              </span>
+            )}
+            
+            {searchQuery && (
+              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                Search: "{searchQuery}"
+                <button 
+                  onClick={() => setSearchQuery('')}
+                  className="ml-1 text-purple-600 hover:text-purple-800"
                 >
-                  <option value="">All Offices</option>
-                  <option value="Office 1">Office 1</option>
-                  <option value="Office 2">Office 2</option>
-                </select>
-              </div>
-            </div>
-
-            {(filters.status || filters.officeCategory) && (
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm text-gray-600">Active filters:</span>
-                  {filters.status && (
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
-                      Status: {filters.status}
-                      <button 
-                        onClick={() => setFilters(prev => ({ ...prev, status: '' }))}
-                        className="ml-1 text-purple-600 hover:text-purple-800"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  )}
-                  {filters.officeCategory && (
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-orange-100 text-orange-800">
-                      Office: {filters.officeCategory}
-                      <button 
-                        onClick={() => setFilters(prev => ({ ...prev, officeCategory: '' }))}
-                        className="ml-1 text-orange-600 hover:text-orange-800"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  )}
-                </div>
-              </div>
+                  ×
+                </button>
+              </span>
+            )}
+            
+            {(filters.status !== '' || searchQuery) && (
+              <button
+                onClick={() => {
+                  setFilters(prev => ({ ...prev, status: '' }));
+                  setSearchQuery('');
+                }}
+                className="text-xs text-red-600 hover:text-red-800 underline"
+              >
+                Clear all
+              </button>
             )}
           </div>
         )}
 
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center mt-4">
           <span className="text-sm text-gray-600">
             Showing {sortedCustomers.length} of {customers.length} customers
+            {filters.status !== '' && (
+              <span className="text-gray-500">
+                {' '}({filteredCustomers.length} total after filter)
+              </span>
+            )}
           </span>
           
-          {(filters.status || filters.officeCategory || searchQuery) && (
+          {searchQuery && (
             <button
-              onClick={() => {
-                setFilters({
-                  customerNumber: '',
-                  loanType: '',
-                  status: '',
-                  officeCategory: ''
-                });
-                setSearchQuery('');
-              }}
+              onClick={() => setSearchQuery('')}
               className="text-sm text-blue-600 hover:text-blue-800"
             >
-              Clear all filters
+              Clear search
             </button>
           )}
         </div>
