@@ -36,7 +36,23 @@ export async function GET(request, { params }) {
     const loans = await Loan.find({ customerId: id }).sort({ createdAt: 1 });
     console.log(`📊 Found ${loans.length} loans for customer ${customer.name}`);
 
-    // Format customer data with loans
+    // Sort loans by loan number (L1, L2, L3, etc.)
+    const sortedLoans = loans.sort((a, b) => {
+      const extractNumber = (loanNumber) => {
+        if (!loanNumber) return 0;
+        const match = loanNumber.match(/L(\d+)/);
+        return match ? parseInt(match[1]) : 0;
+      };
+      
+      const aNumber = extractNumber(a.loanNumber);
+      const bNumber = extractNumber(b.loanNumber);
+      
+      return aNumber - bNumber; // Ascending order (L1, L2, L3...)
+    });
+
+    console.log('🔢 Loans sorted by loan number:', sortedLoans.map(loan => loan.loanNumber));
+
+    // Format customer data with sorted loans
     const customerWithLoans = {
       _id: customer._id,
       id: customer._id,
@@ -58,7 +74,7 @@ export async function GET(request, { params }) {
       createdAt: customer.createdAt,
       profilePicture: customer.profilePicture,
       fiDocuments: customer.fiDocuments || {},
-      loans: loans.map(loan => ({
+      loans: sortedLoans.map(loan => ({
         _id: loan._id,
         customerId: loan.customerId,
         customerName: loan.customerName,
@@ -79,11 +95,19 @@ export async function GET(request, { params }) {
         remainingAmount: loan.remainingAmount || loan.amount,
         emiHistory: loan.emiHistory || [],
         createdAt: loan.createdAt,
-        updatedAt: loan.updatedAt
+        updatedAt: loan.updatedAt,
+        // Include renewal tracking fields
+        isRenewed: loan.isRenewed || false,
+        renewedLoanNumber: loan.renewedLoanNumber || '',
+        renewedDate: loan.renewedDate || '',
+        originalLoanNumber: loan.originalLoanNumber || '',
+        // Include EMI type fields
+        emiType: loan.emiType || 'fixed',
+        customEmiAmount: loan.customEmiAmount || null
       }))
     };
 
-    console.log('✅ Customer details with loans prepared successfully');
+    console.log('✅ Customer details with sorted loans prepared successfully');
 
     return NextResponse.json({
       success: true,
