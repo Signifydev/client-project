@@ -1876,6 +1876,33 @@ const calculateLastEmiDate = (loan: any): string => {
     console.log('🔄 Starting renew loan request...');
     console.log('📦 Renew loan data:', renewLoanData);
 
+    // Debug: Check all required fields
+    const requiredFields = {
+      loanId: renewLoanData.loanId,
+      customerId: renewLoanData.customerId,
+      customerName: renewLoanData.customerName,
+      customerNumber: renewLoanData.customerNumber,
+      loanNumber: renewLoanData.loanNumber,
+      newLoanAmount: renewLoanData.newLoanAmount,
+      newEmiAmount: renewLoanData.newEmiAmount,
+      newLoanDays: renewLoanData.newLoanDays,
+      newLoanType: renewLoanData.newLoanType
+    };
+
+    console.log('🔍 Required fields check:', requiredFields);
+
+    // Check for missing fields
+    const missingFields = Object.entries(requiredFields)
+      .filter(([key, value]) => !value)
+      .map(([key]) => key);
+
+    if (missingFields.length > 0) {
+      console.error('❌ Missing required fields:', missingFields);
+      alert(`Please fill all required fields. Missing: ${missingFields.join(', ')}`);
+      setIsLoading(false);
+      return;
+    }
+
     if (!renewLoanData.newLoanAmount || !renewLoanData.newEmiAmount || !renewLoanData.newLoanDays) {
       alert('Please fill all required fields');
       setIsLoading(false);
@@ -9237,6 +9264,8 @@ const renderCollection = () => {
                 <div className="space-y-4">
                 
 
+// In renderCustomerDetails function, replace the loan rendering section:
+
 {displayLoans.length > 0 ? (
   displayLoans.map((loan, index) => {
     const completion = calculateEMICompletion(loan);
@@ -9445,19 +9474,18 @@ const renderCollection = () => {
     );
   })
 ) : (
-  // ... rest of the no loans found section remains the same
-                    <div className="text-center py-8 bg-white border border-gray-200 rounded-lg">
-                      <div className="text-gray-400 text-4xl mb-4">💰</div>
-                      <p className="text-gray-600 text-lg">No loans found</p>
-                      <p className="text-sm text-gray-500 mt-2">This customer doesn't have any loans yet.</p>
-                      <button 
-                        onClick={() => setShowAddLoanModal(true)}
-                        className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
-                      >
-                        + Add First Loan
-                      </button>
-                    </div>
-                  )}
+  <div className="text-center py-8 bg-white border border-gray-200 rounded-lg">
+    <div className="text-gray-400 text-4xl mb-4">💰</div>
+    <p className="text-gray-600 text-lg">No loans found</p>
+    <p className="text-sm text-gray-500 mt-2">This customer doesn't have any loans yet.</p>
+    <button 
+      onClick={() => setShowAddLoanModal(true)}
+      className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+    >
+      + Add First Loan
+    </button>
+  </div>
+)}
                 </div>
               </div>
 
