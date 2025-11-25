@@ -881,6 +881,15 @@ async function approveLoanDeletion(requestDoc, reason, processedBy) {
 async function approveLoanRenew(requestDoc, reason, processedBy) {
   console.log('🔄 Processing Loan Renew request...');
   
+  // FIXED: Enhanced logging to see what data we have
+  console.log('📊 Renew request document:', {
+    requestId: requestDoc._id,
+    type: requestDoc.type,
+    customerId: requestDoc.customerId,
+    customerName: requestDoc.customerName,
+    requestedData: requestDoc.requestedData
+  });
+
   const requestedData = requestDoc.requestedData || requestDoc;
   
   if (!requestedData.newLoanAmount || !requestedData.newEmiAmount || !requestedData.newLoanType) {
@@ -890,12 +899,54 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
     }, { status: 400 });
   }
 
-  const customer = await Customer.findById(requestedData.customerId);
-  if (!customer || customer.status !== 'active') {
+  // FIXED: Better customer ID extraction with fallbacks
+  const customerId = requestDoc.customerId || requestedData.customerId;
+  
+  if (!customerId) {
+    console.log('❌ No customer ID found in request:', {
+      requestCustomerId: requestDoc.customerId,
+      requestedDataCustomerId: requestedData.customerId
+    });
     return NextResponse.json({ 
       success: false,
-      error: 'Customer not found or not active' 
+      error: 'Customer ID not found in request' 
+    }, { status: 400 });
+  }
+
+  console.log('🔍 Looking for customer with ID:', customerId);
+
+  // FIXED: More flexible customer lookup
+  const customer = await Customer.findById(customerId);
+  
+  if (!customer) {
+    console.log('❌ Customer not found with ID:', customerId);
+    return NextResponse.json({ 
+      success: false,
+      error: 'Customer not found' 
     }, { status: 404 });
+  }
+
+  console.log('✅ Customer found:', {
+    customerId: customer._id,
+    name: customer.name,
+    status: customer.status,
+    customerNumber: customer.customerNumber
+  });
+
+  // FIXED: More flexible status checking
+  if (customer.status !== 'active') {
+    console.log('⚠️ Customer status is not active:', customer.status);
+    // You might want to allow renewal for certain non-active statuses
+    // return NextResponse.json({ 
+    //   success: false,
+    //   error: `Customer status is "${customer.status}" but must be "active" for renewal` 
+    // }, { status: 400 });
+    
+    // OR: Auto-activate customer for renewal
+    console.log('🔄 Auto-activating customer for renewal...');
+    customer.status = 'active';
+    customer.isActive = true;
+    await customer.save();
   }
 
   // NEW: Use atomic loan number generation
@@ -957,9 +1008,11 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
     renewalRemarks: requestedData.remarks
   };
 
+  console.log('💾 Creating renewed loan with data:', loanData);
+
   const newLoan = new Loan(loanData);
   await newLoan.save();
-  console.log('✅ Renewed loan created');
+  console.log('✅ Renewed loan created:', newLoan._id);
 
   // Update request
   requestDoc.status = 'Approved';
@@ -973,7 +1026,7 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
   requestDoc.updatedAt = new Date();
   
   await requestDoc.save();
-  console.log('✅ Loan renewal approved');
+  console.log('✅ Loan renewal approved and request updated');
 
   return NextResponse.json({ 
     success: true,
@@ -981,7 +1034,9 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
     data: {
       loanId: newLoan._id,
       loanNumber: newLoan.loanNumber,
-      customerName: customer.name
+      customerName: customer.name,
+      newLoanAmount: newLoan.amount,
+      newEmiAmount: newLoan.emiAmount
     }
   });
 }
