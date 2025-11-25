@@ -9264,7 +9264,7 @@ const renderCollection = () => {
                 <div className="space-y-4">
                 
 
-// In renderCustomerDetails function, replace the loan rendering section:
+
 
 {displayLoans.length > 0 ? (
   displayLoans.map((loan, index) => {
