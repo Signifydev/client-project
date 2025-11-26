@@ -10,10 +10,19 @@ import bcrypt from 'bcryptjs';
 
 export async function POST(request) {
   try {
+    console.log('🟡 Starting approve-request API call');
     await connectDB();
-    const { requestId, action, reason, processedBy = 'admin' } = await request.json();
+    const body = await request.json();
+    const { requestId, action, reason, processedBy = 'admin' } = body;
 
     console.log('🟡 Processing request:', { requestId, action, processedBy });
+
+    if (!requestId) {
+      return NextResponse.json({ 
+        success: false,
+        error: 'Request ID is required' 
+      }, { status: 400 });
+    }
 
     // Find the request
     const requestDoc = await Request.findById(requestId);
@@ -27,10 +36,7 @@ export async function POST(request) {
     console.log('🔍 Found request:', {
       type: requestDoc.type,
       customerName: requestDoc.customerName,
-      customerNumber: requestDoc.customerNumber,
-      status: requestDoc.status,
-      hasStepData: !!(requestDoc.step1Data || requestDoc.step2Data || requestDoc.step3Data),
-      hasRequestedData: !!requestDoc.requestedData
+      status: requestDoc.status
     });
 
     if (action === 'approve') {
@@ -54,6 +60,8 @@ export async function POST(request) {
 
 async function handleApproval(requestDoc, reason, processedBy) {
   try {
+    console.log(`🟡 Handling approval for ${requestDoc.type} request`);
+    
     switch (requestDoc.type) {
       case 'New Customer':
         return await approveNewCustomer(requestDoc, reason, processedBy);
@@ -85,19 +93,6 @@ async function handleApproval(requestDoc, reason, processedBy) {
 async function handleRejection(requestDoc, reason, processedBy) {
   console.log('❌ Rejecting request:', requestDoc._id);
   
-  // Clean up pending data for new customer requests
-  if (requestDoc.type === 'New Customer' && requestDoc.step1Data?.customerNumber) {
-    try {
-      await Customer.deleteMany({ 
-        customerNumber: requestDoc.step1Data.customerNumber,
-        status: 'pending' 
-      });
-      console.log('✅ Deleted pending customers');
-    } catch (deleteError) {
-      console.error('❌ Error deleting pending customer data:', deleteError);
-    }
-  }
-  
   // Update request status
   requestDoc.status = 'Rejected';
   requestDoc.reviewedBy = processedBy;
@@ -119,14 +114,13 @@ async function handleRejection(requestDoc, reason, processedBy) {
   });
 }
 
-// NEW: Enhanced customer number normalization function
+// Customer number normalization
 const normalizeCustomerNumber = (customerNumber) => {
-  // Remove any existing CN prefix and add clean one
   const cleanNumber = customerNumber.replace(/^CN/i, '').trim();
   return `CN${cleanNumber}`;
 };
 
-// NEW: Comprehensive duplicate checking function
+// Duplicate checking
 const checkForDuplicates = async (customerData) => {
   const { phone, customerNumber, loginId, excludeId = null } = customerData;
   
@@ -150,327 +144,234 @@ const checkForDuplicates = async (customerData) => {
 async function approveNewCustomer(requestDoc, reason, processedBy) {
   console.log('📝 Creating new customer from multi-step request...');
   
-  // ✅ FIXED: Use step data structure
-  const step1Data = requestDoc.step1Data;
-  const step2Data = requestDoc.step2Data;
-  const step3Data = requestDoc.step3Data;
-
-  console.log('🔍 Step data availability:', {
-    hasStep1Data: !!step1Data,
-    hasStep2Data: !!step2Data,
-    hasStep3Data: !!step3Data,
-    step1DataKeys: step1Data ? Object.keys(step1Data) : 'No step1Data',
-    step2DataKeys: step2Data ? Object.keys(step2Data) : 'No step2Data',
-    step3DataKeys: step3Data ? Object.keys(step3Data) : 'No step3Data'
-  });
-
-  // ✅ FIXED: Check for step data instead of data field
-  if (!step1Data || !step2Data || !step3Data) {
-    console.log('❌ Missing step data for new customer request:', {
-      missingStep1: !step1Data,
-      missingStep2: !step2Data,
-      missingStep3: !step3Data
-    });
-    return NextResponse.json({ 
-      success: false,
-      error: 'Missing required customer data in step data structure'
-    }, { status: 400 });
-  }
-
-  // Validate required fields in step1Data
-  if (!step1Data.name || !step1Data.customerNumber || !step1Data.phone || !step1Data.businessName) {
-    console.log('❌ Missing required fields in step1Data:', {
-      name: !!step1Data.name,
-      customerNumber: !!step1Data.customerNumber,
-      phone: !!step1Data.phone,
-      businessName: !!step1Data.businessName
-    });
-    return NextResponse.json({ 
-      success: false,
-      error: 'Missing required customer fields: name, customerNumber, phone, or businessName'
-    }, { status: 400 });
-  }
-
-  if (!step2Data.loanAmount || !step2Data.emiAmount || !step2Data.loanType) {
-    console.log('❌ Missing required loan data in step2Data');
-    return NextResponse.json({ 
-      success: false,
-      error: 'Missing required loan fields: loanAmount, emiAmount, or loanType'
-    }, { status: 400 });
-  }
-
-  if (!step3Data.loginId || !step3Data.password) {
-    console.log('❌ Missing required login data in step3Data');
-    return NextResponse.json({ 
-      success: false,
-      error: 'Missing required login fields: loginId or password'
-    }, { status: 400 });
-  }
-
-  // NEW: Normalize customer number
-  const normalizedCustomerNumber = normalizeCustomerNumber(step1Data.customerNumber);
-  console.log('🔧 Normalized customer number:', {
-    original: step1Data.customerNumber,
-    normalized: normalizedCustomerNumber
-  });
-
-  // NEW: Enhanced duplicate checking
-  const phoneArray = Array.isArray(step1Data.phone) ? step1Data.phone : [step1Data.phone];
-  const hasDuplicates = await checkForDuplicates({
-    phone: phoneArray,
-    customerNumber: normalizedCustomerNumber,
-    loginId: step3Data.loginId
-  });
-
-  if (hasDuplicates) {
-    return NextResponse.json({ 
-      success: false,
-      error: 'Customer with this phone number, customer number, or login ID already exists'
-    }, { status: 409 });
-  }
-
-  // Hash password
-  const hashedPassword = await bcrypt.hash(step3Data.password, 12);
-
-  // Create customer data
-  const customerDataToSave = {
-    name: step1Data.name.trim(),
-    phone: Array.isArray(step1Data.phone) ? step1Data.phone : [step1Data.phone],
-    whatsappNumber: step1Data.whatsappNumber ? step1Data.whatsappNumber.trim() : '',
-    businessName: step1Data.businessName.trim(),
-    area: step1Data.area.trim(),
-    customerNumber: normalizedCustomerNumber,
-    address: step1Data.address.trim(),
-    category: step1Data.category || 'A',
-    officeCategory: step1Data.officeCategory || 'Office 1',
-    
-    // File fields - use the object structure from step1Data
-    profilePicture: step1Data.profilePicture || {
-      filename: null,
-      url: null,
-      originalName: null,
-      uploadedAt: new Date()
-    },
-    fiDocuments: step1Data.fiDocuments || {
-      shop: {
-        filename: null,
-        url: null,
-        originalName: null,
-        uploadedAt: new Date()
-      },
-      home: {
-        filename: null,
-        url: null,
-        originalName: null,
-        uploadedAt: new Date()
-      }
-    },
-    
-    // Additional fields
-    email: step1Data.email || '',
-    businessType: step1Data.businessType || '',
-    
-    // Login credentials
-    loginId: step3Data.loginId.trim(),
-    password: hashedPassword,
-    
-    // Status and metadata
-    status: 'active',
-    isActive: true,
-    createdBy: requestDoc.createdBy,
-    approvedBy: processedBy,
-    approvedAt: new Date(),
-    createdAt: new Date(),
-    updatedAt: new Date()
-  };
-
-  console.log('💾 Creating customer with data:', {
-    name: customerDataToSave.name,
-    customerNumber: customerDataToSave.customerNumber,
-    phone: customerDataToSave.phone,
-    loginId: customerDataToSave.loginId,
-    businessName: customerDataToSave.businessName
-  });
-
-  const customer = new Customer(customerDataToSave);
-  await customer.save();
-  console.log('✅ New customer created:', customer._id);
-
-  // Create user account
   try {
-    const user = new User({
-      customerId: customer._id,
-      loginId: step3Data.loginId,
+    const step1Data = requestDoc.step1Data;
+    const step2Data = requestDoc.step2Data;
+    const step3Data = requestDoc.step3Data;
+
+    // Validate step data exists with detailed error messages
+    if (!step1Data) {
+      throw new Error('Missing step1Data in request');
+    }
+    if (!step2Data) {
+      throw new Error('Missing step2Data in request');
+    }
+    if (!step3Data) {
+      throw new Error('Missing step3Data in request');
+    }
+
+    console.log('🔍 Step data validation passed');
+
+    // Validate required fields with specific error messages
+    const requiredStep1Fields = ['name', 'customerNumber', 'phone', 'businessName', 'area', 'address'];
+    const missingStep1Fields = requiredStep1Fields.filter(field => !step1Data[field]);
+    
+    if (missingStep1Fields.length > 0) {
+      throw new Error(`Missing required customer fields: ${missingStep1Fields.join(', ')}`);
+    }
+
+    const requiredStep2Fields = ['loanAmount', 'emiAmount', 'loanType', 'loanDays'];
+    const missingStep2Fields = requiredStep2Fields.filter(field => !step2Data[field]);
+    
+    if (missingStep2Fields.length > 0) {
+      throw new Error(`Missing required loan fields: ${missingStep2Fields.join(', ')}`);
+    }
+
+    const requiredStep3Fields = ['loginId', 'password'];
+    const missingStep3Fields = requiredStep3Fields.filter(field => !step3Data[field]);
+    
+    if (missingStep3Fields.length > 0) {
+      throw new Error(`Missing required login fields: ${missingStep3Fields.join(', ')}`);
+    }
+
+    console.log('✅ All required fields present');
+
+    // Normalize customer number
+    const normalizedCustomerNumber = normalizeCustomerNumber(step1Data.customerNumber);
+    console.log('🔧 Normalized customer number:', normalizedCustomerNumber);
+
+    // Enhanced duplicate checking
+    const phoneArray = Array.isArray(step1Data.phone) ? step1Data.phone : [step1Data.phone];
+    console.log('📱 Phone numbers to check:', phoneArray);
+
+    const hasDuplicates = await checkForDuplicates({
+      phone: phoneArray,
+      customerNumber: normalizedCustomerNumber,
+      loginId: step3Data.loginId
+    });
+
+    if (hasDuplicates) {
+      throw new Error('Customer with this phone number, customer number, or login ID already exists');
+    }
+
+    console.log('✅ No duplicate customers found');
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(step3Data.password, 12);
+    console.log('🔐 Password hashed');
+
+    // Create SIMPLIFIED customer data with validation
+    const customerDataToSave = {
+      name: step1Data.name?.trim() || '',
+      phone: phoneArray,
+      whatsappNumber: step1Data.whatsappNumber ? step1Data.whatsappNumber.trim() : '',
+      businessName: step1Data.businessName?.trim() || '',
+      area: step1Data.area?.trim() || '',
+      customerNumber: normalizedCustomerNumber,
+      address: step1Data.address?.trim() || '',
+      category: step1Data.category || 'A',
+      officeCategory: step1Data.officeCategory || 'Office 1',
+      email: step1Data.email || '',
+      businessType: step1Data.businessType || '',
+      loginId: step3Data.loginId?.trim() || '',
       password: hashedPassword,
-      role: 'customer',
-      email: step3Data.loginId + '@customer.com',
       status: 'active',
-      createdBy: requestDoc.createdBy
+      isActive: true,
+      createdBy: requestDoc.createdBy || 'system',
+      approvedBy: processedBy,
+      approvedAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    // Validate critical fields one more time
+    if (!customerDataToSave.name || !customerDataToSave.customerNumber || !customerDataToSave.businessName) {
+      throw new Error('Critical customer data missing after processing');
+    }
+
+    console.log('💾 Creating customer with data:', {
+      name: customerDataToSave.name,
+      customerNumber: customerDataToSave.customerNumber,
+      businessName: customerDataToSave.businessName,
+      phone: customerDataToSave.phone
     });
-    await user.save();
-    console.log('✅ User created for customer');
-  } catch (error) {
-    console.error('❌ Error creating user:', error);
-    // Continue even if user creation fails
-  }
 
-  // Generate loan number and create loan
-  const loanNumber = await Loan.generateLoanNumber(customer._id);
-  console.log('🔧 Generated loan number:', loanNumber);
-
-  const calculateNextEmiDate = (emiStartDate, loanType) => {
-    const date = new Date(emiStartDate);
-    switch(loanType) {
-      case 'Daily':
-        date.setDate(date.getDate() + 1);
-        break;
-      case 'Weekly':
-        date.setDate(date.getDate() + 7);
-        break;
-      case 'Monthly':
-        date.setMonth(date.getMonth() + 1);
-        break;
-      default:
-        date.setDate(date.getDate() + 1);
-    }
-    return date;
-  };
-
-  // FIXED: Enhanced date handling to prevent validation errors
-  let emiStartDate;
-  let loanDate;
-
-  try {
-    // Handle loan date
-    loanDate = step2Data.loanDate ? new Date(step2Data.loanDate) : new Date();
-    if (isNaN(loanDate.getTime())) {
-      loanDate = new Date();
-    }
-    
-    // Handle EMI start date - ensure it's not before loan date
-    emiStartDate = step2Data.emiStartDate ? new Date(step2Data.emiStartDate) : new Date(loanDate);
-    if (isNaN(emiStartDate.getTime())) {
-      emiStartDate = new Date(loanDate);
-    }
-    
-    // FIX: Normalize dates to avoid timezone comparison issues
-    // Set both dates to start of day (00:00:00) for consistent comparison
-    loanDate.setHours(0, 0, 0, 0);
-    emiStartDate.setHours(0, 0, 0, 0);
-    
-    // FIX: If EMI start date is before loan date, set it to loan date
-    if (emiStartDate < loanDate) {
-      console.log('⚠️ Adjusting EMI start date to match loan date');
-      emiStartDate = new Date(loanDate);
-    }
-    
-    console.log('📅 Date validation:', {
-      loanDate: loanDate.toISOString(),
-      emiStartDate: emiStartDate.toISOString(),
-      isValid: emiStartDate >= loanDate
-    });
-    
-  } catch (error) {
-    console.error('❌ Error processing dates:', error);
-    // Fallback to current date
-    loanDate = new Date();
-    emiStartDate = new Date();
-    loanDate.setHours(0, 0, 0, 0);
-    emiStartDate.setHours(0, 0, 0, 0);
-  }
-
-  // Calculate total loan amount based on EMI type
-  let totalLoanAmount;
-  if (step2Data.emiType === 'custom' && step2Data.loanType !== 'Daily') {
-    const fixedPeriods = Number(step2Data.loanDays) - 1;
-    const fixedAmount = Number(step2Data.emiAmount) * fixedPeriods;
-    const lastAmount = Number(step2Data.customEmiAmount || step2Data.emiAmount);
-    totalLoanAmount = fixedAmount + lastAmount;
-  } else {
-    totalLoanAmount = Number(step2Data.emiAmount) * Number(step2Data.loanDays);
-  }
-
-  const loanDataToSave = {
-    customerId: customer._id,
-    customerName: customer.name,
-    customerNumber: customer.customerNumber,
-    loanNumber: loanNumber,
-    amount: parseFloat(step2Data.loanAmount),
-    emiAmount: parseFloat(step2Data.emiAmount),
-    loanType: step2Data.loanType,
-    dateApplied: loanDate,
-    loanDays: parseInt(step2Data.loanDays) || 30,
-    emiType: step2Data.emiType || 'fixed',
-    customEmiAmount: step2Data.customEmiAmount ? parseFloat(step2Data.customEmiAmount) : null,
-    emiStartDate: emiStartDate,
-    totalEmiCount: parseInt(step2Data.loanDays) || 30,
-    emiPaidCount: 0,
-    lastEmiDate: null,
-    nextEmiDate: calculateNextEmiDate(emiStartDate, step2Data.loanType),
-    totalPaidAmount: 0,
-    remainingAmount: parseFloat(step2Data.loanAmount),
-    status: 'active',
-    createdBy: requestDoc.createdBy,
-    totalLoanAmount: totalLoanAmount
-  };
-
-  console.log('💾 Creating loan with data:', {
-    loanNumber: loanDataToSave.loanNumber,
-    amount: loanDataToSave.amount,
-    emiAmount: loanDataToSave.emiAmount,
-    loanType: loanDataToSave.loanType,
-    dateApplied: loanDataToSave.dateApplied.toISOString(),
-    emiStartDate: loanDataToSave.emiStartDate.toISOString(),
-    emiType: loanDataToSave.emiType,
-    loanDays: loanDataToSave.loanDays
-  });
-
-  let mainLoan;
-  try {
-    mainLoan = new Loan(loanDataToSave);
-    await mainLoan.save();
-    console.log('✅ Main loan created:', loanNumber);
-  } catch (error) {
-    console.error('❌ Error creating loan:', error);
-    // If validation still fails, try with adjusted dates
-    if (error.message.includes('EMI start date cannot be before loan date')) {
-      console.log('🔄 Retrying with adjusted dates...');
-      loanDataToSave.emiStartDate = new Date(loanDataToSave.dateApplied);
-      loanDataToSave.emiStartDate.setHours(0, 0, 0, 0);
+    let customer;
+    try {
+      // Use create instead of save to avoid middleware issues
+      customer = await Customer.create(customerDataToSave);
+      console.log('✅ Customer created successfully:', customer._id);
+    } catch (saveError) {
+      console.error('❌ Customer creation failed:', saveError);
       
-      mainLoan = new Loan(loanDataToSave);
-      await mainLoan.save();
-      console.log('✅ Main loan created with adjusted dates');
-    } else {
-      throw error;
+      // Provide more specific error messages based on the error type
+      if (saveError.name === 'ValidationError') {
+        const validationErrors = Object.values(saveError.errors).map(err => err.message);
+        throw new Error(`Customer validation failed: ${validationErrors.join(', ')}`);
+      } else if (saveError.code === 11000) {
+        throw new Error('Customer with these details already exists (duplicate key error)');
+      } else {
+        throw new Error(`Failed to create customer: ${saveError.message}`);
+      }
     }
+
+    // Create user account
+    try {
+      await User.create({
+        customerId: customer._id,
+        loginId: step3Data.loginId,
+        password: hashedPassword,
+        role: 'customer',
+        email: step3Data.loginId + '@customer.com',
+        status: 'active',
+        createdBy: requestDoc.createdBy || 'system'
+      });
+      console.log('✅ User created for customer');
+    } catch (error) {
+      console.error('❌ Error creating user:', error);
+      // Continue even if user creation fails - this is not critical
+    }
+
+    // Create loan
+    try {
+      const loanNumber = await Loan.generateLoanNumber(customer._id);
+      
+      // Simple date handling with validation
+      const loanDate = step2Data.loanDate ? new Date(step2Data.loanDate) : new Date();
+      let emiStartDate = step2Data.emiStartDate ? new Date(step2Data.emiStartDate) : new Date(loanDate);
+      
+      // Ensure emiStartDate is not before loanDate
+      if (emiStartDate < loanDate) {
+        console.log('⚠️ Adjusting EMI start date to match loan date');
+        emiStartDate = new Date(loanDate);
+      }
+
+      // Calculate next EMI date
+      const calculateNextEmiDate = (startDate, loanType) => {
+        const date = new Date(startDate);
+        switch(loanType) {
+          case 'Daily': date.setDate(date.getDate() + 1); break;
+          case 'Weekly': date.setDate(date.getDate() + 7); break;
+          case 'Monthly': date.setMonth(date.getMonth() + 1); break;
+          default: date.setDate(date.getDate() + 1);
+        }
+        return date;
+      };
+
+      const loanData = {
+        customerId: customer._id,
+        customerName: customer.name,
+        customerNumber: customer.customerNumber,
+        loanNumber: loanNumber,
+        amount: parseFloat(step2Data.loanAmount) || 0,
+        emiAmount: parseFloat(step2Data.emiAmount) || 0,
+        loanType: step2Data.loanType || 'Daily',
+        dateApplied: loanDate,
+        loanDays: parseInt(step2Data.loanDays) || 30,
+        emiType: step2Data.emiType || 'fixed',
+        customEmiAmount: step2Data.customEmiAmount ? parseFloat(step2Data.customEmiAmount) : null,
+        emiStartDate: emiStartDate,
+        totalEmiCount: parseInt(step2Data.loanDays) || 30,
+        emiPaidCount: 0,
+        lastEmiDate: null,
+        nextEmiDate: calculateNextEmiDate(emiStartDate, step2Data.loanType),
+        totalPaidAmount: 0,
+        remainingAmount: parseFloat(step2Data.loanAmount) || 0,
+        status: 'active',
+        createdBy: requestDoc.createdBy || 'system'
+      };
+
+      await Loan.create(loanData);
+      console.log('✅ Loan created:', loanNumber);
+    } catch (loanError) {
+      console.error('❌ Error creating loan:', loanError);
+      // Continue even if loan creation fails - customer is already created
+    }
+
+    // Update request
+    requestDoc.status = 'Approved';
+    requestDoc.customerId = customer._id;
+    requestDoc.reviewedBy = processedBy;
+    requestDoc.reviewedByRole = 'admin';
+    requestDoc.reviewNotes = reason || 'Customer approved by admin';
+    requestDoc.actionTaken = `Customer account created`;
+    requestDoc.reviewedAt = new Date();
+    requestDoc.approvedAt = new Date();
+    requestDoc.completedAt = new Date();
+    requestDoc.updatedAt = new Date();
+    
+    await requestDoc.save();
+    console.log('✅ Request approved and saved');
+
+    return NextResponse.json({ 
+      success: true,
+      message: 'Customer approved and activated successfully!',
+      data: {
+        customerId: customer._id,
+        customerName: customer.name,
+        customerNumber: customer.customerNumber
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error in approveNewCustomer:', error);
+    
+    // Ensure we always return proper JSON, even for errors
+    return NextResponse.json({ 
+      success: false,
+      error: error.message || 'Unknown error occurred during customer approval'
+    }, { status: 500 });
   }
-
-  // Update request
-  requestDoc.status = 'Approved';
-  requestDoc.customerId = customer._id;
-  requestDoc.reviewedBy = processedBy;
-  requestDoc.reviewedByRole = 'admin';
-  requestDoc.reviewNotes = reason || 'Customer approved by admin';
-  requestDoc.actionTaken = `Customer account created with loan ${loanNumber}`;
-  requestDoc.reviewedAt = new Date();
-  requestDoc.approvedAt = new Date();
-  requestDoc.completedAt = new Date();
-  requestDoc.updatedAt = new Date();
-  
-  await requestDoc.save();
-  console.log('✅ Request approved');
-
-  return NextResponse.json({ 
-    success: true,
-    message: 'Customer approved and activated successfully!',
-    data: {
-      customerId: customer._id,
-      customerName: customer.name,
-      customerNumber: customer.customerNumber,
-      loanNumber: loanNumber
-    }
-  });
 }
 
 async function approveLoanAddition(requestDoc, reason, processedBy) {
@@ -654,9 +555,6 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
   });
 }
 
-// ... (keep the existing approveCustomerEdit, approveLoanEdit, approveLoanDeletion, approveLoanRenew functions as they are)
-// These functions remain the same as in your original code
-
 async function approveCustomerEdit(requestDoc, reason, processedBy) {
   console.log('📝 Processing Customer Edit request...');
   
@@ -699,14 +597,49 @@ async function approveCustomerEdit(requestDoc, reason, processedBy) {
   if (changes.profilePicture !== undefined) {
     customer.profilePicture = changes.profilePicture && typeof changes.profilePicture === 'object' 
       ? changes.profilePicture 
-      : {};
+      : {
+          filename: null,
+          url: null,
+          originalName: null,
+          uploadedAt: new Date()
+        };
     updatedFields.push('profilePicture');
   }
 
   if (changes.fiDocuments !== undefined) {
     customer.fiDocuments = changes.fiDocuments && typeof changes.fiDocuments === 'object'
-      ? changes.fiDocuments
-      : { shop: {}, home: {} };
+      ? {
+          shop: changes.fiDocuments.shop && typeof changes.fiDocuments.shop === 'object'
+            ? changes.fiDocuments.shop
+            : {
+                filename: null,
+                url: null,
+                originalName: null,
+                uploadedAt: new Date()
+              },
+          home: changes.fiDocuments.home && typeof changes.fiDocuments.home === 'object'
+            ? changes.fiDocuments.home
+            : {
+                filename: null,
+                url: null,
+                originalName: null,
+                uploadedAt: new Date()
+              }
+        }
+      : {
+          shop: {
+            filename: null,
+            url: null,
+            originalName: null,
+            uploadedAt: new Date()
+          },
+          home: {
+            filename: null,
+            url: null,
+            originalName: null,
+            uploadedAt: new Date()
+          }
+        };
     updatedFields.push('fiDocuments');
   }
 
