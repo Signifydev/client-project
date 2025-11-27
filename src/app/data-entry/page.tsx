@@ -709,203 +709,243 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
   const firstDay = new Date(year, monthIndex, 1);
   const lastDay = new Date(year, monthIndex + 1, 0);
   
-  // Filter out renewed loans and apply loan filter
+  // Filter loans based on loanFilter
   const activeLoans = loans.filter(loan => !loan.isRenewed && loan.status === 'active');
   const filteredLoans = loanFilter === 'all' 
     ? activeLoans 
     : activeLoans.filter(loan => loan._id === loanFilter || loan.loanNumber === loanFilter);
-  
-  const filteredPaymentHistory = loanFilter === 'all'
-    ? paymentHistory
-    : paymentHistory.filter(payment => 
-        payment.loanId === loanFilter || payment.loanNumber === loanFilter
-      );
 
   console.log('📅 Calendar Debug:', {
     month: month.toISOString(),
     activeLoansCount: activeLoans.length,
     filteredLoansCount: filteredLoans.length,
-    paymentHistoryCount: filteredPaymentHistory.length,
-    loanFilter
+    paymentHistoryCount: paymentHistory.length,
+    loanFilter,
+    filteredLoans: filteredLoans.map(l => ({ id: l._id, number: l.loanNumber }))
   });
 
-  // Create a comprehensive map of ALL payments for quick lookup
+  // Create payment map - FIXED: Only include payments for filtered loans
   const paymentMap: { [key: string]: { 
     payments: EMIHistory[]; 
     totalAmount: number; 
-    loanNumbers: string[] 
-  } } = {};
-  
-  // In the generateCalendar function, update the paymentMap creation section:
-
-filteredPaymentHistory.forEach(payment => {
-  const paymentDate = new Date(payment.paymentDate);
-  paymentDate.setHours(0, 0, 0, 0);
-  
-  if (paymentDate.getMonth() === monthIndex && paymentDate.getFullYear() === year) {
-    const dateStr = paymentDate.toISOString().split('T')[0];
-    
-    if (!paymentMap[dateStr]) {
-      paymentMap[dateStr] = { 
-        payments: [], 
-        totalAmount: 0, 
-        loanNumbers: [] 
-      };
-    }
-    
-    paymentMap[dateStr].payments.push(payment);
-    
-    // FIXED: For advance payments, show the individual EMI amount
-    if (payment.paymentType === 'advance' && payment.isAdvancePayment) {
-      // Show the actual amount paid for this specific date
-      paymentMap[dateStr].totalAmount += payment.amount;
-    } else {
-      // For single payments, use the normal amount
-      paymentMap[dateStr].totalAmount += payment.amount;
-    }
-    
-    if (payment.loanNumber && !paymentMap[dateStr].loanNumbers.includes(payment.loanNumber)) {
-      paymentMap[dateStr].loanNumbers.push(payment.loanNumber);
-    }
-  }
-
-  // Handle advance payments - mark all dates in the advance period
-  if (payment.paymentType === 'advance' && payment.isAdvancePayment && 
-      payment.advanceFromDate && payment.advanceToDate) {
-    const fromDate = new Date(payment.advanceFromDate);
-    const toDate = new Date(payment.advanceToDate);
-    
-    const currentDate = new Date(fromDate);
-    while (currentDate <= toDate) {
-      if (currentDate.getMonth() === monthIndex && currentDate.getFullYear() === year) {
-        const advanceDateStr = currentDate.toISOString().split('T')[0];
-        
-        if (!paymentMap[advanceDateStr]) {
-          paymentMap[advanceDateStr] = { 
-            payments: [], 
-            totalAmount: 0, 
-            loanNumbers: [] 
-          };
-        }
-        
-        // Only add the payment record once to avoid duplicates
-        if (!paymentMap[advanceDateStr].payments.some(p => p._id === payment._id)) {
-          paymentMap[advanceDateStr].payments.push(payment);
-        }
-        
-        // For advance payments, show the individual EMI amount for each date
-        paymentMap[advanceDateStr].totalAmount += payment.amount;
-        
-        if (payment.loanNumber && !paymentMap[advanceDateStr].loanNumbers.includes(payment.loanNumber)) {
-          paymentMap[advanceDateStr].loanNumbers.push(payment.loanNumber);
-        }
-      }
-      
-      // Move to next date based on loan type
-      if (payment.loanId) {
-        // This would require fetching the loan, but we'll use daily increment as fallback
-        currentDate.setDate(currentDate.getDate() + 1);
-      } else {
-        currentDate.setDate(currentDate.getDate() + 1);
-      }
-      
-      if (currentDate > toDate) break;
-    }
-  }
-});
-
-  // Generate EMI schedule for ALL loans for the current month
-  const emiScheduleMap: { [key: string]: { 
-    amount: number; 
     loanNumbers: string[];
-    isDue: boolean;
+    loanIds: string[];
   } } = {};
-
-  // Only generate EMI schedule when viewing specific loan (not "All Loans")
-  if (loanFilter !== 'all') {
-    filteredLoans.forEach(loan => {
-      if (loan.emiPaidCount >= loan.totalEmiCount) return;
-
-      const startDate = new Date(loan.emiStartDate || loan.dateApplied);
-      startDate.setHours(0, 0, 0, 0);
-      const loanType = loan.loanType;
-
-      console.log(`🔍 Generating EMI schedule for ${loan.loanNumber} from ${startDate.toISOString()}`);
-
-      // Calculate end date based on loan type and duration
-      const endDate = new Date(startDate);
-      const totalPeriods = loan.totalEmiCount || loan.loanDays || 30;
+  
+  // Process payments - FIXED: Filter payments by loan when specific loan is selected
+  paymentHistory.forEach(payment => {
+    // Skip payments that don't belong to filtered loans when specific loan is selected
+    if (loanFilter !== 'all') {
+      const matchesLoan = payment.loanId === loanFilter || 
+                         payment.loanNumber === loanFilter ||
+                         filteredLoans.some(loan => 
+                           loan._id === payment.loanId || 
+                           loan.loanNumber === payment.loanNumber
+                         );
       
-      switch(loanType) {
-        case 'Daily':
-          endDate.setDate(endDate.getDate() + totalPeriods - 1);
-          break;
-        case 'Weekly':
-          endDate.setDate(endDate.getDate() + (totalPeriods * 7) - 1);
-          break;
-        case 'Monthly':
-          endDate.setMonth(endDate.getMonth() + totalPeriods - 1);
-          break;
-        default:
-          endDate.setDate(endDate.getDate() + totalPeriods - 1);
+      if (!matchesLoan) {
+        return; // Skip this payment if it doesn't belong to the filtered loan
       }
+    }
 
-      console.log(`📅 Loan ${loan.loanNumber} schedule: ${startDate.toISOString()} to ${endDate.toISOString()}, ${totalPeriods} periods`);
-
-      // Generate all EMI dates for this loan
-      const currentEmiDate = new Date(startDate);
-      let emiCount = 0;
+    const paymentDate = new Date(payment.paymentDate);
+    paymentDate.setHours(0, 0, 0, 0);
+    
+    if (paymentDate.getMonth() === monthIndex && paymentDate.getFullYear() === year) {
+      const dateStr = paymentDate.toISOString().split('T')[0];
       
-      while (currentEmiDate <= endDate && emiCount < totalPeriods) {
-        const emiDateStr = currentEmiDate.toISOString().split('T')[0];
-        const emiYear = currentEmiDate.getFullYear();
-        const emiMonth = currentEmiDate.getMonth();
-        
-        // Only process if it's in the current calendar month
-        if (emiYear === year && emiMonth === monthIndex) {
-          if (!emiScheduleMap[emiDateStr]) {
-            emiScheduleMap[emiDateStr] = { 
-              amount: 0, 
+      if (!paymentMap[dateStr]) {
+        paymentMap[dateStr] = { 
+          payments: [], 
+          totalAmount: 0, 
+          loanNumbers: [],
+          loanIds: []
+        };
+      }
+      
+      paymentMap[dateStr].payments.push(payment);
+      
+      // For advance payments, show the individual EMI amount
+      if (payment.paymentType === 'advance' && payment.isAdvancePayment) {
+        paymentMap[dateStr].totalAmount += payment.amount;
+      } else {
+        paymentMap[dateStr].totalAmount += payment.amount;
+      }
+      
+      if (payment.loanNumber && !paymentMap[dateStr].loanNumbers.includes(payment.loanNumber)) {
+        paymentMap[dateStr].loanNumbers.push(payment.loanNumber);
+      }
+      
+      if (payment.loanId && !paymentMap[dateStr].loanIds.includes(payment.loanId)) {
+        paymentMap[dateStr].loanIds.push(payment.loanId);
+      }
+    }
+
+    // Handle advance payments - mark all dates in the advance period
+    if (payment.paymentType === 'advance' && payment.isAdvancePayment && 
+        payment.advanceFromDate && payment.advanceToDate) {
+      const fromDate = new Date(payment.advanceFromDate);
+      const toDate = new Date(payment.advanceToDate);
+      
+      let currentDate = new Date(fromDate);
+      while (currentDate <= toDate) {
+        if (currentDate.getMonth() === monthIndex && currentDate.getFullYear() === year) {
+          const advanceDateStr = currentDate.toISOString().split('T')[0];
+          
+          // Skip if this advance payment doesn't belong to filtered loan
+          if (loanFilter !== 'all') {
+            const matchesLoan = payment.loanId === loanFilter || 
+                               payment.loanNumber === loanFilter ||
+                               filteredLoans.some(loan => 
+                                 loan._id === payment.loanId || 
+                                 loan.loanNumber === payment.loanNumber
+                               );
+            
+            if (!matchesLoan) {
+              currentDate.setDate(currentDate.getDate() + 1);
+              continue;
+            }
+          }
+          
+          if (!paymentMap[advanceDateStr]) {
+            paymentMap[advanceDateStr] = { 
+              payments: [], 
+              totalAmount: 0, 
               loanNumbers: [],
-              isDue: false
+              loanIds: []
             };
           }
           
-          emiScheduleMap[emiDateStr].amount += loan.emiAmount;
-          if (!emiScheduleMap[emiDateStr].loanNumbers.includes(loan.loanNumber)) {
-            emiScheduleMap[emiDateStr].loanNumbers.push(loan.loanNumber);
+          // Only add the payment record once to avoid duplicates
+          if (!paymentMap[advanceDateStr].payments.some(p => p._id === payment._id)) {
+            paymentMap[advanceDateStr].payments.push(payment);
           }
           
-          // Check if this EMI is due (no payment exists)
-          const hasPayment = paymentMap[emiDateStr] && 
-            paymentMap[emiDateStr].payments.some(p => 
-              p.loanNumber === loan.loanNumber || p.loanId === loan._id
-            );
+          // For advance payments, show the individual EMI amount for each date
+          paymentMap[advanceDateStr].totalAmount += payment.amount;
           
-          if (!hasPayment) {
-            emiScheduleMap[emiDateStr].isDue = true;
+          if (payment.loanNumber && !paymentMap[advanceDateStr].loanNumbers.includes(payment.loanNumber)) {
+            paymentMap[advanceDateStr].loanNumbers.push(payment.loanNumber);
+          }
+          
+          if (payment.loanId && !paymentMap[advanceDateStr].loanIds.includes(payment.loanId)) {
+            paymentMap[advanceDateStr].loanIds.push(payment.loanId);
           }
         }
         
-        // Move to next EMI date
-        emiCount++;
-        switch(loanType) {
-          case 'Daily':
-            currentEmiDate.setDate(currentEmiDate.getDate() + 1);
-            break;
-          case 'Weekly':
-            currentEmiDate.setDate(currentEmiDate.getDate() + 7);
-            break;
-          case 'Monthly':
-            currentEmiDate.setMonth(currentEmiDate.getMonth() + 1);
-            break;
-          default:
-            currentEmiDate.setDate(currentEmiDate.getDate() + 1);
+        // Move to next date based on loan type
+        if (payment.loanId) {
+          // This would require fetching the loan, but we'll use daily increment as fallback
+          currentDate.setDate(currentDate.getDate() + 1);
+        } else {
+          currentDate.setDate(currentDate.getDate() + 1);
         }
-        currentEmiDate.setHours(0, 0, 0, 0);
+        
+        if (currentDate > toDate) break;
       }
-    });
-  }
+    }
+  });
+
+  // Generate EMI schedule for filtered loans
+  const emiScheduleMap: { [key: string]: { 
+    amount: number; 
+    loanNumbers: string[];
+    loanIds: string[];
+    isDue: boolean;
+  } } = {};
+
+  // Generate EMI schedule for ALL filtered loans (not just when viewing specific loan)
+  filteredLoans.forEach(loan => {
+    if (loan.emiPaidCount >= loan.totalEmiCount) return;
+
+    const startDate = new Date(loan.emiStartDate || loan.dateApplied);
+    startDate.setHours(0, 0, 0, 0);
+    const loanType = loan.loanType;
+
+    console.log(`🔍 Generating EMI schedule for ${loan.loanNumber} from ${startDate.toISOString()}`);
+
+    // Calculate end date based on loan type and duration
+    const endDate = new Date(startDate);
+    const totalPeriods = loan.totalEmiCount || loan.loanDays || 30;
+    
+    switch(loanType) {
+      case 'Daily':
+        endDate.setDate(endDate.getDate() + totalPeriods - 1);
+        break;
+      case 'Weekly':
+        endDate.setDate(endDate.getDate() + (totalPeriods * 7) - 1);
+        break;
+      case 'Monthly':
+        endDate.setMonth(endDate.getMonth() + totalPeriods - 1);
+        break;
+      default:
+        endDate.setDate(endDate.getDate() + totalPeriods - 1);
+    }
+
+    console.log(`📅 Loan ${loan.loanNumber} schedule: ${startDate.toISOString()} to ${endDate.toISOString()}, ${totalPeriods} periods`);
+
+    // Generate all EMI dates for this loan
+    const currentEmiDate = new Date(startDate);
+    let emiCount = 0;
+    
+    while (currentEmiDate <= endDate && emiCount < totalPeriods) {
+      const emiDateStr = currentEmiDate.toISOString().split('T')[0];
+      const emiYear = currentEmiDate.getFullYear();
+      const emiMonth = currentEmiDate.getMonth();
+      
+      // Only process if it's in the current calendar month
+      if (emiYear === year && emiMonth === monthIndex) {
+        if (!emiScheduleMap[emiDateStr]) {
+          emiScheduleMap[emiDateStr] = { 
+            amount: 0, 
+            loanNumbers: [],
+            loanIds: [],
+            isDue: false
+          };
+        }
+        
+        emiScheduleMap[emiDateStr].amount += loan.emiAmount;
+        if (!emiScheduleMap[emiDateStr].loanNumbers.includes(loan.loanNumber)) {
+          emiScheduleMap[emiDateStr].loanNumbers.push(loan.loanNumber);
+        }
+        if (!emiScheduleMap[emiDateStr].loanIds.includes(loan._id)) {
+          emiScheduleMap[emiDateStr].loanIds.push(loan._id);
+        }
+        
+        // Check if this EMI is due (no payment exists for THIS specific loan)
+        const hasPaymentForThisLoan = paymentMap[emiDateStr] && 
+          paymentMap[emiDateStr].payments.some(p => 
+            (p.loanNumber === loan.loanNumber || p.loanId === loan._id) &&
+            // For advance payments, check if this specific date is covered
+            (p.paymentType !== 'advance' || 
+             (p.advanceFromDate && p.advanceToDate && 
+              currentEmiDate >= new Date(p.advanceFromDate) && 
+              currentEmiDate <= new Date(p.advanceToDate)))
+          );
+        
+        if (!hasPaymentForThisLoan) {
+          emiScheduleMap[emiDateStr].isDue = true;
+        }
+      }
+      
+      // Move to next EMI date
+      emiCount++;
+      switch(loanType) {
+        case 'Daily':
+          currentEmiDate.setDate(currentEmiDate.getDate() + 1);
+          break;
+        case 'Weekly':
+          currentEmiDate.setDate(currentEmiDate.getDate() + 7);
+          break;
+        case 'Monthly':
+          currentEmiDate.setMonth(currentEmiDate.getMonth() + 1);
+          break;
+        default:
+          currentEmiDate.setDate(currentEmiDate.getDate() + 1);
+      }
+      currentEmiDate.setHours(0, 0, 0, 0);
+    }
+  });
 
   // Generate calendar grid for previous month days
   const startingDayOfWeek = firstDay.getDay();
@@ -932,17 +972,25 @@ filteredPaymentHistory.forEach(payment => {
     const loanNumbers: string[] = [];
     const datePayments: EMIHistory[] = [];
 
-    // PRIORITY 1: Check if there are ACTUAL PAYMENTS for this date
+    // PRIORITY 1: Check if there are ACTUAL PAYMENTS for this date for the filtered loans
     const paymentInfo = paymentMap[dateStr];
     if (paymentInfo && paymentInfo.payments.length > 0) {
-      console.log(`✅ Found payments for ${dateStr}:`, paymentInfo);
+      console.log(`✅ Found payments for ${dateStr}:`, {
+        payments: paymentInfo.payments.map(p => ({
+          loanNumber: p.loanNumber,
+          loanId: p.loanId,
+          amount: p.amount,
+          paymentType: p.paymentType
+        }))
+      });
+      
       emiStatus = 'paid';
       emiAmount = paymentInfo.totalAmount;
       loanNumbers.push(...paymentInfo.loanNumbers);
       datePayments.push(...paymentInfo.payments);
     } 
-    // PRIORITY 2: Check EMI schedule for due/upcoming EMIs (only for specific loan view)
-    else if (loanFilter !== 'all') {
+    // PRIORITY 2: Check EMI schedule for due/upcoming EMIs for filtered loans
+    else {
       const scheduleInfo = emiScheduleMap[dateStr];
       if (scheduleInfo && scheduleInfo.amount > 0) {
         emiAmount = scheduleInfo.amount;
@@ -956,13 +1004,13 @@ filteredPaymentHistory.forEach(payment => {
         if (scheduleInfo.isDue) {
           if (calendarDate < today) {
             emiStatus = 'overdue';
-            console.log(`⚠️ Overdue EMI for ${dateStr}`);
+            console.log(`⚠️ Overdue EMI for ${dateStr}`, scheduleInfo.loanNumbers);
           } else if (calendarDate.getTime() === today.getTime()) {
             emiStatus = 'due';
-            console.log(`📅 Due EMI for ${dateStr}`);
+            console.log(`📅 Due EMI for ${dateStr}`, scheduleInfo.loanNumbers);
           } else {
             emiStatus = 'upcoming';
-            console.log(`🔔 Upcoming EMI for ${dateStr}`);
+            console.log(`🔔 Upcoming EMI for ${dateStr}`, scheduleInfo.loanNumbers);
           }
         } else {
           // If not due but in schedule, it means it's paid
@@ -975,7 +1023,7 @@ filteredPaymentHistory.forEach(payment => {
       date,
       isCurrentMonth: true,
       isToday,
-      emiStatus: loanFilter === 'all' ? 'none' : emiStatus, // No colors for "All Loans"
+      emiStatus,
       emiAmount,
       loanNumbers,
       paymentHistory: datePayments
@@ -996,6 +1044,7 @@ filteredPaymentHistory.forEach(payment => {
   
   console.log(`📊 Generated ${days.length} days for ${monthNames[monthIndex]} ${year}`);
   console.log(`📈 EMI Schedule entries:`, Object.keys(emiScheduleMap).length);
+  console.log(`💰 Payment entries:`, Object.keys(paymentMap).length);
   
   return days;
 };
@@ -3322,22 +3371,22 @@ const refreshCustomerData = async (customerId: string) => {
   </div>
 
   <select
-    value={calendarFilter.loanFilter}
-    onChange={(e) => setCalendarFilter(prev => ({
-      ...prev,
-      loanFilter: e.target.value
-    }))}
-    className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-  >
-    <option value="all">All Loans</option>
-    {calendarData.loans
-      .filter(loan => !loan.isRenewed && loan.status === 'active') // Hide renewed loans
-      .map((loan) => (
-        <option key={loan._id} value={loan._id}>
-          {loan.loanNumber} - {loan.customerNumber}
-        </option>
-      ))}
-  </select>
+  value={calendarFilter.loanFilter}
+  onChange={(e) => setCalendarFilter(prev => ({
+    ...prev,
+    loanFilter: e.target.value
+  }))}
+  className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+>
+  <option value="all">All Loans</option>
+  {calendarData?.loans
+    .filter(loan => !loan.isRenewed && loan.status === 'active')
+    .map((loan) => (
+      <option key={loan._id} value={loan._id}>
+        {loan.loanNumber} - {loan.customerNumber}
+      </option>
+    ))}
+</select>
 </div>
 
           <div className="flex items-center space-x-2">
