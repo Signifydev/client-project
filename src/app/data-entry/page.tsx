@@ -6997,7 +6997,6 @@ const renderDeleteConfirmationModal = () => {
     }
     return filteredEMICustomers.filter(customer => getEMIStatus(customer) === emiStatusFilter);
   };
-
   // Sort EMI customers by customer number (numeric sorting)
   const sortedEMICustomers = [...getFilteredEMICustomers()].sort((a, b) => {
     // Extract and normalize numeric parts from customer numbers
@@ -7329,7 +7328,7 @@ const renderDeleteConfirmationModal = () => {
                                     Loan Details - {customer.name} - {customer.customerNumber}
                                   </h5>
                                   <div className="space-y-3">
-                                    // In the renderEMI function, find the section that displays loan details and update it:
+                                    
 
 {customerLoans.map((loan, index) => {
   const paymentInfo = getLoanPaymentStatus(loan);
