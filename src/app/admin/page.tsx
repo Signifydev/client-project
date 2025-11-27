@@ -1,10 +1,355 @@
-'use client'
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+/* eslint-disable @next/next/no-img-element */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+'use client';
 
-// Collection Component for Admin
-function CollectionView({ onBack }: { onBack: () => void }) {
-  const [collectionDate, setCollectionDate] = useState(new Date().toISOString().split('T')[0]);
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+
+// Interfaces for TypeScript
+interface Customer {
+  _id: string;
+  id?: string;
+  name: string;
+  phone: string[];
+  businessName: string;
+  area: string;
+  customerNumber?: string;
+  loanAmount?: number;
+  emiAmount?: number;
+  loanType?: string;
+  status?: string;
+  userId?: string;
+  email?: string;
+  address?: string;
+  businessType?: string;
+  isActive?: boolean;
+  createdAt?: string;
+  profilePicture?: string;
+  fiDocuments?: {
+    shop?: string;
+    home?: string;
+  };
+  category?: string;
+  officeCategory?: string;
+  whatsappNumber?: string;
+}
+
+// In your Loan interface, add these properties:
+interface Loan {
+  _id: string;
+  customerId: string;
+  customerName: string;
+  customerNumber: string;
+  loanNumber: string;
+  amount: number;
+  emiAmount: number;
+  loanType: string;
+  dateApplied: string;
+  emiStartDate?: string;
+  loanDays: number;
+  status?: string;
+  createdBy?: string;
+  createdAt?: string;
+  totalEmiCount: number;
+  emiPaidCount: number;
+  lastEmiDate: string;
+  nextEmiDate: string;
+  totalPaidAmount: number;
+  remainingAmount: number;
+  emiHistory: EMIHistory[];
+  isFallback?: boolean;
+  emiType?: 'fixed' | 'custom';
+  customEmiAmount?: number;
+  
+  // Add these new properties for renewal tracking
+  isRenewed?: boolean;
+  renewedLoanNumber?: string; // The new loan number that replaced this one
+  renewedDate?: string; // When this loan was renewed
+  originalLoanNumber?: string; // For renewed loans, track the original loan
+}
+
+interface EMIHistory {
+  _id?: string;
+  paymentDate: string;
+  amount: number;
+  status: string;
+  collectedBy: string;
+  notes?: string;
+  createdAt?: string;
+  customerNumber?: string;
+  loanNumber?: string;
+  loanId?: string;
+  // Add these for advance payments
+  paymentType?: 'single' | 'advance';
+  isAdvancePayment?: boolean;
+  advanceFromDate?: string;
+  advanceToDate?: string;
+  advanceEmiCount?: number;
+  advanceTotalAmount?: number;
+  // Add these for edit/delete functionality
+  customerId?: string;
+  customerName?: string;
+}
+
+interface CustomerDetails {
+  _id: string;
+  name: string;
+  phone: string[];
+  businessName: string;
+  area: string;
+  customerNumber: string;
+  loanAmount: number;
+  emiAmount: number;
+  loanType: string;
+  address: string;
+  status: string;
+  email?: string;
+  businessType?: string;
+  createdAt?: string;
+  profilePicture?: string;
+  fiDocuments?: {
+    shop?: string;
+    home?: string;
+  };
+  category?: string;
+  officeCategory?: string;
+  loans?: Loan[];
+  whatsappNumber?: string;
+}
+
+interface Request {
+  _id: string;
+  type: string;
+  customerName: string;
+  status: string;
+  createdAt: string;
+  data?: any;
+  description?: string;
+  customerNumber?: string;
+  loanNumber?: string;
+}
+
+interface TodayStats {
+  emiCollected: number;
+  newCustomers: number;
+  pendingRequests: number;
+  totalCollection: number;
+}
+
+interface NewCustomerStep1 {
+  name: string;
+  phone: string[];
+  whatsappNumber: string;
+  businessName: string;
+  area: string;
+  customerNumber: string;
+  address: string;
+  category: string;
+  officeCategory: string;
+  profilePicture: File | null;
+  fiDocuments: {
+    shop: File | null;
+    home: File | null;
+  };
+  // Add index signature to fix TypeScript error
+  [key: string]: any;
+}
+
+interface NewCustomerStep2 {
+  loanDate: string;
+  emiStartDate: string;
+  loanAmount: string;
+  emiAmount: string;
+  loanDays: string;
+  loanType: string;
+  emiType: 'fixed' | 'custom';
+  customEmiAmount?: string;
+  // Add index signature to fix TypeScript error
+  [key: string]: any;
+}
+
+interface NewCustomerStep3 {
+  loginId: string;
+  password: string;
+  confirmPassword: string;
+  // Add index signature to fix TypeScript error
+  [key: string]: any;
+}
+
+interface Filters {
+  status: string;
+  officeCategory: string;
+}
+
+interface RenewLoanData {
+  loanId: string;
+  customerId: string;
+  customerName: string;
+  customerNumber: string;
+  loanNumber: string;
+  renewalDate: string;
+  newLoanAmount: string;
+  newEmiAmount: string;
+  newLoanDays: string;
+  newLoanType: string;
+  remarks: string;
+  // Add these new fields to match Add Loan structure
+  emiStartDate: string;
+  emiType: 'fixed' | 'custom';
+  customEmiAmount?: string;
+}
+
+interface EMIUpdate {
+  customerId: string;
+  customerName: string;
+  paymentDate: string;
+  amount: string;
+  status: string;
+  collectedBy: string;
+  loanId?: string;
+  customerNumber?: string;
+  loanNumber?: string;
+  notes?: string;
+  // Add these new fields for advance EMI
+  paymentType: 'single' | 'advance';
+  advanceFromDate?: string;
+  advanceToDate?: string;
+  advanceEmiCount?: string;
+  advanceTotalAmount?: string;
+}
+
+interface EditCustomerData {
+  name: string;
+  phone: string[];
+  whatsappNumber: string;
+  businessName: string;
+  area: string;
+  customerNumber: string;
+  loanAmount: string;
+  emiAmount: string;
+  loanType: string;
+  address: string;
+  customerId: string;
+  category: string;
+  officeCategory: string;
+}
+
+interface EditLoanData {
+  loanId: string;
+  customerId: string;
+  customerName: string;
+  customerNumber: string;
+  loanNumber: string;
+  amount: string;
+  emiAmount: string;
+  loanType: string;
+  dateApplied: string;
+  loanDays: string;
+  originalData?: {
+    amount: number;
+    emiAmount: number;
+    loanType: string;
+    dateApplied: string;
+    loanDays: number;
+    emiType?: 'fixed' | 'custom';
+    customEmiAmount?: number | null;
+    emiStartDate?: string;
+  };
+  // Add the missing properties
+  emiType?: 'fixed' | 'custom';
+  customEmiAmount?: string;
+  emiStartDate?: string;
+}
+
+interface Filters {
+  customerNumber: string;
+  loanType: string;
+  status: string;
+  officeCategory: string;
+}
+
+interface CalendarDay {
+  date: Date;
+  isCurrentMonth: boolean;
+  isToday: boolean;
+  emiStatus?: 'paid' | 'due' | 'overdue' | 'partial' | 'upcoming' | 'none';
+  emiAmount?: number;
+  loanNumbers?: string[];
+  paymentHistory?: EMIHistory[]; // Make sure this is included
+}
+
+interface EMICalendarData {
+  customerId: string;
+  customerName: string;
+  loans: Loan[];
+  paymentHistory: EMIHistory[];
+}
+
+const formatDateToDDMMYYYY = (dateString: string): string => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return '';
+  
+  const day = date.getDate().toString().padStart(2, '0');
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const year = date.getFullYear();
+  
+  return `${day}/${month}/${year}`;
+};
+
+const formatDateForInput = (dateString: string): string => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return '';
+  
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  
+  return `${year}-${month}-${day}`;
+};
+
+export default function DataEntryDashboard() {
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [showAddCustomer, setShowAddCustomer] = useState(false);
+  const [showUpdateEMI, setShowUpdateEMI] = useState(false);
+  const [showAddLoanModal, setShowAddLoanModal] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [newLoanData, setNewLoanData] = useState({
+  loanAmount: '',
+  loanDate: new Date().toISOString().split('T')[0],
+  emiStartDate: new Date().toISOString().split('T')[0],
+  emiAmount: '',
+  loanType: 'Monthly',
+  loanDays: '30',
+  emiType: 'fixed' as 'fixed' | 'custom',
+  customEmiAmount: ''
+});
+  const [showCustomerDetails, setShowCustomerDetails] = useState(false);
+  const [showEditCustomer, setShowEditCustomer] = useState(false);
+  const [showEditLoan, setShowEditLoan] = useState(false);
+  const [showRenewLoan, setShowRenewLoan] = useState(false);
+  const [customerDetails, setCustomerDetails] = useState<CustomerDetails | null>(null);
+  const [editCustomerData, setEditCustomerData] = useState<EditCustomerData>({
+    name: '',
+    phone: [''],
+    whatsappNumber: '',
+    businessName: '',
+    area: '',
+    customerNumber: '',
+    loanAmount: '',
+    emiAmount: '',
+    loanType: 'Daily',
+    address: '',
+    customerId: '',
+    category: 'A',
+    officeCategory: 'Office 1'
+  });
+    const [collectionDate, setCollectionDate] = useState(new Date().toISOString().split('T')[0]);
   const [collectionData, setCollectionData] = useState<{
     date: string;
     customers: Array<{
@@ -27,93 +372,7253 @@ function CollectionView({ onBack }: { onBack: () => void }) {
     };
   } | null>(null);
   const [isLoadingCollection, setIsLoadingCollection] = useState(false);
+  const [editLoanData, setEditLoanData] = useState<EditLoanData>({
+  loanId: '',
+  customerId: '',
+  customerName: '',
+  customerNumber: '',
+  loanNumber: '',
+  amount: '',
+  emiAmount: '',
+  loanType: 'Daily',
+  dateApplied: new Date().toISOString().split('T')[0],
+  loanDays: '',
+  emiType: 'fixed',
+  customEmiAmount: '',
+  emiStartDate: new Date().toISOString().split('T')[0]
+});
 
-  const fetchCollectionData = async (date: string) => {
-    setIsLoadingCollection(true);
+  const [requestFilters, setRequestFilters] = useState({
+    type: 'all',
+    dateSort: 'latest',
+    status: 'all'
+  });
+
+  const [renewLoanData, setRenewLoanData] = useState<RenewLoanData>({
+  loanId: '',
+  customerId: '',
+  customerName: '',
+  customerNumber: '',
+  loanNumber: '',
+  renewalDate: new Date().toISOString().split('T')[0],
+  newLoanAmount: '',
+  newEmiAmount: '',
+  newLoanDays: '',
+  newLoanType: 'Monthly',
+  remarks: '',
+  // Add new fields
+  emiStartDate: new Date().toISOString().split('T')[0],
+  emiType: 'fixed',
+  customEmiAmount: ''
+});
+  
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<Filters>({
+    customerNumber: '',
+    loanType: '',
+    status: '',
+    officeCategory: ''
+  });
+  
+  const [todayStats, setTodayStats] = useState<TodayStats>({
+    emiCollected: 0,
+    newCustomers: 0,
+    pendingRequests: 0,
+    totalCollection: 0
+  });
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<Request[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const [currentStep, setCurrentStep] = useState(1);
+  const [step1Data, setStep1Data] = useState<NewCustomerStep1>({
+  name: '',
+  phone: ['', ''],
+  whatsappNumber: '',
+  businessName: '',
+  area: '',
+  customerNumber: 'CN', // Start with CN prefix
+  address: '',
+  category: 'A', // Set default value
+  officeCategory: 'Office 1', // Set default value
+  profilePicture: null,
+  fiDocuments: {
+    shop: null,
+    home: null
+  }
+});
+  const [step2Data, setStep2Data] = useState<NewCustomerStep2>({
+    loanDate: new Date().toISOString().split('T')[0],
+    emiStartDate: new Date().toISOString().split('T')[0],
+    loanAmount: '',
+    emiAmount: '',
+    loanDays: '',
+    loanType: 'Daily',
+    emiType: 'fixed',
+    customEmiAmount: '',
+  });
+  const [step3Data, setStep3Data] = useState<NewCustomerStep3>({
+    loginId: '',
+    password: '',
+    confirmPassword: ''
+  });
+  const [step1Errors, setStep1Errors] = useState<{[key: string]: string}>({});
+  const [step2Errors, setStep2Errors] = useState<{[key: string]: string}>({});
+  const [step3Errors, setStep3Errors] = useState<{[key: string]: string}>({});
+
+  const [emiUpdate, setEmiUpdate] = useState<EMIUpdate>({
+  customerId: '',
+  customerName: '',
+  paymentDate: new Date().toISOString().split('T')[0],
+  amount: '',
+  status: 'Paid',
+  collectedBy: 'Operator 1',
+  paymentType: 'single' // Add this default
+});
+
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [selectedLoanForPayment, setSelectedLoanForPayment] = useState<Loan | null>(null);
+
+  const [showEMICalendar, setShowEMICalendar] = useState(false);
+  const [calendarData, setCalendarData] = useState<EMICalendarData | null>(null);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date | null>(null);
+  const [showDatePaymentHistory, setShowDatePaymentHistory] = useState(false);
+  const [editingPayment, setEditingPayment] = useState<EMIHistory | null>(null);
+const [editStatus, setEditStatus] = useState('Paid');
+const [showEditPaymentModal, setShowEditPaymentModal] = useState(false);
+const [deletingPayment, setDeletingPayment] = useState<EMIHistory | null>(null);
+const [showDeleteConfirmationModal, setShowDeleteConfirmationModal] = useState(false);
+const [emiSearchQuery, setEmiSearchQuery] = useState('');
+const [emiSortOrder, setEmiSortOrder] = useState<'asc' | 'desc'>('asc');
+const [showEMIFilters, setShowEMIFilters] = useState(false);
+const [emiStatusFilter, setEmiStatusFilter] = useState<string>('all');
+const [customerSortOrder, setCustomerSortOrder] = useState<'asc' | 'desc'>('asc');
+const [selectedCustomerForEMI, setSelectedCustomerForEMI] = useState<Customer | null>(null);
+  const [calendarFilter, setCalendarFilter] = useState<{
+    emiStatus: 'all' | 'paid' | 'due' | 'overdue' | 'partial' | 'upcoming';
+    loanFilter: 'all' | string;
+  }>({
+    emiStatus: 'all',
+    loanFilter: 'all'
+  });
+
+  // Add these state variables with your other useState declarations
+const [editingFields, setEditingFields] = useState<{[key: string]: boolean}>({});
+const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+const [editAmount, setEditAmount] = useState('');
+const [editDate, setEditDate] = useState('');
+
+  const calculateEMICompletion = (loan: Loan) => {
+  // Use actual values from the loan object
+  const totalEmiCount = loan.totalEmiCount || loan.loanDays || 30;
+  const emiPaidCount = loan.emiPaidCount || 0;
+  const totalPaidAmount = loan.totalPaidAmount || 0;
+  
+  // Calculate total loan amount (EMI amount × total EMI count)
+  const totalLoanAmount = loan.emiAmount * totalEmiCount;
+  
+  const completionPercentage = (emiPaidCount / totalEmiCount) * 100;
+  const isCompleted = emiPaidCount >= totalEmiCount;
+  const remainingEmis = Math.max(totalEmiCount - emiPaidCount, 0);
+  
+  // Calculate remaining amount based on total loan amount
+  const remainingAmount = Math.max(totalLoanAmount - totalPaidAmount, 0);
+  
+  return {
+    completionPercentage: Math.min(completionPercentage, 100), // Cap at 100%
+    isCompleted,
+    remainingEmis,
+    totalPaid: totalPaidAmount,
+    remainingAmount,
+    totalLoanAmount // Return total loan amount for display
+  };
+};
+
+const calculatePaymentBehavior = (loan: Loan) => {
+  const totalPayments = loan.emiHistory?.length || 0;
+  
+  if (totalPayments === 0) {
+    return {
+      punctualityScore: 100,
+      behaviorRating: 'EXCELLENT',
+      totalPayments: 0,
+      onTimePayments: 0,
+      latePayments: 0
+    };
+  }
+
+  const onTimePayments = loan.emiHistory?.filter(payment => {
+    if (!payment.paymentDate) return false;
+    
+    const paymentDate = new Date(payment.paymentDate);
+    const dueDate = new Date(calculateNextEmiDate(loan.lastEmiDate, loan.loanType));
+    return paymentDate <= dueDate;
+  }).length || 0;
+  
+  const punctualityScore = totalPayments > 0 ? (onTimePayments / totalPayments) * 100 : 100;
+  
+  let behaviorRating: string;
+  if (punctualityScore >= 90) behaviorRating = 'EXCELLENT';
+  else if (punctualityScore >= 75) behaviorRating = 'GOOD';
+  else if (punctualityScore >= 60) behaviorRating = 'AVERAGE';
+  else behaviorRating = 'RISKY';
+  
+  return {
+    punctualityScore,
+    behaviorRating,
+    totalPayments,
+    onTimePayments,
+    latePayments: totalPayments - onTimePayments
+  };
+};
+
+  const calculateTotalLoanAmount = (loan: Loan): number => {
+    return loan.emiAmount * loan.totalEmiCount;
+  };
+
+  // Helper function to calculate EMI count based on dates and loan type
+const calculateEmiCount = (fromDate: string, toDate: string, loanType?: string): string => {
+  if (!fromDate || !toDate) return '1';
+  
+  const start = new Date(fromDate);
+  const end = new Date(toDate);
+  
+  if (start > end) return '1';
+  
+  const diffTime = Math.abs(end.getTime() - start.getTime());
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  switch(loanType) {
+    case 'Daily':
+      return Math.max(diffDays + 1, 1).toString();
+    case 'Weekly':
+      return Math.max(Math.ceil((diffDays + 1) / 7), 1).toString();
+    case 'Monthly':
+      // Approximate month calculation
+      const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+      return Math.max(months + 1, 1).toString();
+    default:
+      return Math.max(diffDays + 1, 1).toString();
+  }
+};
+
+// Helper function to calculate total amount with proper type handling
+const calculateTotalAmount = (emiAmount: string | number, emiCount: string | number): string => {
+  const amount = typeof emiAmount === 'string' ? parseFloat(emiAmount) || 0 : emiAmount;
+  const count = typeof emiCount === 'string' ? parseInt(emiCount) || 1 : emiCount;
+  return (amount * count).toFixed(2);
+};
+
+// ========== CUSTOMER NUMBER VALIDATION FUNCTIONS ==========
+
+// Function to normalize customer number (remove leading zeros after CN)
+const normalizeCustomerNumber = (customerNumber: string): string => {
+  if (!customerNumber) return '';
+  
+  // Remove CN prefix and any leading zeros, then add CN back
+  const numericPart = customerNumber.replace(/^CN/, '').replace(/^0+/, '');
+  return `CN${numericPart}`;
+};
+
+// Function to check if customer number already exists
+const isCustomerNumberExists = (customerNumber: string): boolean => {
+  const normalizedInput = normalizeCustomerNumber(customerNumber);
+  
+  return customers.some(customer => {
+    const normalizedExisting = normalizeCustomerNumber(customer.customerNumber || '');
+    return normalizedExisting === normalizedInput;
+  });
+};
+
+// Function to get the next available customer number
+const getNextAvailableCustomerNumber = (): string => {
+  if (customers.length === 0) return 'CN001';
+  
+  // Get all numeric parts and find the maximum
+  const allNumbers = customers.map(customer => {
+    const normalized = normalizeCustomerNumber(customer.customerNumber || '');
+    return parseInt(normalized.replace(/^CN/, '')) || 0;
+  });
+  
+  const maxNumber = Math.max(...allNumbers);
+  const nextNumber = maxNumber + 1;
+  
+  // Format with leading zeros (3 digits)
+  return `CN${nextNumber.toString().padStart(3, '0')}`;
+};
+
+// ========== END CUSTOMER NUMBER VALIDATION FUNCTIONS ==========
+
+
+  // Fix the calculateNextEmiDate function
+// Fix the calculateNextEmiDate function
+const calculateNextEmiDate = (currentDate: string, loanType: string): string => {
+  const date = new Date(currentDate);
+  
+  // Ensure we're working with the correct date (remove time component)
+  date.setHours(0, 0, 0, 0);
+  
+  switch(loanType) {
+    case 'Daily':
+      date.setDate(date.getDate() + 1);
+      break;
+    case 'Weekly':
+      // FIX: Add 7 days (exclude current date)
+      date.setDate(date.getDate() + 7);
+      break;
+    case 'Monthly':
+      // FIX: Add 1 month (exclude current date)
+      date.setMonth(date.getMonth() + 1);
+      break;
+    default:
+      date.setDate(date.getDate() + 1);
+  }
+  
+  return date.toISOString().split('T')[0];
+};
+
+// Fix the calendar generation logic in generateCalendar function
+// Fix the calendar generation logic in generateCalendar function
+const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory[], loanFilter: string = 'all'): CalendarDay[] => {
+  const days: CalendarDay[] = [];
+  const year = month.getFullYear();
+  const monthIndex = month.getMonth();
+  
+  const firstDay = new Date(year, monthIndex, 1);
+  const lastDay = new Date(year, monthIndex + 1, 0);
+  
+  const filteredLoans = loanFilter === 'all' 
+    ? loans 
+    : loans.filter(loan => loan._id === loanFilter || loan.loanNumber === loanFilter);
+  
+  const filteredPaymentHistory = loanFilter === 'all'
+    ? paymentHistory
+    : paymentHistory.filter(payment => 
+        payment.loanId === loanFilter || payment.loanNumber === loanFilter
+      );
+
+  console.log('📅 Calendar Debug:', {
+    month: month.toISOString(),
+    loansCount: filteredLoans.length,
+    paymentHistoryCount: filteredPaymentHistory.length,
+    loanFilter
+  });
+
+  // Create a comprehensive map of ALL payments for quick lookup
+  const paymentMap: { [key: string]: { 
+    payments: EMIHistory[]; 
+    totalAmount: number; 
+    loanNumbers: string[] 
+  } } = {};
+  
+  filteredPaymentHistory.forEach(payment => {
+    const paymentDate = new Date(payment.paymentDate);
+    // Fix: Use proper date comparison without time component
+    paymentDate.setHours(0, 0, 0, 0);
+    
+    if (paymentDate.getMonth() === monthIndex && paymentDate.getFullYear() === year) {
+      const dateStr = paymentDate.toISOString().split('T')[0];
+      
+      if (!paymentMap[dateStr]) {
+        paymentMap[dateStr] = { 
+          payments: [], 
+          totalAmount: 0, 
+          loanNumbers: [] 
+        };
+      }
+      
+      paymentMap[dateStr].payments.push(payment);
+      
+      // FIX: For advance payments, use the actual payment amount, not divided amount
+      if (payment.paymentType === 'advance' && payment.advanceEmiCount && payment.advanceEmiCount > 1) {
+        // For advance payments, show the total amount on the payment date
+        paymentMap[dateStr].totalAmount += payment.amount;
+      } else {
+        // For single payments, use the normal amount
+        paymentMap[dateStr].totalAmount += payment.amount;
+      }
+      
+      if (payment.loanNumber && !paymentMap[dateStr].loanNumbers.includes(payment.loanNumber)) {
+        paymentMap[dateStr].loanNumbers.push(payment.loanNumber);
+      }
+    }
+
+    // FIX: Handle advance payments - mark all dates in the advance period as paid
+if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.advanceToDate) {
+  const fromDate = new Date(payment.advanceFromDate);
+  const toDate = new Date(payment.advanceToDate);
+  
+  const currentDate = new Date(fromDate); // Use const since we modify the same object
+  while (currentDate <= toDate) {
+    if (currentDate.getMonth() === monthIndex && currentDate.getFullYear() === year) {
+      const advanceDateStr = currentDate.toISOString().split('T')[0];
+      
+      if (!paymentMap[advanceDateStr]) {
+        paymentMap[advanceDateStr] = { 
+          payments: [], 
+          totalAmount: 0, 
+          loanNumbers: [] 
+        };
+      }
+      
+      // Only add the payment record once to avoid duplicates
+      if (!paymentMap[advanceDateStr].payments.some(p => p._id === payment._id)) {
+        paymentMap[advanceDateStr].payments.push(payment);
+      }
+      
+      // For each day in advance period, show the individual EMI amount, not divided total
+      const individualEmiAmount = payment.advanceEmiCount && payment.advanceEmiCount > 0 
+        ? payment.amount / payment.advanceEmiCount 
+        : payment.amount;
+      
+      paymentMap[advanceDateStr].totalAmount += individualEmiAmount;
+      
+      if (payment.loanNumber && !paymentMap[advanceDateStr].loanNumbers.includes(payment.loanNumber)) {
+        paymentMap[advanceDateStr].loanNumbers.push(payment.loanNumber);
+      }
+    }
+    
+    currentDate.setDate(currentDate.getDate() + 1); // Modify the existing object
+    
+    // Break if we've processed too many days (safety check)
+    if (currentDate > toDate) break;
+  }
+}
+  });
+
+  // Generate calendar grid for previous month days
+  const startingDayOfWeek = firstDay.getDay();
+  for (let i = startingDayOfWeek - 1; i >= 0; i--) {
+    const date = new Date(year, monthIndex, -i);
+    days.push({
+      date,
+      isCurrentMonth: false,
+      isToday: false,
+      emiStatus: 'none'
+    });
+  }
+  
+  // Generate days for current month - FIXED DATE HANDLING
+  for (let day = 1; day <= lastDay.getDate(); day++) {
+    const date = new Date(year, monthIndex, day);
+    date.setHours(0, 0, 0, 0); // Normalize time component
+    
+    const isToday = date.toDateString() === new Date().toDateString();
+    const dateStr = date.toISOString().split('T')[0];
+    
+    let emiStatus: CalendarDay['emiStatus'] = 'none';
+    let emiAmount = 0;
+    const loanNumbers: string[] = [];
+    const datePayments: EMIHistory[] = [];
+
+    // PRIORITY 1: Check if there are ACTUAL PAYMENTS for this date
+    const paymentInfo = paymentMap[dateStr];
+    if (paymentInfo && paymentInfo.payments.length > 0) {
+      console.log(`✅ Found payments for ${dateStr}:`, paymentInfo);
+      emiStatus = 'paid';
+      emiAmount = paymentInfo.totalAmount;
+      loanNumbers.push(...paymentInfo.loanNumbers);
+      datePayments.push(...paymentInfo.payments);
+    } 
+    // PRIORITY 2: Check if there are due EMIs (only if no payments exist)
+    else {
+      let hasDueEMI = false;
+      let totalDueAmount = 0;
+      const dueLoanNumbers: string[] = [];
+
+      filteredLoans.forEach(loan => {
+        if (loan.emiPaidCount >= loan.totalEmiCount) return;
+
+        const startDate = new Date(loan.emiStartDate || loan.dateApplied);
+        startDate.setHours(0, 0, 0, 0); // Normalize start date
+        const loanType = loan.loanType;
+
+        console.log(`🔍 Checking loan ${loan.loanNumber} from ${startDate.toISOString()}`);
+
+// Generate EMI schedule for this loan - FIXED LOGIC
+const currentDate = new Date(startDate); // Use const since we modify the same object
+
+for (let i = 0; i < loan.totalEmiCount; i++) {
+  const emiDate = new Date(currentDate);
+  emiDate.setHours(0, 0, 0, 0);
+  const emiDateStr = emiDate.toISOString().split('T')[0];
+  
+  // Check if this EMI date matches the current calendar date
+  if (emiDateStr === dateStr) {
+    console.log(`📅 Due EMI found for ${dateStr}: Loan ${loan.loanNumber}, EMI ${i + 1}`);
+    hasDueEMI = true;
+    totalDueAmount += loan.emiAmount;
+    dueLoanNumbers.push(loan.loanNumber);
+    break;
+  }
+
+  // Calculate next EMI date by modifying the currentDate object
+  switch(loanType) {
+    case 'Daily':
+      currentDate.setDate(currentDate.getDate() + 1);
+      break;
+    case 'Weekly':
+      currentDate.setDate(currentDate.getDate() + 7);
+      break;
+    case 'Monthly':
+      currentDate.setMonth(currentDate.getMonth() + 1);
+      break;
+    default:
+      currentDate.setDate(currentDate.getDate() + 1);
+  }
+  currentDate.setHours(0, 0, 0, 0);
+
+  // Stop if we've gone beyond the current month
+  if (currentDate.getMonth() > monthIndex || currentDate.getFullYear() > year) {
+    break;
+  }
+}
+      });
+
+      if (hasDueEMI) {
+        emiAmount = totalDueAmount;
+        loanNumbers.push(...dueLoanNumbers);
+        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const calendarDate = new Date(date);
+        calendarDate.setHours(0, 0, 0, 0);
+        
+        if (calendarDate < today) {
+          emiStatus = 'overdue';
+          console.log(`⚠️ Overdue EMI for ${dateStr}`);
+        } else if (calendarDate.getTime() === today.getTime()) {
+          emiStatus = 'due';
+          console.log(`📅 Due EMI for ${dateStr}`);
+        } else {
+          emiStatus = 'upcoming';
+          console.log(`🔔 Upcoming EMI for ${dateStr}`);
+        }
+      } else {
+        console.log(`➖ No EMI activity for ${dateStr}`);
+      }
+    }
+
+    days.push({
+      date,
+      isCurrentMonth: true,
+      isToday,
+      emiStatus,
+      emiAmount,
+      loanNumbers,
+      paymentHistory: datePayments
+    });
+  }
+
+  // Generate next month days
+  const endingDayOfWeek = lastDay.getDay();
+  for (let i = 1; i < 7 - endingDayOfWeek; i++) {
+    const date = new Date(year, monthIndex + 1, i);
+    days.push({
+      date,
+      isCurrentMonth: false,
+      isToday: false,
+      emiStatus: 'none'
+    });
+  }
+  
+  return days;
+};
+
+  const getStatusColor = (status: CalendarDay['emiStatus']) => {
+  switch (status) {
+    case 'paid': 
+      return 'bg-green-100 border-green-300 text-green-800 hover:bg-green-200';
+    case 'due': 
+      return 'bg-blue-100 border-blue-300 text-blue-800 hover:bg-blue-200';
+    case 'overdue': 
+      return 'bg-red-100 border-red-300 text-red-800 hover:bg-red-200';
+    case 'partial': 
+      return 'bg-yellow-100 border-yellow-300 text-yellow-800 hover:bg-yellow-200';
+    case 'upcoming': 
+      return 'bg-purple-100 border-purple-300 text-purple-800 hover:bg-purple-200';
+    default: 
+      return 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100';
+  }
+};
+
+  const getStatusIcon = (status: CalendarDay['emiStatus']) => {
+    switch (status) {
+      case 'paid': return '✅';
+      case 'due': return '📅';
+      case 'overdue': return '⚠️';
+      case 'partial': return '💰';
+      case 'upcoming': return '🔔';
+      default: return '';
+    }
+  };
+
+  const handleViewEMICalendar = async (customer: Customer) => {
+    setIsLoading(true);
     try {
-      console.log('🔄 Admin - Fetching collection data for date:', date);
-      
-      const response = await fetch(`/api/admin/collection?date=${date}`);
-      
+      const response = await fetch(`/api/data-entry/customers/${customer._id}`);
       if (response.ok) {
         const data = await response.json();
-        console.log('📊 Admin Collection API response:', data);
-        
-        if (data.success && data.data) {
-          setCollectionData(data.data);
-          return;
+        if (data.success) {
+          const customerDetails = data.data;
+          const displayLoans = getAllCustomerLoans(customer, customerDetails);
+          
+          setCalendarData({
+            customerId: customer._id,
+            customerName: customer.name,
+            loans: displayLoans,
+            paymentHistory: displayLoans.flatMap(loan => loan.emiHistory || [])
+          });
+
+          setCalendarFilter({
+            emiStatus: 'all',
+            loanFilter: 'all'
+          });
+          
+          setShowEMICalendar(true);
         }
       }
-      
-      // Fallback to data-entry API if admin API fails
-      console.log('📋 Falling back to data-entry collection API');
-      const fallbackResponse = await fetch(`/api/data-entry/collection?date=${date}`);
-      if (fallbackResponse.ok) {
-        const fallbackData = await fallbackResponse.json();
-        if (fallbackData.success && fallbackData.data) {
-          setCollectionData(fallbackData.data);
-          return;
-        }
-      }
-      
-      // If both APIs fail, set empty data
-      setCollectionData({
-        date: date,
-        customers: [],
-        summary: {
-          totalCollection: 0,
-          office1Collection: 0,
-          office2Collection: 0,
-          totalCustomers: 0
-        }
+    } catch (error) {
+      console.error('Error loading calendar data:', error);
+      const displayLoans = getAllCustomerLoans(customer, null);
+      setCalendarData({
+        customerId: customer._id,
+        customerName: customer.name,
+        loans: displayLoans,
+        paymentHistory: []
       });
+      setCalendarFilter({
+        emiStatus: 'all',
+        loanFilter: 'all'
+      });
+      setShowEMICalendar(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCalendarDateClick = (day: CalendarDay) => {
+  if (day.paymentHistory && day.paymentHistory.length > 0) {
+    setSelectedCalendarDate(day.date);
+    setShowDatePaymentHistory(true);
+  } else if (day.emiStatus === 'due' || day.emiStatus === 'overdue') {
+    const dueLoans = calendarData?.loans.filter(loan => 
+      loan.nextEmiDate === day.date.toISOString().split('T')[0]
+    );
+    
+    if (dueLoans && dueLoans.length > 0 && selectedCustomer) {
+      setSelectedLoanForPayment(dueLoans[0]);
+      setEmiUpdate(prev => ({
+        ...prev,
+        customerId: selectedCustomer._id || '',
+        customerName: selectedCustomer.name || '',
+        loanId: dueLoans[0]._id,
+        customerNumber: dueLoans[0].customerNumber,
+        loanNumber: dueLoans[0].loanNumber,
+        amount: dueLoans[0].emiAmount.toString(),
+        paymentDate: day.date.toISOString().split('T')[0]
+      }));
+      setShowPaymentForm(true);
+      setShowEMICalendar(false);
+    }
+  }
+};
+
+
+  const handleEditPastEMI = (payment: EMIHistory) => {
+  const editRequest = {
+    type: 'EMI Correction',
+    customerId: calendarData?.customerId,
+    customerName: calendarData?.customerName,
+    originalPayment: payment,
+    requestedChanges: {
+      amount: payment.amount,
+      paymentDate: payment.paymentDate,
+      status: payment.status
+    },
+    reason: 'Data correction required'
+  };
+  
+  submitEditRequest(editRequest);
+  alert('EMI correction request submitted for admin approval');
+  setShowDatePaymentHistory(false);
+};
+
+  const submitEditRequest = async (requestData: any) => {
+    try {
+      const response = await fetch('/api/data-entry/requests', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...requestData,
+          status: 'Pending',
+          createdBy: 'data_entry_operator_1',
+          createdByRole: 'data_entry'
+        }),
+      });
+      
+      if (response.ok) {
+        fetchPendingRequests();
+      }
+    } catch (error) {
+      console.error('Error submitting edit request:', error);
+    }
+  };
+
+  const filteredCustomers = customers.filter(customer => {
+    const matchesSearch = searchQuery === '' || 
+      customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (customer.customerNumber && customer.customerNumber.toLowerCase().includes(searchQuery.toLowerCase()));
+
+    const matchesCustomerNumber = filters.customerNumber === '' || 
+      (customer.customerNumber && customer.customerNumber.toLowerCase().includes(filters.customerNumber.toLowerCase()));
+    
+    const matchesLoanType = filters.loanType === '' || 
+      customer.loanType === filters.loanType;
+    
+    const matchesStatus = filters.status === '' || 
+      customer.status === filters.status;
+
+    const matchesOfficeCategory = filters.officeCategory === '' || 
+      customer.officeCategory === filters.officeCategory;
+
+    return matchesSearch && matchesCustomerNumber && matchesLoanType && matchesStatus && matchesOfficeCategory;
+  });
+
+  const getAllCustomerLoans = (customer: Customer, customerDetails: CustomerDetails | null): Loan[] => {
+  const loans: Loan[] = [];
+  
+  console.log('🔄 getAllCustomerLoans called with:', {
+    customer: {
+      id: customer._id,
+      name: customer.name
+    },
+    customerDetails: customerDetails ? {
+      loans: customerDetails.loans,
+      loansCount: customerDetails.loans?.length
+    } : 'null'
+  });
+
+  // Use loans from customerDetails if available
+  if (customerDetails?.loans && Array.isArray(customerDetails.loans)) {
+    console.log(`📊 Processing ${customerDetails.loans.length} loans from customerDetails`);
+    
+    customerDetails.loans.forEach((loan: any, index) => {
+      // Only include loans that have valid database IDs
+      if (loan._id && loan._id.length === 24 && /^[0-9a-fA-F]{24}$/.test(loan._id.replace(/_default$/, ''))) {
+        const cleanLoanId = loan._id.replace(/_default$/, '');
+        
+        console.log(`🚨 DEBUG Loan ${loan.loanNumber}:`, {
+          // Database fields
+          nextEmiDate: loan.nextEmiDate,
+          emiStartDate: loan.emiStartDate,
+          lastEmiDate: loan.lastEmiDate,
+          dateApplied: loan.dateApplied,
+          
+          // Payment indicators
+          emiPaidCount: loan.emiPaidCount,
+          totalPaidAmount: loan.totalPaidAmount,
+          emiHistoryCount: loan.emiHistory?.length || 0,
+          
+          // Loan details
+          loanType: loan.loanType,
+          amount: loan.amount,
+          emiAmount: loan.emiAmount,
+          
+          // Renewal tracking
+          isRenewed: loan.isRenewed,
+          renewedLoanNumber: loan.renewedLoanNumber,
+          renewedDate: loan.renewedDate,
+          originalLoanNumber: loan.originalLoanNumber
+        });
+
+        // Check if EMIs have been paid using ALL indicators
+        const hasPaidEMIs = (loan.emiPaidCount > 0) || 
+                           (loan.totalPaidAmount > 0) ||
+                           (loan.emiHistory && loan.emiHistory.length > 0);
+        
+        console.log(`🔍 Loan ${loan.loanNumber} Payment Status:`, {
+          hasPaidEMIs,
+          emiPaidCount: loan.emiPaidCount,
+          totalPaidAmount: loan.totalPaidAmount,
+          emiHistoryCount: loan.emiHistory?.length || 0
+        });
+
+        let nextEmiDate;
+        
+        if (hasPaidEMIs) {
+          // EMIs HAVE been paid - calculate from lastEmiDate + 1 period
+          const actualLastEmiDate = calculateLastEmiDate(loan);
+          if (actualLastEmiDate) {
+            const lastPaymentDate = new Date(actualLastEmiDate);
+            nextEmiDate = calculateNextEmiDateProperly(lastPaymentDate, loan.loanType);
+            console.log(`💰 Loan ${loan.loanNumber}: EMIs PAID, calculating from actualLastEmiDate:`, {
+              actualLastEmiDate,
+              calculatedNextEmiDate: nextEmiDate
+            });
+          } else {
+            // Fallback: Use emiStartDate and add one period
+            const startDate = new Date(loan.emiStartDate || loan.dateApplied);
+            nextEmiDate = calculateNextEmiDateProperly(startDate, loan.loanType);
+            console.log(`⚠️ Loan ${loan.loanNumber}: EMIs PAID but no valid lastEmiDate, calculating from emiStartDate:`, {
+              emiStartDate: loan.emiStartDate,
+              calculatedNextEmiDate: nextEmiDate
+            });
+          }
+        } else {
+          // NO EMIs paid - use EMI start date as next EMI date
+          nextEmiDate = loan.emiStartDate || loan.dateApplied;
+          console.log(`🆕 Loan ${loan.loanNumber}: NO EMIs paid, using emiStartDate:`, nextEmiDate);
+        }
+        
+        const enhancedLoan: Loan = {
+          ...loan,
+          _id: cleanLoanId,
+          loanNumber: loan.loanNumber || `L${index + 1}`,
+          totalEmiCount: loan.totalEmiCount || loan.loanDays || 30,
+          emiPaidCount: loan.emiPaidCount || 0,
+          lastEmiDate: loan.lastEmiDate || loan.dateApplied,
+          nextEmiDate: nextEmiDate, // Use our calculated date
+          totalPaidAmount: loan.totalPaidAmount || 0,
+          remainingAmount: loan.remainingAmount || loan.amount,
+          emiHistory: loan.emiHistory || [],
+          status: loan.status || 'active',
+          emiStartDate: loan.emiStartDate || loan.dateApplied,
+          // Add renewal tracking properties
+          isRenewed: loan.isRenewed || false,
+          renewedLoanNumber: loan.renewedLoanNumber || '',
+          renewedDate: loan.renewedDate || '',
+          originalLoanNumber: loan.originalLoanNumber || ''
+        };
+        
+        loans.push(enhancedLoan);
+      } else {
+        console.log(`⚠️ Skipping loan ${index + 1} - invalid or temporary ID:`, loan._id);
+      }
+    });
+  }
+  
+  // Fallback loan creation
+  if (loans.length === 0 && customer.loanAmount && !customerDetails) {
+    const cleanCustomerId = customer._id?.replace?.(/_default$/, '') || customer._id;
+    
+    const fallbackLoan: Loan = {
+      _id: `fallback_${cleanCustomerId}`,
+      customerId: cleanCustomerId,
+      customerName: customer.name,
+      customerNumber: customer.customerNumber || `CN${cleanCustomerId}`,
+      loanNumber: 'L1',
+      amount: customer.loanAmount || 0,
+      emiAmount: customer.emiAmount || 0,
+      loanType: customer.loanType || 'Daily',
+      dateApplied: customer.createdAt || new Date().toISOString(),
+      emiStartDate: customer.createdAt || new Date().toISOString(),
+      loanDays: 30,
+      totalEmiCount: 30,
+      emiPaidCount: 0,
+      lastEmiDate: customer.createdAt || new Date().toISOString(),
+      nextEmiDate: customer.createdAt || new Date().toISOString(),
+      totalPaidAmount: 0,
+      remainingAmount: customer.loanAmount || 0,
+      emiHistory: [],
+      status: customer.status || 'active',
+      isFallback: true,
+      // Add renewal tracking properties for fallback loan
+      isRenewed: false,
+      renewedLoanNumber: '',
+      renewedDate: '',
+      originalLoanNumber: ''
+    };
+    loans.push(fallbackLoan);
+  }
+  
+  // Sort loans by loan number (L1, L2, L3, etc.) in ascending order
+  const sortedLoans = loans.sort((a, b) => {
+    const extractLoanNumber = (loanNumber: string): number => {
+      if (!loanNumber) return 0;
+      // Extract numeric part from loan number (e.g., "L1" -> 1, "L2" -> 2)
+      const match = loanNumber.match(/L(\d+)/);
+      return match ? parseInt(match[1]) : 0;
+    };
+    
+    const aNumber = extractLoanNumber(a.loanNumber);
+    const bNumber = extractLoanNumber(b.loanNumber);
+    
+    return aNumber - bNumber; // Ascending order
+  });
+  
+  console.log('📊 Sorted loans:', sortedLoans.map(loan => ({
+    loanNumber: loan.loanNumber,
+    isRenewed: loan.isRenewed,
+    status: loan.status
+  })));
+  
+  return sortedLoans;
+};
+
+// Add this proper EMI date calculation function
+const calculateNextEmiDateProperly = (lastDate: Date, loanType: string): string => {
+  const nextDate = new Date(lastDate);
+  
+  switch(loanType) {
+    case 'Daily':
+      // For daily loans, next EMI is the next day
+      nextDate.setDate(nextDate.getDate() + 1);
+      break;
+    case 'Weekly':
+      // For weekly loans, next EMI is exactly 7 days after last payment
+      nextDate.setDate(nextDate.getDate() + 7);
+      break;
+    case 'Monthly':
+      // For monthly loans, next EMI is exactly 1 month after last payment
+      nextDate.setMonth(nextDate.getMonth() + 1);
+      break;
+    default:
+      nextDate.setDate(nextDate.getDate() + 1);
+  }
+  
+  return nextDate.toISOString().split('T')[0];
+};
+const calculateLastEmiDate = (loan: any): string => {
+  if (!loan.emiHistory || loan.emiHistory.length === 0) {
+    return loan.emiStartDate || loan.dateApplied;
+  }
+  
+  // Sort payments by date and get the most recent one
+  const sortedPayments = [...loan.emiHistory].sort((a, b) => 
+    new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime()
+  );
+  
+  return sortedPayments[0].paymentDate;
+};
+  const validateStep1 = () => {
+  const errors: {[key: string]: string} = {};
+  
+  if (!step1Data.name.trim()) {
+    errors.name = 'Customer name is required';
+  }
+  
+  // Enhanced phone validation
+  const validPhones = step1Data.phone.filter(p => p && p.trim() !== '');
+  if (validPhones.length === 0) {
+    errors.phone = 'At least one phone number is required';
+  } else {
+    // Validate primary phone (index 0)
+    if (!validPhones[0] || !/^\d{10}$/.test(validPhones[0])) {
+      errors.phone = 'Valid primary phone number is required (10 digits)';
+    }
+
+    // Validate secondary phone if provided
+    if (validPhones[1] && !/^\d{10}$/.test(validPhones[1])) {
+      errors.phone = 'Secondary phone number must be a valid 10-digit number';
+    }
+  }
+
+  if (step1Data.whatsappNumber && !/^\d{10}$/.test(step1Data.whatsappNumber)) {
+    errors.whatsappNumber = 'WhatsApp number must be a valid 10-digit number';
+  }
+  
+  if (!step1Data.businessName.trim()) {
+    errors.businessName = 'Business name is required';
+  }
+  
+  if (!step1Data.area.trim()) {
+    errors.area = 'Area is required';
+  }
+  
+  if (!step1Data.customerNumber.trim()) {
+    errors.customerNumber = 'Customer number is required';
+  }
+  
+  if (!step1Data.address.trim()) {
+    errors.address = 'Address is required';
+  }
+
+  if (!step1Data.category) {
+    errors.category = 'Category is required';
+  }
+  
+  if (!step1Data.officeCategory) {
+    errors.officeCategory = 'Office category is required';
+  }
+  
+  setStep1Errors(errors);
+  return Object.keys(errors).length === 0;
+};
+
+  const validateStep2 = () => {
+  const errors: {[key: string]: string} = {};
+  
+  if (!step2Data.loanDate) {
+    errors.loanDate = 'Loan date is required';
+  }
+  
+  if (!step2Data.emiStartDate) {
+    errors.emiStartDate = 'EMI starting date is required';
+  } else if (new Date(step2Data.emiStartDate) < new Date(step2Data.loanDate)) {
+    errors.emiStartDate = 'EMI start date cannot be before loan date';
+  }
+  
+  const loanAmount = Number(step2Data.loanAmount);
+  if (!step2Data.loanAmount || isNaN(loanAmount) || loanAmount <= 0) {
+    errors.loanAmount = 'Valid loan amount is required';
+  }
+  
+  const loanDays = Number(step2Data.loanDays);
+  if (!step2Data.loanDays || isNaN(loanDays) || loanDays <= 0) {
+    errors.loanDays = `Valid number of ${step2Data.loanType === 'Daily' ? 'days' : step2Data.loanType === 'Weekly' ? 'weeks' : 'months'} is required`;
+  }
+  
+  if (!step2Data.loanType) {
+    errors.loanType = 'Loan type is required';
+  }
+
+  // EMI validation based on loan type and EMI type
+  if (step2Data.loanType === 'Daily') {
+    // Daily loans only need emiAmount
+    const emiAmount = Number(step2Data.emiAmount);
+    if (!step2Data.emiAmount || isNaN(emiAmount) || emiAmount <= 0) {
+      errors.emiAmount = 'Valid EMI amount is required for Daily loans';
+    }
+  } else {
+    // Weekly/Monthly loans
+    if (step2Data.emiType === 'fixed') {
+      const emiAmount = Number(step2Data.emiAmount);
+      if (!step2Data.emiAmount || isNaN(emiAmount) || emiAmount <= 0) {
+        errors.emiAmount = 'Valid EMI amount is required for Fixed EMI type';
+      }
+    } else if (step2Data.emiType === 'custom') {
+      // Custom EMI requires both amounts
+      const emiAmount = Number(step2Data.emiAmount);
+      const customEmiAmount = Number(step2Data.customEmiAmount);
+      
+      if (!step2Data.emiAmount || isNaN(emiAmount) || emiAmount <= 0) {
+        errors.emiAmount = 'Valid fixed EMI amount is required for Custom EMI type';
+      }
+      
+      if (!step2Data.customEmiAmount || isNaN(customEmiAmount) || customEmiAmount <= 0) {
+        errors.customEmiAmount = 'Valid last EMI amount is required for Custom EMI type';
+      }
+    }
+  }
+  
+  setStep2Errors(errors);
+  return Object.keys(errors).length === 0;
+};
+
+  const validateStep3 = (): boolean => {
+    const errors: {[key: string]: string} = {};
+    
+    if (!step3Data.loginId.trim()) {
+      errors.loginId = 'Login ID is required';
+    }
+    
+    if (!step3Data.password) {
+      errors.password = 'Password is required';
+    } else if (step3Data.password.length < 6) {
+      errors.password = 'Password must be at least 6 characters';
+    }
+    
+    if (step3Data.password !== step3Data.confirmPassword) {
+      errors.confirmPassword = 'Passwords do not match';
+    }
+    
+    setStep3Errors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleStep1Next = (): void => {
+    if (validateStep1()) {
+      setCurrentStep(2);
+    }
+  };
+
+  const handleStep2Next = (): void => {
+    if (validateStep2()) {
+      setCurrentStep(3);
+    }
+  };
+
+  const handleStep2Back = (): void => {
+    setCurrentStep(1);
+  };
+
+  const handleStep3Back = (): void => {
+    setCurrentStep(2);
+  };
+
+  const handleFileUpload = (field: string, file: File | null, documentType?: 'shop' | 'home'): void => {
+    if (field === 'profilePicture') {
+      if (file && !file.type.startsWith('image/')) {
+        alert('Please upload an image file (PNG, JPEG, etc.) for profile picture');
+        return;
+      }
+      setStep1Data(prev => ({ ...prev, profilePicture: file }));
+    } else if (field === 'fiDocuments' && documentType) {
+      if (file && file.type !== 'application/pdf') {
+        alert('Please upload a PDF file for FI documents');
+        return;
+      }
+      setStep1Data(prev => ({
+        ...prev,
+        fiDocuments: {
+          ...prev.fiDocuments,
+          [documentType]: file
+        }
+      }));
+    }
+  };
+
+  const generateLoginId = (): void => {
+    const namePart = step1Data.name.replace(/\s+/g, '').toLowerCase().substring(0, 4);
+    const randomPart = Math.floor(1000 + Math.random() * 9000);
+    const loginId = `${namePart}${randomPart}`;
+    setStep3Data(prev => ({ ...prev, loginId }));
+  };
+
+  const generatePassword = (): void => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
+    let password = '';
+    for (let i = 0; i < 8; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setStep3Data(prev => ({ ...prev, password, confirmPassword: password }));
+  };
+
+  const resetCustomerForm = (): void => {
+  setCurrentStep(1);
+  const nextCustomerNumber = getNextAvailableCustomerNumber();
+  
+  setStep1Data({
+    name: '',
+    phone: ['', ''],
+    whatsappNumber: '',
+    businessName: '',
+    area: '',
+    customerNumber: nextCustomerNumber, // Auto-populate with next available
+    address: '',
+    category: '',
+    officeCategory: '',
+    profilePicture: null,
+    fiDocuments: {
+      shop: null,
+      home: null
+    }
+  });
+  setStep2Data({
+    loanDate: new Date().toISOString().split('T')[0],
+    emiStartDate: new Date().toISOString().split('T')[0],
+    loanAmount: '',
+    emiAmount: '',
+    loanDays: '',
+    loanType: 'Daily',
+    emiType: 'fixed',
+    customEmiAmount: ''
+  });
+  setStep3Data({
+    loginId: '',
+    password: '',
+    confirmPassword: ''
+  });
+  setStep1Errors({});
+  setStep2Errors({});
+  setStep3Errors({});
+};
+
+  const fetchDashboardData = async () => {
+    try {
+      const statsResponse = await fetch('/api/data-entry/dashboard/stats');
+      if (!statsResponse.ok) throw new Error('Failed to fetch stats');
+      const statsData = await statsResponse.json();
+      setTodayStats(statsData);
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
+  };
+
+  const fetchCustomers = async () => {
+    try {
+      console.log('Fetching customers...');
+      const response = await fetch('/api/data-entry/customers');
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Customers API response:', data);
+        if (data.success) {
+          setCustomers(data.data || []);
+          console.log('Customers loaded:', data.data?.length || 0);
+        }
+      } else {
+        console.error('Failed to fetch customers');
+      }
+    } catch (error) {
+      console.error('Error fetching customers:', error);
+      setCustomers([]);
+    }
+  };
+
+  const fetchPendingRequests = async () => {
+    try {
+      console.log('🟡 Fetching pending requests...');
+      const response = await fetch('/api/data-entry/requests');
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('🔵 Requests API Response:', data);
+      
+      if (data.success && data.data && Array.isArray(data.data.requests)) {
+        console.log(`✅ Setting ${data.data.requests.length} requests`);
+        setPendingRequests(data.data.requests);
+      } else {
+        console.warn('⚠️ No requests array found in response, setting empty array');
+        setPendingRequests([]);
+      }
       
     } catch (error) {
-      console.error('❌ Error fetching collection data:', error);
-      setCollectionData({
-        date: date,
-        customers: [],
-        summary: {
-          totalCollection: 0,
-          office1Collection: 0,
-          office2Collection: 0,
-          totalCustomers: 0
-        }
-      });
-    } finally {
-      setIsLoadingCollection(false);
+      console.error('❌ Error fetching requests:', error);
+      setPendingRequests([]);
     }
   };
 
   useEffect(() => {
-    fetchCollectionData(collectionDate);
-  }, []);
+    fetchDashboardData();
+    if (activeTab === 'customers') fetchCustomers();
+    if (activeTab === 'requests') fetchPendingRequests();
+    if (activeTab === 'collection') fetchCollectionData(collectionDate);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (showUpdateEMI) {
+      console.log('EMI modal opened, fetching customers...');
+      fetchCustomers();
+    }
+  }, [showUpdateEMI]);
+
+  const handleViewDetails = async (customer: Customer) => {
+    try {
+      console.log('🔍 handleViewDetails called with customer:', customer);
+      setIsLoading(true);
+      
+      const customerId = customer._id || customer.id;
+      console.log('📋 Customer ID to fetch:', customerId);
+      
+      if (!customerId) {
+        alert('Customer ID not found');
+        setIsLoading(false);
+        return;
+      }
+
+      const response = await fetch(`/api/data-entry/customers/${customerId}`);
+      console.log('🌐 API Response status:', response.status);
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          console.log('⚠️ Customer not found in API, using basic data');
+          console.log('📊 Customer loan data from props:', {
+            loanAmount: customer.loanAmount,
+            emiAmount: customer.emiAmount,
+            loanType: customer.loanType,
+            status: customer.status
+          });
+          
+          const customerDetailsData: CustomerDetails = {
+            _id: customer._id,
+            name: customer.name,
+            phone: customer.phone,
+            businessName: customer.businessName,
+            area: customer.area,
+            customerNumber: customer.customerNumber || 'N/A',
+            loanAmount: customer.loanAmount || 0,
+            emiAmount: customer.emiAmount || 0,
+            loanType: customer.loanType || 'Daily',
+            address: customer.address || '',
+            status: customer.status || 'active',
+            email: customer.email,
+            businessType: customer.businessType,
+            category: customer.category || 'A',
+            officeCategory: customer.officeCategory || 'Office 1',
+            createdAt: customer.createdAt,
+            whatsappNumber: customer.whatsappNumber || '',
+            loans: []
+          };
+          
+          setCustomerDetails(customerDetailsData);
+          setShowCustomerDetails(true);
+          setIsLoading(false);
+          return;
+        }
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('📦 API Response data:', data);
+      
+      if (data.success) {
+        console.log('✅ Customer details fetched successfully:', data.data);
+        console.log('📊 Loans array from API:', data.data.loans);
+        console.log('🔍 Customer loan properties:', {
+          loanAmount: data.data.loanAmount,
+          emiAmount: data.data.emiAmount,
+          loanType: data.data.loanType
+        });
+        
+        // Ensure loans array exists
+        const customerData = {
+          ...data.data,
+          loans: data.data.loans || []
+        };
+        setCustomerDetails(customerData);
+        setShowCustomerDetails(true);
+      } else {
+        console.error('❌ API returned success:false', data.error);
+        alert('Failed to fetch customer details: ' + (data.error || 'Unknown error'));
+      }
+    } catch (error: any) {
+      console.error('💥 Error in handleViewDetails:', error);
+      console.log('📊 Customer loan data from props (error case):', {
+        loanAmount: customer.loanAmount,
+        emiAmount: customer.emiAmount,
+        loanType: customer.loanType
+      });
+      
+      const customerDetailsData: CustomerDetails = {
+        _id: customer._id,
+        name: customer.name,
+        phone: customer.phone,
+        businessName: customer.businessName,
+        area: customer.area,
+        customerNumber: customer.customerNumber || 'N/A',
+        loanAmount: customer.loanAmount || 0,
+        emiAmount: customer.emiAmount || 0,
+        loanType: customer.loanType || 'Daily',
+        address: customer.address || '',
+        status: customer.status || 'active',
+        email: customer.email,
+        businessType: customer.businessType,
+        category: customer.category || 'A',
+        officeCategory: customer.officeCategory || 'Office 1',
+        createdAt: customer.createdAt,
+        loans: []
+      };
+      
+      setCustomerDetails(customerDetailsData);
+      setShowCustomerDetails(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEditCustomer = (customer: CustomerDetails) => {
+  const phoneArray = Array.isArray(customer.phone) ? customer.phone : [customer.phone || ''];
+  
+  setEditCustomerData({
+    name: customer.name,
+    phone: phoneArray,
+    whatsappNumber: customer.whatsappNumber || '',
+    businessName: customer.businessName,
+    area: customer.area,
+    customerNumber: customer.customerNumber,
+    loanAmount: customer.loanAmount ? customer.loanAmount.toString() : '0',
+    emiAmount: customer.emiAmount ? customer.emiAmount.toString() : '0',
+    loanType: customer.loanType || 'Daily',
+    address: customer.address || '',
+    customerId: customer._id,
+    category: customer.category || 'A',
+    officeCategory: customer.officeCategory || 'Office 1'
+  });
+  setShowEditCustomer(true);
+  setShowCustomerDetails(false);
+};
+
+  const handleEditLoan = (loan: Loan) => {
+  setEditLoanData({
+    loanId: loan._id,
+    customerId: loan.customerId,
+    customerName: loan.customerName,
+    customerNumber: loan.customerNumber,
+    loanNumber: loan.loanNumber,
+    amount: loan.amount.toString(),
+    emiAmount: loan.emiAmount.toString(),
+    loanType: loan.loanType,
+    dateApplied: loan.dateApplied.split('T')[0],
+    loanDays: loan.loanDays.toString(),
+    emiType: loan.emiType || 'fixed',
+    customEmiAmount: loan.customEmiAmount?.toString() || '',
+    emiStartDate: loan.emiStartDate?.split('T')[0] || loan.dateApplied.split('T')[0],
+    originalData: {
+      amount: loan.amount,
+      emiAmount: loan.emiAmount,
+      loanType: loan.loanType,
+      dateApplied: loan.dateApplied,
+      loanDays: loan.loanDays,
+      emiType: loan.emiType || 'fixed',
+      customEmiAmount: loan.customEmiAmount || null,
+      emiStartDate: loan.emiStartDate || loan.dateApplied
+    }
+  });
+  setShowEditLoan(true);
+};
+
+  const handleRenewLoan = (loan: Loan) => {
+  setRenewLoanData({
+    loanId: loan._id,
+    customerId: loan.customerId,
+    customerName: loan.customerName,
+    customerNumber: loan.customerNumber,
+    loanNumber: loan.loanNumber,
+    renewalDate: new Date().toISOString().split('T')[0],
+    newLoanAmount: loan.amount.toString(),
+    newEmiAmount: loan.emiAmount.toString(),
+    newLoanDays: loan.loanDays.toString(),
+    newLoanType: loan.loanType,
+    remarks: `Renewal of loan ${loan.loanNumber}`,
+    // Add new fields with default values
+    emiStartDate: new Date().toISOString().split('T')[0],
+    emiType: 'fixed',
+    customEmiAmount: ''
+  });
+  setShowRenewLoan(true);
+};
+
+  const handleSaveEditLoan = async () => {
+  setIsLoading(true);
+  try {
+    console.log('🔄 Starting edit loan request...');
+    console.log('📦 Edit loan data:', editLoanData);
+
+    if (!editLoanData.amount || !editLoanData.emiAmount || !editLoanData.loanDays) {
+      alert('Please fill all required fields');
+      setIsLoading(false);
+      return;
+    }
+
+    const response = await fetch('/api/data-entry/edit-loan-request', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        type: 'Loan Edit',
+        customerId: editLoanData.customerId,
+        customerName: editLoanData.customerName,
+        customerNumber: editLoanData.customerNumber,
+        loanId: editLoanData.loanId,
+        loanNumber: editLoanData.loanNumber,
+        requestedData: {
+          amount: Number(editLoanData.amount),
+          emiAmount: Number(editLoanData.emiAmount),
+          loanType: editLoanData.loanType,
+          loanDays: Number(editLoanData.loanDays),
+          dateApplied: editLoanData.dateApplied,
+          emiStartDate: editLoanData.emiStartDate || editLoanData.dateApplied,
+          emiType: editLoanData.emiType || 'fixed',
+          customEmiAmount: editLoanData.customEmiAmount ? Number(editLoanData.customEmiAmount) : null
+        },
+        originalData: editLoanData.originalData,
+        description: `Loan edit request for ${editLoanData.customerName} - Customer ${editLoanData.customerNumber}`,
+        status: 'Pending',
+        createdBy: 'data_entry_operator_1',
+        createdByRole: 'data_entry'
+      }),
+    });
+
+    // ... rest of the function remains the same
+    console.log('📡 Response status:', response.status);
+
+    const data = await response.json();
+    console.log('✅ Response data:', data);
+    
+    if (!response.ok) {
+      throw new Error(data.error || `HTTP error! status: ${response.status}`);
+    }
+
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to submit edit request');
+    }
+
+    alert(data.message || 'Loan edit request submitted successfully! Waiting for admin approval.');
+    setShowEditLoan(false);
+    setEditLoanData({
+      loanId: '',
+      customerId: '',
+      customerName: '',
+      customerNumber: '',
+      loanNumber: '',
+      amount: '',
+      emiAmount: '',
+      loanType: 'Daily',
+      dateApplied: new Date().toISOString().split('T')[0],
+      loanDays: '',
+      emiType: 'fixed',
+      customEmiAmount: '',
+      emiStartDate: new Date().toISOString().split('T')[0]
+    });
+    
+    if (activeTab === 'requests') fetchPendingRequests();
+    
+  } catch (error: any) {
+    console.error('💥 Error in handleSaveEditLoan:', error);
+    alert('Error: ' + error.message + '\n\nPlease make sure the API route is created at /api/data-entry/edit-loan-request');
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+  const handleSaveRenewLoan = async () => {
+  setIsLoading(true);
+  try {
+    console.log('🔄 Starting renew loan request...');
+    console.log('📦 Renew loan data:', renewLoanData);
+
+    // Debug: Check all required fields
+    const requiredFields = {
+      loanId: renewLoanData.loanId,
+      customerId: renewLoanData.customerId,
+      customerName: renewLoanData.customerName,
+      customerNumber: renewLoanData.customerNumber,
+      loanNumber: renewLoanData.loanNumber,
+      newLoanAmount: renewLoanData.newLoanAmount,
+      newEmiAmount: renewLoanData.newEmiAmount,
+      newLoanDays: renewLoanData.newLoanDays,
+      newLoanType: renewLoanData.newLoanType
+    };
+
+    console.log('🔍 Required fields check:', requiredFields);
+
+    // Check for missing fields
+    const missingFields = Object.entries(requiredFields)
+      .filter(([key, value]) => !value)
+      .map(([key]) => key);
+
+    if (missingFields.length > 0) {
+      console.error('❌ Missing required fields:', missingFields);
+      alert(`Please fill all required fields. Missing: ${missingFields.join(', ')}`);
+      setIsLoading(false);
+      return;
+    }
+
+    if (!renewLoanData.newLoanAmount || !renewLoanData.newEmiAmount || !renewLoanData.newLoanDays) {
+      alert('Please fill all required fields');
+      setIsLoading(false);
+      return;
+    }
+
+    // Validate numbers are positive
+    const newLoanAmountNum = parseFloat(renewLoanData.newLoanAmount);
+    const newEmiAmountNum = parseFloat(renewLoanData.newEmiAmount);
+    const newLoanDaysNum = parseFloat(renewLoanData.newLoanDays);
+
+    if (isNaN(newLoanAmountNum) || newLoanAmountNum <= 0) {
+      alert('Please enter a valid positive loan amount');
+      setIsLoading(false);
+      return;
+    }
+    if (isNaN(newEmiAmountNum) || newEmiAmountNum <= 0) {
+      alert('Please enter a valid positive EMI amount');
+      setIsLoading(false);
+      return;
+    }
+    if (isNaN(newLoanDaysNum) || newLoanDaysNum <= 0) {
+      alert('Please enter a valid positive number of days/weeks/months');
+      setIsLoading(false);
+      return;
+    }
+
+    // Validate custom EMI for Weekly/Monthly loans
+    if (renewLoanData.emiType === 'custom' && renewLoanData.newLoanType !== 'Daily') {
+      if (!renewLoanData.customEmiAmount || parseFloat(renewLoanData.customEmiAmount) <= 0) {
+        alert('Custom EMI amount is required for custom EMI type with Weekly/Monthly loans');
+        setIsLoading(false);
+        return;
+      }
+    }
+
+    const apiUrl = '/api/data-entry/renew-loan-request';
+    console.log('🌐 Calling API:', apiUrl);
+
+    // Prepare the request data with all necessary fields
+    const requestData = {
+      // Original loan information
+      loanId: renewLoanData.loanId,
+      customerId: renewLoanData.customerId,
+      customerName: renewLoanData.customerName,
+      customerNumber: renewLoanData.customerNumber,
+      originalLoanNumber: renewLoanData.loanNumber, // The loan being renewed
+      originalLoanId: renewLoanData.loanId,
+      
+      // New loan details
+      renewalDate: renewLoanData.renewalDate,
+      newLoanAmount: newLoanAmountNum,
+      newEmiAmount: newEmiAmountNum,
+      newLoanDays: newLoanDaysNum,
+      newLoanType: renewLoanData.newLoanType,
+      emiStartDate: renewLoanData.emiStartDate,
+      emiType: renewLoanData.emiType,
+      customEmiAmount: renewLoanData.customEmiAmount ? parseFloat(renewLoanData.customEmiAmount) : null,
+      
+      // Additional information
+      remarks: renewLoanData.remarks || `Renewal of loan ${renewLoanData.loanNumber}`,
+      requestedBy: 'data_entry_operator_1',
+      requestType: 'renew_loan',
+      status: 'Pending', // Request status
+      createdBy: 'data_entry_operator_1',
+      createdByRole: 'data_entry'
+    };
+
+    console.log('📤 Sending renew loan request:', requestData);
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestData),
+    });
+
+    console.log('📡 Response status:', response.status);
+
+    const responseText = await response.text();
+    console.log('📄 Raw response:', responseText);
+
+    // Handle HTML responses (like 404 errors)
+    if (responseText.trim().startsWith('<!') || responseText.trim().startsWith('<html')) {
+      console.error('❌ Server returned HTML instead of JSON. Likely a 404 error.');
+      throw new Error('API endpoint not found. Please check the server.');
+    }
+
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('❌ Failed to parse response as JSON:', parseError);
+      throw new Error('Server returned invalid JSON. Response: ' + responseText.substring(0, 200));
+    }
+
+    console.log('✅ Parsed response data:', data);
+    
+    if (!response.ok) {
+      throw new Error(data.error || `HTTP error! status: ${response.status}`);
+    }
+
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to submit renewal request');
+    }
+
+    // Success message with details about what will happen
+    const successMessage = `Loan renewal request submitted successfully! 
+    
+What will happen after admin approval:
+• A new loan (${data.data?.newLoanNumber || 'L[next]'}) will be created with the new terms
+• The current loan ${renewLoanData.loanNumber} will be marked as "Renewed"
+• The renewed loan will appear with a red background and limited actions
+• You can only delete renewed loans
+
+Waiting for admin approval...`;
+
+    alert(successMessage);
+    
+    // Reset form and close modal
+    setShowRenewLoan(false);
+    setRenewLoanData({
+      loanId: '',
+      customerId: '',
+      customerName: '',
+      customerNumber: '',
+      loanNumber: '',
+      renewalDate: new Date().toISOString().split('T')[0],
+      newLoanAmount: '',
+      newEmiAmount: '',
+      newLoanDays: '',
+      newLoanType: 'Monthly',
+      remarks: '',
+      emiStartDate: new Date().toISOString().split('T')[0],
+      emiType: 'fixed',
+      customEmiAmount: ''
+    });
+    
+    // Refresh requests to show the new pending request
+    if (activeTab === 'requests') {
+      fetchPendingRequests();
+    }
+    
+    // Refresh customer details if the modal is open
+    if (showCustomerDetails && customerDetails) {
+      const refreshedCustomer = await refreshCustomerData(customerDetails._id);
+      if (refreshedCustomer) {
+        setCustomerDetails(refreshedCustomer);
+      }
+    }
+
+  } catch (error: any) {
+    console.error('💥 Error in handleSaveRenewLoan:', error);
+    
+    // Enhanced error messages
+    let errorMessage = 'Error: ' + error.message;
+    
+    if (error.message.includes('API endpoint not found')) {
+      errorMessage = `API Error: The renewal endpoint was not found.
+      
+Please ensure:
+1. The API route '/api/data-entry/renew-loan-request' exists
+2. The server is running properly
+3. Contact your administrator if this persists`;
+    } else if (error.message.includes('invalid JSON')) {
+      errorMessage = `Server Error: The server returned an invalid response.
+      
+This might be due to:
+• Server configuration issues
+• Network problems
+• Please try again later or contact support`;
+    }
+    
+    alert(errorMessage);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+  const handleDeleteLoan = async (loan: Loan) => {
+    if (!confirm(`Are you sure you want to request deletion of Loan ${loan.loanNumber}? This action requires admin approval.`)) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      console.log('🔄 Starting delete loan request...');
+      console.log('📦 Delete loan data:', loan);
+
+      const apiUrl = '/api/data-entry/delete-loan-request';
+      console.log('🌐 Calling API:', apiUrl);
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          loanId: loan._id,
+          customerId: loan.customerId,
+          customerName: loan.customerName,
+          customerNumber: loan.customerNumber,
+          loanNumber: loan.loanNumber,
+          requestedBy: 'data_entry_operator_1',
+          requestType: 'delete_loan'
+        }),
+      });
+
+      console.log('📡 Response status:', response.status);
+
+      const responseText = await response.text();
+      console.log('📄 Raw response:', responseText);
+
+      if (responseText.trim().startsWith('<!') || responseText.trim().startsWith('<html')) {
+        console.error('❌ Server returned HTML instead of JSON. Likely a 404 error.');
+        throw new Error('API endpoint not found. Please check the server.');
+      }
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('❌ Failed to parse response as JSON:', parseError);
+        throw new Error('Server returned invalid JSON. Response: ' + responseText.substring(0, 200));
+      }
+
+      console.log('✅ Parsed response data:', data);
+      
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+      }
+
+      alert('Loan deletion request submitted successfully! Waiting for admin approval.');
+      
+      if (activeTab === 'requests') fetchPendingRequests();
+    } catch (error: any) {
+      console.error('💥 Error in handleDeleteLoan:', error);
+      alert('Error: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAddNewLoan = async () => {
+  if (!customerDetails) return;
+
+  setIsLoading(true);
+  try {
+    // Use newLoanData for validation (since the modal uses this state)
+    const missingFields: string[] = [];
+    if (!newLoanData.loanDate) missingFields.push('loanDate');
+    if (!newLoanData.emiStartDate) missingFields.push('emiStartDate');
+    if (!newLoanData.loanAmount) missingFields.push('loanAmount');
+    if (!newLoanData.loanDays) missingFields.push('loanDays');
+    if (!newLoanData.loanType) missingFields.push('loanType');
+    if (!newLoanData.emiType) missingFields.push('emiType');
+
+    // EMI validation based on loan type and EMI type
+    if (newLoanData.loanType === 'Daily') {
+      if (!newLoanData.emiAmount) missingFields.push('emiAmount');
+    } else {
+      if (newLoanData.emiType === 'fixed') {
+        if (!newLoanData.emiAmount) missingFields.push('emiAmount');
+      } else if (newLoanData.emiType === 'custom') {
+        if (!newLoanData.emiAmount) missingFields.push('fixed EMI amount');
+        if (!newLoanData.customEmiAmount) missingFields.push('last EMI amount');
+      }
+    }
+
+    if (missingFields.length > 0) {
+      alert(`Please fill all loan details. Missing: ${missingFields.join(', ')}`);
+      setIsLoading(false);
+      return;
+    }
+
+    // Validate numbers are positive - using newLoanData
+    const invalidNumbers: string[] = [];
+    const loanAmountNum = parseFloat(newLoanData.loanAmount);
+    const emiAmountNum = parseFloat(newLoanData.emiAmount);
+    const loanDaysNum = parseFloat(newLoanData.loanDays);
+
+    if (isNaN(loanAmountNum) || loanAmountNum <= 0) invalidNumbers.push('loanAmount');
+    if (isNaN(emiAmountNum) || emiAmountNum <= 0) invalidNumbers.push('emiAmount');
+    if (isNaN(loanDaysNum) || loanDaysNum <= 0) invalidNumbers.push('loanDays');
+
+    if (invalidNumbers.length > 0) {
+      alert(`Please enter valid positive numbers for: ${invalidNumbers.join(', ')}`);
+      setIsLoading(false);
+      return;
+    }
+
+    // Validate custom EMI - using newLoanData
+    if (newLoanData.emiType === 'custom' && newLoanData.loanType !== 'Daily') {
+      if (!newLoanData.customEmiAmount || parseFloat(newLoanData.customEmiAmount) <= 0) {
+        alert('Custom EMI amount is required for custom EMI type with Weekly/Monthly loans');
+        setIsLoading(false);
+        return;
+      }
+    }
+
+    // Validate dates - using newLoanData
+    if (new Date(newLoanData.emiStartDate) < new Date(newLoanData.loanDate)) {
+      alert('EMI start date cannot be before loan date');
+      setIsLoading(false);
+      return;
+    }
+
+    console.log('🟡 Creating loan addition request for:', customerDetails.name);
+    console.log('📦 Loan data being submitted:', newLoanData);
+
+    console.log('🔍 FRONTEND DEBUG - Customer Details:', {
+      _id: customerDetails._id,
+      name: customerDetails.name,
+      customerNumber: customerDetails.customerNumber,
+      hasCustomerNumber: !!customerDetails.customerNumber
+    });
+
+    // Use the loans API endpoint to create a REQUEST, not a loan
+    const loanResponse = await fetch('/api/data-entry/loans', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        customerId: customerDetails._id,
+        customerName: customerDetails.name,
+        customerNumber: customerDetails.customerNumber,
+        loanAmount: Number(newLoanData.loanAmount),
+        emiAmount: Number(newLoanData.emiAmount),
+        loanType: newLoanData.loanType,
+        loanDays: Number(newLoanData.loanDays),
+        dateApplied: newLoanData.loanDate,
+        emiStartDate: newLoanData.emiStartDate,
+        emiType: newLoanData.emiType,
+        customEmiAmount: newLoanData.customEmiAmount ? Number(newLoanData.customEmiAmount) : null,
+        createdBy: 'data_entry_operator_1'
+      }),
+    });
+
+    console.log('📡 Loan response status:', loanResponse.status);
+
+    const responseText = await loanResponse.text();
+    console.log('📄 Raw response:', responseText);
+
+    let loanData;
+    try {
+      loanData = JSON.parse(responseText);
+    } catch (parseError: any) {
+      console.error('Failed to parse response as JSON:', parseError);
+      throw new Error('Server returned invalid JSON response');
+    }
+
+    if (!loanResponse.ok) {
+      throw new Error(loanData.error || `HTTP error! status: ${loanResponse.status}`);
+    }
+
+    if (!loanData.success) {
+      throw new Error(loanData.error || 'Failed to create loan addition request');
+    }
+
+    console.log('✅ Loan addition request created successfully:', loanData.data);
+
+    // SUCCESS: Show message and reset form
+    alert('Loan addition request submitted successfully! Waiting for admin approval.');
+
+    // Reset form and close modal
+    setShowAddLoanModal(false);
+    setNewLoanData({
+      loanAmount: '',
+      loanDate: new Date().toISOString().split('T')[0],
+      emiStartDate: new Date().toISOString().split('T')[0],
+      emiAmount: '',
+      loanType: 'Monthly',
+      loanDays: '30',
+      emiType: 'fixed',
+      customEmiAmount: ''
+    });
+
+    // Refresh requests to show the new pending request
+    if (activeTab === 'requests') {
+      fetchPendingRequests();
+    }
+
+    // Close customer details modal - the loan won't appear until approved
+    setShowCustomerDetails(false);
+    
+  } catch (error: any) {
+    console.error('❌ Error adding new loan request:', error);
+    alert('Error: ' + error.message);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+  const handleSaveEditCustomer = async () => {
+    setIsLoading(true);
+    try {
+      console.log('🔄 Starting edit customer request...');
+      console.log('📦 Edit data:', editCustomerData);
+
+      if (!editCustomerData.name || !editCustomerData.phone || !editCustomerData.area || !editCustomerData.customerNumber) {
+        alert('Please fill all required fields');
+        setIsLoading(false);
+        return;
+      }
+
+      const apiUrl = '/api/data-entry/edit-customer-request';
+      console.log('🌐 Calling API:', apiUrl);
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...editCustomerData,
+          whatsappNumber: editCustomerData.whatsappNumber || '',
+          loanAmount: Number(editCustomerData.loanAmount),
+          emiAmount: Number(editCustomerData.emiAmount),
+          requestedBy: 'data_entry_operator_1'
+        }),
+      });
+
+      console.log('📡 Response status:', response.status);
+
+      const responseText = await response.text();
+      console.log('📄 Raw response:', responseText);
+
+      if (responseText.trim().startsWith('<!') || responseText.trim().startsWith('<html')) {
+        console.error('❌ Server returned HTML instead of JSON. Likely a 404 error.');
+        throw new Error('API endpoint not found. Please check the server.');
+      }
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('❌ Failed to parse response as JSON:', parseError);
+        throw new Error('Server returned invalid JSON. Response: ' + responseText.substring(0, 200));
+      }
+
+      console.log('✅ Parsed response data:', data);
+      
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+      }
+
+      alert('Edit request submitted successfully! Waiting for admin approval.');
+      setShowEditCustomer(false);
+      setEditCustomerData({
+        name: '',
+        phone: [''],
+        whatsappNumber: '',
+        businessName: '',
+        area: '',
+        customerNumber: '',
+        loanAmount: '',
+        emiAmount: '',
+        loanType: 'Daily',
+        address: '',
+        customerId: '',
+        category: 'A',
+        officeCategory: 'Office 1'
+      });
+      
+      if (activeTab === 'requests') fetchPendingRequests();
+    } catch (error: any) {
+      console.error('💥 Error in handleSaveEditCustomer:', error);
+      alert('Error: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchCollectionData = async (date: string) => {
+  setIsLoadingCollection(true);
+  try {
+    console.log('🔄 Fetching collection data for date:', date);
+    
+    // First, try to fetch from our API
+    const response = await fetch(`/api/data-entry/collection?date=${date}`);
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log('📊 Collection API response:', data);
+      
+      if (data.success && data.data) {
+        setCollectionData(data.data);
+        return;
+      }
+    }
+    
+    // If API fails or returns no data, generate from existing customers and EMI history
+    console.log('📋 Generating collection data from existing customers and EMI history');
+    await generateCollectionDataFromEMIHistory(date);
+    
+  } catch (error) {
+    console.error('❌ Error fetching collection data:', error);
+    // Fallback to generating data from existing EMI history
+    await generateCollectionDataFromEMIHistory(date);
+  } finally {
+    setIsLoadingCollection(false);
+  }
+};
+
+const generateCollectionDataFromEMIHistory = async (date: string) => {
+  console.log('🔍 Generating collection data for:', date);
+  
+  const collectionCustomers = [];
+  let totalCollection = 0;
+  let office1Collection = 0;
+  let office2Collection = 0;
+
+  // Loop through all customers and their loans to find EMI payments for the date
+  for (const customer of customers) {
+    const customerLoans = getAllCustomerLoans(customer, null);
+    let customerTotalCollection = 0;
+    const loanDetails: { loanNumber: string; emiAmount: number; collectedAmount: number }[] = [];
+    
+    // Check each loan for EMI payments on the selected date
+    for (const loan of customerLoans) {
+      let loanCollectedAmount = 0;
+      
+      if (loan.emiHistory && Array.isArray(loan.emiHistory)) {
+        const datePayments = loan.emiHistory.filter(
+          payment => payment.paymentDate === date
+        );
+        
+        if (datePayments.length > 0) {
+          loanCollectedAmount = datePayments.reduce((sum, payment) => sum + payment.amount, 0);
+          customerTotalCollection += loanCollectedAmount;
+          
+          console.log(`💰 Payment found for ${customer.name}:`, {
+            loanNumber: loan.loanNumber,
+            paymentDate: date,
+            amount: loanCollectedAmount,
+            payments: datePayments
+          });
+        }
+      }
+      
+      // Include loan details
+      loanDetails.push({
+        loanNumber: loan.loanNumber || 'N/A',
+        emiAmount: loan.emiAmount || 0,
+        collectedAmount: loanCollectedAmount
+      });
+    }
+    
+    // Only include customers who made payments on this date
+    if (customerTotalCollection > 0) {
+      collectionCustomers.push({
+        customerId: customer._id,
+        customerNumber: customer.customerNumber || `CN${customer._id}`,
+        customerName: customer.name,
+        totalCollection: customerTotalCollection,
+        officeCategory: customer.officeCategory || 'Office 1',
+        loans: loanDetails.filter(loan => loan.collectedAmount > 0) // Only include loans with collections
+      });
+      
+      totalCollection += customerTotalCollection;
+      
+      if (customer.officeCategory === 'Office 1') {
+        office1Collection += customerTotalCollection;
+      } else if (customer.officeCategory === 'Office 2') {
+        office2Collection += customerTotalCollection;
+      }
+      
+      console.log(`✅ Added customer ${customer.name} to collection: ₹${customerTotalCollection}`);
+    }
+  }
+
+  console.log('📊 Final collection data:', {
+    date,
+    customers: collectionCustomers,
+    summary: {
+      totalCollection,
+      office1Collection,
+      office2Collection,
+      totalCustomers: collectionCustomers.length
+    }
+  });
+
+  setCollectionData({
+    date: date,
+    customers: collectionCustomers,
+    summary: {
+      totalCollection,
+      office1Collection,
+      office2Collection,
+      totalCustomers: collectionCustomers.length
+    }
+  });
+};
+
+const debugEMIPayments = () => {
+  console.log('🔍 DEBUG: Checking all EMI payments across all customers');
+  
+  let totalPayments = 0;
+  
+  customers.forEach(customer => {
+    const customerLoans = getAllCustomerLoans(customer, null);
+    let customerPayments = 0;
+    
+    customerLoans.forEach(loan => {
+      if (loan.emiHistory && loan.emiHistory.length > 0) {
+        console.log(`📊 Customer: ${customer.name}, Loan: ${loan.loanNumber}`);
+        console.log('EMI History:', loan.emiHistory);
+        customerPayments += loan.emiHistory.length;
+      }
+    });
+    
+    if (customerPayments > 0) {
+      console.log(`✅ ${customer.name} has ${customerPayments} EMI payments`);
+      totalPayments += customerPayments;
+    }
+  });
+  
+  console.log(`📈 Total EMI payments across all customers: ${totalPayments}`);
+  
+  // Also check for today's payments specifically
+  const today = new Date().toISOString().split('T')[0];
+  console.log(`📅 Checking payments for today (${today}):`);
+  
+  customers.forEach(customer => {
+    const customerLoans = getAllCustomerLoans(customer, null);
+    customerLoans.forEach(loan => {
+      if (loan.emiHistory) {
+        const todayPayments = loan.emiHistory.filter(p => p.paymentDate === today);
+        if (todayPayments.length > 0) {
+          console.log(`💰 TODAY: ${customer.name} - ${loan.loanNumber}:`, todayPayments);
+        }
+      }
+    });
+  });
+};
+
+  const handleAddCustomer = async () => {
+  if (!validateStep3()) return;
+
+  setIsLoading(true);
+  try {
+    console.log('🟡 Starting customer submission...');
+    
+    // Debug: Log phone data before sending
+    console.log('📱 PHONE DATA BEFORE SUBMISSION:', step1Data.phone);
+    console.log('🔍 FILTERED PHONES:', step1Data.phone.filter(phone => phone && phone.trim() !== ''));
+
+    const formData = new FormData();
+    
+    // Step 1: Customer Basic Details
+    formData.append('name', step1Data.name.trim());
+    
+    // FIX: Properly add phone numbers to FormData
+    const validPhones = step1Data.phone.filter(phone => phone && phone.trim() !== '');
+    console.log('✅ VALID PHONES TO SEND:', validPhones);
+    
+    if (validPhones.length === 0) {
+      alert('Please provide at least one phone number');
+      setIsLoading(false);
+      return;
+    }
+    
+    // Add each phone number individually
+    validPhones.forEach((phone, index) => {
+      formData.append('phone[]', phone.trim());
+      console.log(`📞 Added phone[${index}]:`, phone.trim());
+    });
+    
+    // Add other fields...
+    formData.append('whatsappNumber', step1Data.whatsappNumber ? step1Data.whatsappNumber.trim() : '');
+    formData.append('businessName', step1Data.businessName.trim());
+    formData.append('area', step1Data.area.trim());
+    
+    // Ensure customer number has CN prefix
+    const customerNumber = step1Data.customerNumber.startsWith('CN') 
+      ? step1Data.customerNumber 
+      : `CN${step1Data.customerNumber}`;
+    formData.append('customerNumber', customerNumber.trim());
+    
+    formData.append('address', step1Data.address.trim());
+    formData.append('category', step1Data.category);
+    formData.append('officeCategory', step1Data.officeCategory);
+    
+    // Step 2: Loan Details
+    formData.append('loanDate', step2Data.loanDate);
+    formData.append('emiStartDate', step2Data.emiStartDate);
+    formData.append('loanAmount', step2Data.loanAmount.toString());
+    formData.append('emiAmount', step2Data.emiAmount.toString());
+    formData.append('loanDays', step2Data.loanDays.toString());
+    formData.append('loanType', step2Data.loanType);
+    formData.append('emiType', step2Data.emiType);
+    
+    if (step2Data.customEmiAmount) {
+      formData.append('customEmiAmount', step2Data.customEmiAmount.toString());
+    }
+    
+    // Step 3: Login Credentials
+    formData.append('loginId', step3Data.loginId.trim());
+    formData.append('password', step3Data.password);
+    formData.append('confirmPassword', step3Data.confirmPassword);
+    formData.append('createdBy', 'data_entry_operator_1');
+
+    // File Uploads
+    if (step1Data.profilePicture) {
+      formData.append('profilePicture', step1Data.profilePicture);
+    }
+    if (step1Data.fiDocuments?.shop) {
+      formData.append('fiDocumentShop', step1Data.fiDocuments.shop);
+    }
+    if (step1Data.fiDocuments?.home) {
+      formData.append('fiDocumentHome', step1Data.fiDocuments.home);
+    }
+
+    // DEBUG: Log all form data being sent
+    console.log('📤 FormData contents being sent:');
+    for (const [key, value] of formData.entries()) {
+      if (key.includes('password')) {
+        console.log(`  ${key}: *** (hidden)`);
+      } else if (value instanceof File) {
+        console.log(`  ${key}: File - ${value.name}`);
+      } else {
+        console.log(`  ${key}:`, value);
+      }
+    }
+
+    console.log('🟡 Sending customer data to API...');
+    const response = await fetch('/api/data-entry/customers', {
+      method: 'POST',
+      body: formData,
+    });
+
+    const responseText = await response.text();
+    console.log('📄 Raw API response:', responseText);
+
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('❌ Failed to parse response as JSON:', parseError);
+      throw new Error('Server returned invalid response');
+    }
+
+    if (!response.ok) {
+      console.error('❌ API error response:', data);
+      
+      // Enhanced error handling to show specific missing fields
+      if (data.missingFields) {
+        throw new Error(`Missing required fields: ${data.missingFields.join(', ')}`);
+      } else if (data.error) {
+        throw new Error(data.error);
+      } else {
+        throw new Error(`Failed to submit customer request: ${response.status} ${response.statusText}`);
+      }
+    }
+
+    console.log('✅ API response success:', data);
+
+    alert(data.message || 'Customer request submitted successfully! Waiting for admin approval.');
+    setShowAddCustomer(false);
+    resetCustomerForm();
+    
+    fetchDashboardData();
+    if (activeTab === 'requests') fetchPendingRequests();
+    
+  } catch (error: any) {
+    console.error('❌ Error submitting customer:', error);
+    alert('Error: ' + (error.message || 'Unknown error occurred'));
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+    const handleUpdateEMI = async () => {
+  if (!selectedCustomer || !selectedLoanForPayment) {
+    alert('Please select a customer and loan first');
+    return;
+  }
+
+  setIsLoading(true);
+  try {
+    console.log('🟡 Starting EMI update for customer:', selectedCustomer.name);
+    console.log('📦 Selected loan for payment:', selectedLoanForPayment);
+    console.log('📋 EMI update data:', emiUpdate);
+    
+    // Validation for single payment
+    if (emiUpdate.paymentType === 'single' && (!emiUpdate.amount || !emiUpdate.paymentDate)) {
+      alert('Please fill all required fields for single payment');
+      setIsLoading(false);
+      return;
+    }
+
+    // Validation for advance payment
+    if (emiUpdate.paymentType === 'advance' && (!emiUpdate.amount || !emiUpdate.advanceFromDate || !emiUpdate.advanceToDate)) {
+      alert('Please fill all required fields for advance payment');
+      setIsLoading(false);
+      return;
+    }
+
+    // Enhanced frontend duplicate check before API call
+    const checkExistingPayments = async () => {
+      if (emiUpdate.paymentType === 'single') {
+        // Check if payment already exists for this date
+        if (selectedLoanForPayment?.emiHistory) {
+          const existingPayment = selectedLoanForPayment.emiHistory.find(
+            (payment: EMIHistory) => {
+              const paymentDateStr = new Date(payment.paymentDate).toISOString().split('T')[0];
+              const emiDateStr = new Date(emiUpdate.paymentDate).toISOString().split('T')[0];
+              return paymentDateStr === emiDateStr;
+            }
+          );
+          
+          if (existingPayment) {
+            alert(`EMI payment for ${emiUpdate.paymentDate} already exists. Please use a different date or edit the existing payment.`);
+            return true;
+          }
+        }
+      } else if (emiUpdate.paymentType === 'advance') {
+        // Check advance period against existing payments
+        if (selectedLoanForPayment?.emiHistory && emiUpdate.advanceFromDate && emiUpdate.advanceToDate) {
+          const fromDate = new Date(emiUpdate.advanceFromDate);
+          const toDate = new Date(emiUpdate.advanceToDate);
+          
+          const conflictingPayments = selectedLoanForPayment.emiHistory.filter(
+            (payment: EMIHistory) => {
+              const paymentDate = new Date(payment.paymentDate);
+              return paymentDate >= fromDate && paymentDate <= toDate;
+            }
+          );
+          
+          if (conflictingPayments.length > 0) {
+            const conflictingDates = conflictingPayments.map(p => 
+              new Date(p.paymentDate).toISOString().split('T')[0]
+            );
+            
+            alert(`Advance payment period conflicts with existing payments on: ${conflictingDates.join(', ')}`);
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    // Run the duplicate check
+    const hasDuplicate = await checkExistingPayments();
+    if (hasDuplicate) {
+      setIsLoading(false);
+      return;
+    }
+
+    // For advance payments, set status to 'Advance'
+    const finalStatus = emiUpdate.paymentType === 'advance' ? 'Advance' : emiUpdate.status;
+    const finalAmount = emiUpdate.paymentType === 'advance' 
+  ? emiUpdate.advanceTotalAmount || calculateTotalAmount(emiUpdate.amount, emiUpdate.advanceEmiCount || '1')
+  : emiUpdate.amount;
+    // Validate that we're not duplicating payment for the same date (for single payments)
+    if (emiUpdate.paymentType === 'single') {
+      const paymentDate = new Date(emiUpdate.paymentDate).toISOString().split('T')[0];
+      const existingPayment = selectedLoanForPayment.emiHistory?.find(
+        (payment: EMIHistory) => payment.paymentDate === paymentDate
+      );
+
+      if (existingPayment) {
+        alert(`EMI payment for ${paymentDate} already exists. Please use a different date or edit the existing payment.`);
+        setIsLoading(false);
+        return;
+      }
+    }
+
+    // FIX: Clean the customerId and loanId to remove any suffixes like "_default"
+    const cleanCustomerId = selectedCustomer._id?.replace?.(/_default$/, '') || selectedCustomer._id;
+    
+    // For loanId, we need to be more careful - it might be a temporary ID
+    const cleanLoanId = selectedLoanForPayment._id?.replace?.(/_default$/, '') || selectedLoanForPayment._id;
+    
+    console.log('🔧 Cleaned IDs:', {
+      originalCustomerId: selectedCustomer._id,
+      cleanCustomerId,
+      originalLoanId: selectedLoanForPayment._id,
+      cleanLoanId,
+      customerNumber: selectedCustomer.customerNumber,
+      loanNumber: selectedLoanForPayment.loanNumber
+    });
+
+    // Enhanced EMI payment data with fallback options
+    const emiPaymentData: any = {
+      customerId: cleanCustomerId,
+      customerName: selectedCustomer.name,
+      customerNumber: selectedCustomer.customerNumber,
+      paymentDate: emiUpdate.paymentType === 'single' ? emiUpdate.paymentDate : emiUpdate.advanceFromDate,
+      amount: Number(finalAmount),
+      status: finalStatus,
+      collectedBy: emiUpdate.collectedBy,
+      paymentMethod: 'Cash',
+      paymentType: emiUpdate.paymentType,
+      notes: emiUpdate.notes || `EMI payment recorded for ${selectedCustomer.name} - Customer ${selectedCustomer.customerNumber}`
+    };
+
+    // Add advance payment details if applicable
+    if (emiUpdate.paymentType === 'advance') {
+      emiPaymentData.advanceFromDate = emiUpdate.advanceFromDate;
+      emiPaymentData.advanceToDate = emiUpdate.advanceToDate;
+      emiPaymentData.advanceEmiCount = parseInt(emiUpdate.advanceEmiCount || '1');
+      emiPaymentData.advanceTotalAmount = Number(finalAmount);
+      emiPaymentData.notes = `Advance EMI payment for ${emiUpdate.advanceEmiCount || '1'} periods (${emiUpdate.advanceFromDate} to ${emiUpdate.advanceToDate})${emiUpdate.notes ? ` - ${emiUpdate.notes}` : ''}`;
+    }
+
+    // Only include loanId if it's a valid MongoDB-like ID
+    // If the loanId looks like a temporary ID, let the backend auto-find the loan
+    if (cleanLoanId && cleanLoanId.length === 24 && /^[0-9a-fA-F]{24}$/.test(cleanLoanId)) {
+      emiPaymentData.loanId = cleanLoanId;
+      emiPaymentData.loanNumber = selectedLoanForPayment.loanNumber;
+      console.log('✅ Using valid loan ID:', cleanLoanId);
+    } else {
+      console.log('⚠️ Loan ID appears to be temporary, letting backend auto-find loan');
+      // Don't include loanId - backend will auto-find the customer's loan
+      emiPaymentData.loanNumber = selectedLoanForPayment.loanNumber;
+    }
+
+    console.log('📦 Sending EMI payment data:', emiPaymentData);
+
+    const response = await fetch('/api/data-entry/emi-payments', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(emiPaymentData),
+    });
+
+    const responseText = await response.text();
+    console.log('📄 Raw API response:', responseText);
+
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('❌ Failed to parse response as JSON:', parseError);
+      throw new Error('Server returned invalid response');
+    }
+
+    if (!response.ok) {
+      console.error('❌ API error response:', data);
+      
+      if (response.status === 409) {
+        throw new Error('EMI payment for this date already exists');
+      } else if (response.status === 404) {
+        // Enhanced loan not found error handling
+        if (data.error?.includes('Loan not found') || data.error?.includes('No loan found')) {
+          throw new Error(`Loan not found for customer. Please ensure the customer has an approved loan in the system. ${data.error}`);
+        }
+        throw new Error(data.error || 'Loan not found. Please refresh and try again.');
+      } else if (response.status === 400) {
+        throw new Error(data.error || 'Invalid loan data provided');
+      } else {
+        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+      }
+    }
+
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to update EMI');
+    }
+
+    const successMessage = emiUpdate.paymentType === 'advance' 
+      ? `Advance EMI payment of ₹${finalAmount} recorded successfully for ${emiUpdate.advanceEmiCount} periods!`
+      : `EMI payment of ₹${finalAmount} recorded successfully!`;
+
+    alert(successMessage);
+    
+    // Refresh customer data to reflect changes
+    if (selectedCustomer._id) {
+      await refreshCustomerData(selectedCustomer._id);
+      await fetchCustomers(); // Refresh the customers list
+    }
+    
+    setShowPaymentForm(false);
+    setSelectedLoanForPayment(null);
+    setShowUpdateEMI(false);
+    setSelectedCustomer(null);
+    setSearchQuery('');
+    setFilters({
+      customerNumber: '',
+      loanType: '',
+      status: '',
+      officeCategory: ''
+    });
+    setShowFilters(false);
+    setEmiUpdate({
+      customerId: '',
+      customerName: '',
+      paymentDate: new Date().toISOString().split('T')[0],
+      amount: '',
+      status: 'Paid',
+      collectedBy: 'Operator 1',
+      paymentType: 'single'
+    });
+    
+    fetchDashboardData();
+    
+    } catch (error: any) {
+    console.error('💥 Error updating EMI:', error);
+    
+    // Enhanced error messages for duplicate payments
+    if (error.message.includes('already exists') || error.message.includes('conflicts with existing payments')) {
+      alert(`❌ Payment Conflict: ${error.message}\n\nPlease choose a different date or edit the existing payment.`);
+    } else if (error.message.includes('Loan not found')) {
+      alert(`❌ Loan Issue: ${error.message}\n\nPlease ensure:\n• The customer has an approved loan\n• The loan exists in the system\n• Contact admin if this persists`);
+    } else {
+      alert('Error: ' + error.message);
+    }
+  }
+  finally {
+    setIsLoading(false);
+  }
+};
+
+const handleEditEMIPayment = async (payment: EMIHistory, newAmount: number, newDate?: string) => {
+  if (!payment._id) {
+    alert('Cannot edit payment: Payment ID not found');
+    return;
+  }
+
+  if (!confirm(`Are you sure you want to edit this EMI payment from ₹${payment.amount} to ₹${newAmount}?`)) {
+    return;
+  }
+
+  setIsLoading(true);
+  try {
+    const response = await fetch(`/api/data-entry/emi-payments?id=${payment._id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        amount: newAmount,
+        paymentDate: newDate || payment.paymentDate,
+        status: payment.status, // Include status in the update
+        notes: `Payment edited from ₹${payment.amount} to ₹${newAmount}${payment.notes ? ` - Original notes: ${payment.notes}` : ''}`
+      }),
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to update payment');
+    }
+
+    alert('EMI payment updated successfully!');
+    
+    // Refresh the calendar data
+    if (calendarData) {
+      const updatedResponse = await fetch(`/api/data-entry/customers/${calendarData.customerId}`);
+      if (updatedResponse.ok) {
+        const updatedData = await updatedResponse.json();
+        if (updatedData.success) {
+          const customerDetails = updatedData.data;
+          const displayLoans = getAllCustomerLoans(customerDetails, customerDetails);
+          
+          setCalendarData({
+            ...calendarData,
+            loans: displayLoans,
+            paymentHistory: displayLoans.flatMap(loan => loan.emiHistory || [])
+          });
+        }
+      }
+    }
+    
+    setShowDatePaymentHistory(false);
+    
+  } catch (error: any) {
+    console.error('Error editing EMI payment:', error);
+    alert('Error: ' + error.message);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+const testPaymentAPI = async () => {
+  // First, let's check if we can get the payment
+  const testPaymentId = editingPayment?._id;
+  if (!testPaymentId) {
+    console.log('❌ No payment ID available');
+    return;
+  }
+
+  console.log('🧪 Testing API with payment ID:', testPaymentId);
+  
+  try {
+    // Test GET request first
+    const getResponse = await fetch(`/api/data-entry/emi-payments?customerId=${calendarData?.customerId}`);
+    const getData = await getResponse.json();
+    console.log('📊 Available payments:', getData);
+    
+    // Check if our payment exists
+    const paymentExists = getData.data?.payments?.find((p: any) => p._id === testPaymentId);
+    console.log('🔍 Payment exists in GET response:', paymentExists);
+    
+  } catch (error) {
+    console.error('❌ API test failed:', error);
+  }
+};
+
+const handleEditPayment = (payment: EMIHistory, date: Date) => {
+  console.log('🟡 handleEditPayment called with:', {
+    paymentId: payment._id,
+    paymentDate: payment.paymentDate,
+    amount: payment.amount,
+    date: date
+  });
+  
+  setSelectedCalendarDate(date);
+  setEditingPayment(payment);
+  setEditAmount(payment.amount.toString());
+  setEditStatus(payment.status);
+  setEditDate(payment.paymentDate); // Make sure editDate is set
+  setShowEditPaymentModal(true);
+};
+
+const handleDeletePayment = async (payment: EMIHistory, date: Date) => {
+  setSelectedCalendarDate(date);
+  setDeletingPayment(payment);
+  setShowDeleteConfirmationModal(true);
+};
+
+const refreshCustomerData = async (customerId: string) => {
+  try {
+    console.log('🔄 Refreshing customer data for:', customerId);
+    
+    const response = await fetch(`/api/data-entry/customers/${customerId}`);
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success) {
+        console.log('✅ Customer data refreshed successfully');
+        
+        // Update customer details if the modal is open
+        if (showCustomerDetails && customerDetails && customerDetails._id === customerId) {
+          setCustomerDetails(data.data);
+        }
+        
+        // Update selected customer if it's the same customer
+        if (selectedCustomer && selectedCustomer._id === customerId) {
+          setSelectedCustomer(data.data);
+        }
+        
+        return data.data;
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error refreshing customer data:', error);
+  }
+  return null;
+};
+
+  const handleSearchCustomer = (customer: Customer) => {
+  console.log('🔍 Customer selected for EMI:', customer);
+  
+  // FIX: Clean the customer ID
+  const cleanCustomerId = customer._id?.replace?.(/_default$/, '') || customer._id;
+  
+  setSelectedCustomer(customer);
+  setEmiUpdate(prev => ({
+    ...prev,
+    customerId: cleanCustomerId || '',
+    customerName: customer.name,
+    customerNumber: customer.customerNumber,
+    paymentDate: new Date().toISOString().split('T')[0]
+  }));
+  
+  setSearchQuery('');
+};
+
+  const handlePayNow = (loan: Loan) => {
+  console.log('💰 Pay Now clicked for loan:', loan);
+  console.log('📋 Loan details:', {
+    id: loan._id,
+    loanNumber: loan.loanNumber,
+    customerId: loan.customerId,
+    customerNumber: loan.customerNumber,
+    amount: loan.amount,
+    emiAmount: loan.emiAmount,
+    isFallback: loan.isFallback
+  });
+  
+  if (!loan._id) {
+    console.error('❌ No loan ID found for loan:', loan);
+    alert('Error: Loan ID not found. Please refresh and try again.');
+    return;
+  }
+
+  if (!selectedCustomer?._id) {
+    console.error('❌ No customer selected');
+    alert('Error: No customer selected. Please select a customer first.');
+    return;
+  }
+
+  // Check if this is a fallback loan (may not exist in database)
+  if ((loan as any).isFallback) {
+    const confirmProceed = confirm(
+      '⚠️ This loan appears to be a system-generated fallback loan and may not exist in the database.\n\n' +
+      'The system will attempt to find the customer\'s actual loan, but if no loan is found, the payment may fail.\n\n' +
+      'Do you want to proceed?'
+    );
+    
+    if (!confirmProceed) {
+      return;
+    }
+  }
+
+  // FIX: Clean the IDs before using them
+  const cleanCustomerId = selectedCustomer._id?.replace?.(/_default$/, '') || selectedCustomer._id;
+  const cleanLoanId = loan._id?.replace?.(/_default$/, '') || loan._id;
+
+  setSelectedLoanForPayment(loan);
+  setEmiUpdate(prev => ({
+    ...prev,
+    customerId: cleanCustomerId || '',
+    customerName: selectedCustomer.name || '',
+    customerNumber: selectedCustomer.customerNumber || '',
+    loanId: cleanLoanId,
+    loanNumber: loan.loanNumber || '',
+    amount: loan.emiAmount ? loan.emiAmount.toString() : '',
+    paymentDate: new Date().toISOString().split('T')[0]
+  }));
+  setShowPaymentForm(true);
+};
+
+  const handleLogout = () => {
+    router.push('/auth');
+  };
+
+    const renderEMICalendar = () => {
+  if (!calendarData) return null;
+
+  const calendarDays = generateCalendar(
+    currentMonth, 
+    calendarData.loans, 
+    calendarData.paymentHistory,
+    calendarFilter.loanFilter
+  );
+  
+  const filteredDays = calendarDays.filter(day => {
+    if (calendarFilter.emiStatus === 'all') return true;
+    
+    if (calendarFilter.emiStatus === 'paid') {
+      return day.emiStatus === 'paid' || (day.paymentHistory && day.paymentHistory.length > 0);
+    }
+    
+    return day.emiStatus === calendarFilter.emiStatus;
+  });
+
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <button 
-            onClick={onBack}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <span className="text-gray-600">← Back</span>
-          </button>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Collection Report</h1>
-            <p className="text-gray-600">View EMI collections by date across all offices</p>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h3 className="text-xl font-bold">EMI Calendar - {calendarData.customerName}</h3>
+              <p className="text-gray-600">Payment history and due dates</p>
+            </div>
+            <button 
+              onClick={() => setShowEMICalendar(false)}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="flex justify-between items-center mb-4">
+            <div className="flex space-x-2">
+              <button
+                onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
+                className="p-2 border rounded-md hover:bg-gray-50"
+              >
+                ← Previous
+              </button>
+              <h4 className="text-lg font-semibold px-4">
+                {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+              </h4>
+              <button
+                onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}
+                className="p-2 border rounded-md hover:bg-gray-50"
+              >
+                Next →
+              </button>
+            </div>
+
+            <select
+              value={calendarFilter.loanFilter}
+              onChange={(e) => setCalendarFilter(prev => ({
+                ...prev,
+                loanFilter: e.target.value
+              }))}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+            >
+              <option value="all">All Loans</option>
+              {calendarData.loans.map((loan) => (
+                <option key={loan._id} value={loan._id}>
+                  {loan.loanNumber} - {loan.customerNumber}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <label className="text-sm font-medium text-gray-700">EMI Status:</label>
+            <select
+              value={calendarFilter.emiStatus}
+              onChange={(e) => setCalendarFilter(prev => ({
+                ...prev,
+                emiStatus: e.target.value as 'all' | 'paid' | 'due' | 'overdue' | 'partial' | 'upcoming'
+              }))}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+            >
+              <option value="all">All EMI</option>
+              <option value="paid">Paid Only</option>
+              <option value="due">Due</option>
+              <option value="overdue">Overdue</option>
+              <option value="partial">Partial</option>
+              <option value="upcoming">Upcoming</option>
+            </select>
+          </div>
+
+          <div className="flex flex-wrap gap-4 mb-4 p-3 bg-gray-50 rounded-md">
+            <div className="flex items-center">
+              <div className="w-4 h-4 bg-green-100 border border-green-300 rounded mr-2"></div>
+              <span className="text-sm">Paid</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-4 h-4 bg-blue-100 border border-blue-300 rounded mr-2"></div>
+              <span className="text-sm">Due</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-4 h-4 bg-red-100 border border-red-300 rounded mr-2"></div>
+              <span className="text-sm">Overdue</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-4 h-4 bg-yellow-100 border border-yellow-300 rounded mr-2"></div>
+              <span className="text-sm">Partial</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-4 h-4 bg-purple-100 border border-purple-300 rounded mr-2"></div>
+              <span className="text-sm">Upcoming</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-7 gap-1 mb-2">
+            {dayNames.map(day => (
+              <div key={day} className="text-center font-medium text-gray-600 py-2">
+                {day}
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-1">
+            {filteredDays.map((day, index) => (
+              <div
+                key={index}
+                onClick={() => handleCalendarDateClick(day)}
+                className={`min-h-28 p-2 border rounded-md cursor-pointer transition-all hover:shadow-md ${
+                  getStatusColor(day.emiStatus)
+                } ${!day.isCurrentMonth ? 'opacity-40' : ''} ${
+                  day.isToday ? 'ring-2 ring-blue-500' : ''
+                }`}
+              >
+                <div className="flex justify-between items-start">
+                  <span className={`text-sm font-medium ${
+                    day.isToday ? 'text-blue-600' : ''
+                  }`}>
+                    {day.date.getDate()}
+                  </span>
+                  {day.emiStatus && day.emiStatus !== 'none' && (
+                    <span className="text-xs">{getStatusIcon(day.emiStatus)}</span>
+                  )}
+                </div>
+                
+                {(day.emiAmount && day.emiAmount > 0) && (
+                  <div className="mt-1">
+                    <div className={`text-xs font-semibold ${
+                      day.emiStatus === 'paid' ? 'text-green-700' : 'text-gray-700'
+                    }`}>
+                      ₹{day.emiAmount}
+                    </div>
+                    {day.loanNumbers && day.loanNumbers.length > 0 && (
+                      <div className="text-xs text-gray-600 mt-1">
+                        {day.loanNumbers.slice(0, 2).join(', ')}
+                        {day.loanNumbers.length > 2 && ` +${day.loanNumbers.length - 2}`}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {day.paymentHistory && day.paymentHistory.length > 0 && (
+                  <div className="mt-1">
+                    <div className="text-xs text-green-600 font-semibold">
+                      ✅ {day.paymentHistory.length} payment(s)
+                    </div>
+                    
+                    {/* Edit/Delete buttons for paid dates - HOVER VERSION */}
+                    {day.emiStatus === 'paid' && day.paymentHistory.length > 0 && (
+                      <div className="mt-2 opacity-0 hover:opacity-100 transition-opacity duration-200">
+                        <div className="flex flex-col gap-1">
+                          {/* REMOVED "Manage Payments" button - keeping only Edit/Delete */}
+                          {day.paymentHistory.slice(0, 2).map((payment, paymentIndex) => (
+                            <div key={payment._id || paymentIndex} className="flex gap-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditPayment(payment, day.date);
+                                }}
+                                className="flex-1 bg-blue-500 text-white text-xs px-1 py-0.5 rounded hover:bg-blue-600 transition-colors"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeletePayment(payment, day.date);
+                                }}
+                                className="flex-1 bg-red-500 text-white text-xs px-1 py-0.5 rounded hover:bg-red-600 transition-colors"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          ))}
+                          
+                          {/* Show "More" if there are more than 2 payments */}
+                          {day.paymentHistory.length > 2 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedCalendarDate(day.date);
+                                setShowDatePaymentHistory(true);
+                              }}
+                              className="text-xs text-blue-600 hover:text-blue-800 underline"
+                            >
+                              +{day.paymentHistory.length - 2} more
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+            <h5 className="font-semibold mb-3">Payment Behavior Summary</h5>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              {calendarData.loans.map((loan) => {
+                const behavior = calculatePaymentBehavior(loan);
+                const completion = calculateEMICompletion(loan);
+                
+                return (
+                  <div key={loan._id} className="bg-white p-3 rounded border">
+                    <div className="font-medium">{loan.loanNumber}</div>
+                    <div className="text-xs text-gray-600">
+                      Score: {behavior.punctualityScore.toFixed(0)}%
+                    </div>
+                    <div className={`text-xs font-semibold ${
+                      behavior.behaviorRating === 'EXCELLENT' ? 'text-green-600' :
+                      behavior.behaviorRating === 'GOOD' ? 'text-blue-600' :
+                      behavior.behaviorRating === 'AVERAGE' ? 'text-yellow-600' : 'text-red-600'
+                    }`}>
+                      {behavior.behaviorRating}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {completion.completionPercentage.toFixed(1)}% Complete
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
+    </div>
+  );
+};
 
-      {/* Collection Section */}
+  const renderDatePaymentHistory = () => {
+  if (!selectedCalendarDate || !calendarData) return null;
+
+  const dateStr = selectedCalendarDate.toISOString().split('T')[0];
+  const payments = calendarData.paymentHistory.filter(p => {
+    const paymentDate = new Date(p.paymentDate).toISOString().split('T')[0];
+    return paymentDate === dateStr;
+  });
+
+  const startEdit = (payment: EMIHistory) => {
+    setEditingPayment(payment);
+    setEditAmount(payment.amount.toString());
+    setEditStatus(payment.status);
+    setShowEditPaymentModal(true);
+  };
+
+  const handleDeleteEMI = async (payment: EMIHistory) => {
+    setDeletingPayment(payment);
+    setShowDeleteConfirmationModal(true);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-bold">
+              Payment History - {selectedCalendarDate.toLocaleDateString()}
+            </h3>
+            <button 
+              onClick={() => setShowDatePaymentHistory(false)}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              ✕
+            </button>
+          </div>
+
+          {payments.length > 0 ? (
+            <div className="space-y-4">
+              {payments.map((payment, index) => {
+                const associatedLoan = calendarData.loans.find(loan => 
+                  loan._id === payment.loanId || loan.loanNumber === payment.loanNumber
+                );
+                
+                return (
+                  <div key={payment._id || index} className="border rounded-lg p-4 bg-white">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="font-medium text-lg">₹{payment.amount}</div>
+                        <div className="text-sm text-gray-600">
+                          Status: <span className={
+                            payment.status === 'Paid' ? 'text-green-600' : 
+                            payment.status === 'Partial' ? 'text-yellow-600' : 
+                            payment.status === 'Advance' ? 'text-blue-600' : 'text-red-600'
+                          }>
+                            {payment.status}
+                          </span>
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          Collected by: {payment.collectedBy}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          Date: {new Date(payment.paymentDate).toLocaleDateString()}
+                        </div>
+                        {payment.loanNumber && (
+                          <div className="text-sm text-gray-600">
+                            Loan: {payment.loanNumber} ({associatedLoan?.loanType || 'N/A'})
+                          </div>
+                        )}
+                        {payment.notes && (
+                          <div className="text-sm text-gray-600 mt-1">
+                            Notes: {payment.notes}
+                          </div>
+                        )}
+                        {payment.paymentType === 'advance' && (
+                          <div className="text-sm text-blue-600 mt-1">
+                            Advance Payment ({payment.advanceEmiCount} EMI)
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => startEdit(payment)}
+                          className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteEMI(payment)}
+                          className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
+                          disabled={isLoading}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              No payments recorded for this date
+            </div>
+          )}
+
+          <div className="flex justify-end mt-6">
+            <button
+              onClick={() => setShowDatePaymentHistory(false)}
+              className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const renderEditPaymentModal = () => {
+  if (!editingPayment || !selectedCalendarDate) return null;
+
+  console.log('🔍 Editing payment details:', {
+    paymentId: editingPayment._id,
+    paymentDate: editingPayment.paymentDate,
+    amount: editingPayment.amount,
+    status: editingPayment.status,
+    loanNumber: editingPayment.loanNumber
+  });
+
+  // Find the loan associated with this payment
+  const associatedLoan = calendarData?.loans.find(loan => 
+    loan._id === editingPayment.loanId || loan.loanNumber === editingPayment.loanNumber
+  );
+
+  const handleSaveEdit = async () => {
+    if (!editAmount || parseFloat(editAmount) <= 0) {
+      alert('Please enter a valid amount');
+      return;
+    }
+
+    if (!editDate) {
+      alert('Please select a valid payment date');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      console.log('🟡 Attempting to update payment:', editingPayment._id);
+
+      // First, let's check if the payment exists by trying to fetch it
+      const checkResponse = await fetch(`/api/data-entry/emi-payments?customerId=${calendarData?.customerId}`);
+      const checkData = await checkResponse.json();
+      
+      if (checkData.success) {
+        const paymentExists = checkData.data.payments.find((p: any) => p._id === editingPayment._id);
+        console.log('🔍 Payment exists check:', paymentExists);
+        
+        if (!paymentExists) {
+          throw new Error(`Payment ${editingPayment._id} not found in database. It may have been deleted.`);
+        }
+      }
+
+      // If payment exists, proceed with update
+      const response = await fetch(`/api/data-entry/emi-payments?id=${editingPayment._id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: parseFloat(editAmount),
+          paymentDate: editDate,
+          status: editStatus,
+          notes: `Payment edited: Amount ₹${editingPayment.amount} → ₹${editAmount}, Status ${editingPayment.status} → ${editStatus}`
+        }),
+      });
+
+      const responseText = await response.text();
+      console.log('📄 Raw API response:', responseText);
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('❌ Failed to parse response as JSON:', parseError);
+        throw new Error('Server returned invalid response');
+      }
+
+      console.log('✅ Parsed response data:', data);
+      
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+      }
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to update payment');
+      }
+
+      alert('EMI payment updated successfully!');
+      
+      // Refresh the calendar data
+      if (calendarData) {
+        console.log('🔄 Refreshing calendar data...');
+        const updatedResponse = await fetch(`/api/data-entry/customers/${calendarData.customerId}`);
+        if (updatedResponse.ok) {
+          const updatedData = await updatedResponse.json();
+          if (updatedData.success) {
+            const customerDetails = updatedData.data;
+            const displayLoans = getAllCustomerLoans(customerDetails, customerDetails);
+            
+            setCalendarData({
+              ...calendarData,
+              loans: displayLoans,
+              paymentHistory: displayLoans.flatMap(loan => loan.emiHistory || [])
+            });
+            console.log('✅ Calendar data refreshed successfully');
+          }
+        }
+      }
+      
+      setShowEditPaymentModal(false);
+      setEditingPayment(null);
+      
+    } catch (error: any) {
+      console.error('💥 Error editing EMI payment:', error);
+      
+      if (error.message.includes('not found in database')) {
+        // Payment doesn't exist in database - offer to create a new one
+        const shouldCreateNew = confirm(
+          `This payment record doesn't exist in the database. It may have been deleted.\n\n` +
+          `Would you like to create a new payment record with these details?\n\n` +
+          `Amount: ₹${editAmount}\n` +
+          `Date: ${new Date(editDate).toLocaleDateString()}\n` +
+          `Status: ${editStatus}`
+        );
+        
+        if (shouldCreateNew) {
+          await createNewPaymentFromEdit();
+        }
+      } else {
+        alert('Error: ' + error.message);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Function to create a new payment when the original is missing
+  const createNewPaymentFromEdit = async () => {
+    try {
+      console.log('🟡 Creating new payment to replace missing one...');
+      
+      const newPaymentData = {
+        customerId: calendarData?.customerId,
+        customerName: calendarData?.customerName,
+        loanId: editingPayment.loanId,
+        loanNumber: editingPayment.loanNumber || associatedLoan?.loanNumber,
+        paymentDate: editDate,
+        amount: parseFloat(editAmount),
+        status: editStatus,
+        collectedBy: editingPayment.collectedBy || 'Operator 1',
+        notes: `Payment recreated: ${editingPayment.notes || 'Original payment was missing from database'}`
+      };
+
+      const response = await fetch('/api/data-entry/emi-payments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(newPaymentData),
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create new payment');
+      }
+
+      alert('New payment record created successfully!');
+      
+      // Refresh calendar data
+      if (calendarData) {
+        const updatedResponse = await fetch(`/api/data-entry/customers/${calendarData.customerId}`);
+        if (updatedResponse.ok) {
+          const updatedData = await updatedResponse.json();
+          if (updatedData.success) {
+            const customerDetails = updatedData.data;
+            const displayLoans = getAllCustomerLoans(customerDetails, customerDetails);
+            
+            setCalendarData({
+              ...calendarData,
+              loans: displayLoans,
+              paymentHistory: displayLoans.flatMap(loan => loan.emiHistory || [])
+            });
+          }
+        }
+      }
+      
+      setShowEditPaymentModal(false);
+      setEditingPayment(null);
+      
+    } catch (error: any) {
+      console.error('❌ Error creating new payment:', error);
+      alert('Error creating new payment: ' + error.message);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-md w-full">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-bold">Edit EMI Payment</h3>
+            <div className="flex items-center space-x-2">
+              <span className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600">
+                ID: {editingPayment._id?.substring(0, 8)}...
+              </span>
+              <button 
+                onClick={() => {
+                  setShowEditPaymentModal(false);
+                  setEditingPayment(null);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          {/* Warning if payment might be missing */}
+          <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-4">
+            <div className="flex items-center">
+              <span className="text-yellow-500 mr-2">⚠️</span>
+              <div>
+                <p className="text-sm text-yellow-800 font-medium">Payment Record Issue</p>
+                <p className="text-xs text-yellow-700 mt-1">
+                  This payment might not exist in the database. If update fails, you can create a new record.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {/* Non-editable information */}
+            <div className="bg-gray-50 p-3 rounded-md">
+              <h4 className="font-medium text-gray-700 mb-2">Payment Information</h4>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <span className="text-gray-600">Loan:</span>
+                  <p className="font-medium">{editingPayment.loanNumber || associatedLoan?.loanNumber || 'N/A'}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600">Loan Type:</span>
+                  <p className="font-medium">{associatedLoan?.loanType || 'N/A'}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600">Collected By:</span>
+                  <p className="font-medium">{editingPayment.collectedBy}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600">Original Date:</span>
+                  <p className="font-medium">{new Date(editingPayment.paymentDate).toLocaleDateString()}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Editable fields */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Payment Date *
+              </label>
+              <input
+                type="date"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={editDate.split('T')[0]}
+                onChange={(e) => setEditDate(e.target.value)}
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                EMI Amount Paid (₹) *
+              </label>
+              <input
+                type="number"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={editAmount}
+                onChange={(e) => setEditAmount(e.target.value)}
+                min="0"
+                step="0.01"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Original amount: ₹{editingPayment.amount}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Payment Status *
+              </label>
+              <select
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={editStatus}
+                onChange={(e) => setEditStatus(e.target.value)}
+                required
+              >
+                <option value="Paid">Paid</option>
+                <option value="Partial">Partial Payment</option>
+                <option value="Due">Due</option>
+                <option value="Advance">Advance</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Original status: {editingPayment.status}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex justify-end space-x-3 mt-6">
+            <button
+              onClick={() => {
+                setShowEditPaymentModal(false);
+                setEditingPayment(null);
+              }}
+              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+              disabled={isLoading}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveEdit}
+              disabled={isLoading || !editAmount || !editDate}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 flex items-center"
+            >
+              {isLoading ? (
+                <>
+                  <span className="animate-spin mr-2">⏳</span>
+                  Saving...
+                </>
+              ) : (
+                'Save Changes'
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const renderDeleteConfirmationModal = () => {
+  if (!deletingPayment || !selectedCalendarDate) return null;
+
+  // Find the loan associated with this payment
+  const associatedLoan = calendarData?.loans.find(loan => 
+    loan._id === deletingPayment.loanId || loan.loanNumber === deletingPayment.loanNumber
+  );
+
+  const handleConfirmDelete = async () => {
+    if (!deletingPayment._id) {
+      alert('Cannot delete payment: Payment ID not found');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await fetch(`/api/data-entry/emi-payments?id=${deletingPayment._id}`, {
+        method: 'DELETE',
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to delete payment');
+      }
+
+      alert('EMI payment deleted successfully!');
+      
+      // Refresh the calendar data
+      if (calendarData) {
+        const updatedResponse = await fetch(`/api/data-entry/customers/${calendarData.customerId}`);
+        if (updatedResponse.ok) {
+          const updatedData = await updatedResponse.json();
+          if (updatedData.success) {
+            const customerDetails = updatedData.data;
+            const displayLoans = getAllCustomerLoans(customerDetails, customerDetails);
+            
+            setCalendarData({
+              ...calendarData,
+              loans: displayLoans,
+              paymentHistory: displayLoans.flatMap(loan => loan.emiHistory || [])
+            });
+          }
+        }
+      }
+      
+      setShowDeleteConfirmationModal(false);
+      setDeletingPayment(null);
+      
+    } catch (error: any) {
+      console.error('Error deleting EMI payment:', error);
+      alert('Error: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-md w-full">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-bold text-red-600">Delete EMI Payment</h3>
+            <button 
+              onClick={() => {
+                setShowDeleteConfirmationModal(false);
+                setDeletingPayment(null);
+              }}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            <div className="bg-red-50 p-4 rounded-md">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <span className="text-red-400 text-xl">⚠️</span>
+                </div>
+                <div className="ml-3">
+                  <h4 className="text-sm font-medium text-red-800">Warning</h4>
+                  <p className="text-sm text-red-700 mt-1">
+                    Are you sure you want to delete this EMI payment? This action cannot be undone.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-50 p-3 rounded-md">
+              <h4 className="font-medium text-gray-700 mb-2">Payment Details</h4>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <span className="text-gray-600">Payment Date:</span>
+                  <p className="font-medium">{new Date(deletingPayment.paymentDate).toLocaleDateString()}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600">Loan:</span>
+                  <p className="font-medium">{deletingPayment.loanNumber || associatedLoan?.loanNumber || 'N/A'}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600">Loan Type:</span>
+                  <p className="font-medium">{associatedLoan?.loanType || 'N/A'}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600">Amount:</span>
+                  <p className="font-medium">₹{deletingPayment.amount}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600">Status:</span>
+                  <p className="font-medium">{deletingPayment.status}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600">Collected By:</span>
+                  <p className="font-medium">{deletingPayment.collectedBy}</p>
+                </div>
+              </div>
+              {deletingPayment.notes && (
+                <div className="mt-2">
+                  <span className="text-gray-600 text-sm">Notes:</span>
+                  <p className="text-sm text-gray-700 mt-1">{deletingPayment.notes}</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex justify-end space-x-3 mt-6">
+            <button
+              onClick={() => {
+                setShowDeleteConfirmationModal(false);
+                setDeletingPayment(null);
+              }}
+              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+              disabled={isLoading}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleConfirmDelete}
+              disabled={isLoading}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:bg-gray-400"
+            >
+              {isLoading ? 'Deleting...' : 'Delete Payment'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+  const renderSearchAndFilters = () => {
+    const handleFilterChange = (key: keyof Filters, value: string) => {
+      setFilters(prev => ({ ...prev, [key]: value }));
+    };
+
+    const clearFilters = () => {
+      setFilters({
+        customerNumber: '',
+        loanType: '',
+        status: '',
+        officeCategory: ''
+      });
+      setSearchQuery('');
+    };
+
+    const loanTypes = [...new Set(customers.map(customer => customer.loanType).filter(Boolean))];
+
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex-1">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search by customer name or customer number..."
+                className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <span className="text-gray-400">🔍</span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <span>Filters</span>
+              <span className={`transform transition-transform ${showFilters ? 'rotate-180' : ''}`}>
+                ▼
+              </span>
+            </button>
+            
+            {(filters.customerNumber || filters.loanType || filters.status || filters.officeCategory || searchQuery) && (
+              <button
+                onClick={clearFilters}
+                className="px-4 py-2 text-red-600 border border-red-300 rounded-lg hover:bg-red-50 transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+
+        {showFilters && (
+          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Customer Number
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter customer number..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={filters.customerNumber}
+                  onChange={(e) => handleFilterChange('customerNumber', e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Loan Type
+                </label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={filters.loanType}
+                  onChange={(e) => handleFilterChange('loanType', e.target.value)}
+                >
+                  <option value="">All Loan Types</option>
+                  {loanTypes.map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Status
+                </label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={filters.status}
+                  onChange={(e) => handleFilterChange('status', e.target.value)}
+                >
+                  <option value="">All Status</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="pending">Pending</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Office Category
+                </label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={filters.officeCategory}
+                  onChange={(e) => handleFilterChange('officeCategory', e.target.value)}
+                >
+                  <option value="">All Offices</option>
+                  <option value="Office 1">Office 1</option>
+                  <option value="Office 2">Office 2</option>
+                </select>
+              </div>
+            </div>
+
+            {(filters.customerNumber || filters.loanType || filters.status || filters.officeCategory) && (
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm text-gray-600">Active filters:</span>
+                  {filters.customerNumber && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
+                      Customer No: {filters.customerNumber}
+                      <button 
+                        onClick={() => handleFilterChange('customerNumber', '')}
+                        className="ml-1 text-blue-600 hover:text-blue-800"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                  {filters.loanType && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
+                      Type: {filters.loanType}
+                      <button 
+                        onClick={() => handleFilterChange('loanType', '')}
+                        className="ml-1 text-green-600 hover:text-green-800"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                  {filters.status && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
+                      Status: {filters.status}
+                      <button 
+                        onClick={() => handleFilterChange('status', '')}
+                        className="ml-1 text-purple-600 hover:text-purple-800"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                  {filters.officeCategory && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-orange-100 text-orange-800">
+                      Office: {filters.officeCategory}
+                      <button 
+                        onClick={() => handleFilterChange('officeCategory', '')}
+                        className="ml-1 text-orange-600 hover:text-orange-800"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex justify-between items-center">
+          <span className="text-sm text-gray-600">
+            Showing {filteredCustomers.length} of {customers.length} customers
+          </span>
+          
+          {filteredCustomers.length < customers.length && (
+            <button
+              onClick={clearFilters}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              Clear all filters
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderAddCustomerForm = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold">Add New Customer</h3>
+            <button 
+              onClick={() => {
+                setShowAddCustomer(false);
+                resetCustomerForm();
+              }}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="mb-8">
+            <div className="flex items-center justify-between">
+              {[1, 2, 3].map((step) => (
+                <div key={step} className="flex items-center">
+                  <div className={`flex items-center justify-center w-8 h-8 rounded-full ${
+                    currentStep >= step ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-600'
+                  }`}>
+                    {step}
+                  </div>
+                  {step < 3 && (
+                    <div className={`w-24 h-1 mx-2 ${
+                      currentStep > step ? 'bg-blue-600' : 'bg-gray-300'
+                    }`} />
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-between mt-2 text-sm text-gray-600">
+              <span>Basic Details</span>
+              <span>Loan Information</span>
+              <span>Login Credentials</span>
+            </div>
+          </div>
+
+          {currentStep === 1 && (
+  <div className="space-y-6">
+    <h4 className="text-lg font-semibold">Step 1: Customer Basic Details</h4>
+    
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Row 1 */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Customer Name *</label>
+        <input 
+          type="text" 
+          className={`w-full px-3 py-2 border rounded-md ${
+            step1Errors.name ? 'border-red-500' : 'border-gray-300'
+          }`}
+          value={step1Data.name}
+          onChange={(e) => setStep1Data({...step1Data, name: e.target.value})}
+          placeholder="Enter full name"
+        />
+        {step1Errors.name && <p className="text-red-500 text-xs mt-1">{step1Errors.name}</p>}
+      </div>
+      
+      <div>
+    <label className="block text-sm font-medium text-gray-700 mb-2">Primary Phone Number *</label>
+    <input 
+      type="tel" 
+      className={`w-full px-3 py-2 border rounded-md ${
+        step1Errors.phone ? 'border-red-500' : 'border-gray-300'
+      }`}
+      value={step1Data.phone[0] || ''}
+      onChange={(e) => {
+        const value = e.target.value.replace(/\D/g, '');
+        if (value.length <= 10) {
+          const newPhones = [...step1Data.phone];
+          newPhones[0] = value;
+          setStep1Data({...step1Data, phone: newPhones});
+        }
+      }}
+      placeholder="Enter 10-digit primary phone number"
+      maxLength={10}
+      required
+    />
+    {step1Errors.phone && <p className="text-red-500 text-xs mt-1">{step1Errors.phone}</p>}
+  </div>
+
+  {/* Secondary Phone */}
+  <div>
+    <label className="block text-sm font-medium text-gray-700 mb-2">Secondary Phone Number</label>
+    <input 
+      type="tel" 
+      className="w-full px-3 py-2 border border-gray-300 rounded-md"
+      value={step1Data.phone[1] || ''}
+      onChange={(e) => {
+        const value = e.target.value.replace(/\D/g, '');
+        if (value.length <= 10) {
+          const newPhones = [...step1Data.phone];
+          newPhones[1] = value;
+          setStep1Data({...step1Data, phone: newPhones});
+        }
+      }}
+      placeholder="Secondary phone (optional)"
+      maxLength={10}
+    />
+  </div>
+      
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          <span className="flex items-center gap-1">
+            <span>WhatsApp Number</span>
+            <img 
+              src="/images/whatsapp-logo.png" 
+              alt="WhatsApp" 
+              className="w-4 h-4"
+            />
+          </span>
+        </label>
+        <input 
+          type="tel" 
+          className={`w-full px-3 py-2 border rounded-md ${
+            step1Errors.whatsappNumber ? 'border-red-500' : 'border-gray-300'
+          }`}
+          value={step1Data.whatsappNumber}
+          onChange={(e) => {
+            const value = e.target.value.replace(/\D/g, '');
+            if (value.length <= 10) {
+              setStep1Data({...step1Data, whatsappNumber: value});
+            }
+          }}
+          placeholder="WhatsApp number (optional)"
+          maxLength={10}
+        />
+        {step1Errors.whatsappNumber && <p className="text-red-500 text-xs mt-1">{step1Errors.whatsappNumber}</p>}
+      </div>
+
+      {/* Row 3 */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Business Name *</label>
+        <input 
+          type="text" 
+          className={`w-full px-3 py-2 border rounded-md ${
+            step1Errors.businessName ? 'border-red-500' : 'border-gray-300'
+          }`}
+          value={step1Data.businessName}
+          onChange={(e) => setStep1Data({...step1Data, businessName: e.target.value})}
+          placeholder="Enter business name"
+        />
+        {step1Errors.businessName && <p className="text-red-500 text-xs mt-1">{step1Errors.businessName}</p>}
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Area *</label>
+        <input 
+          type="text" 
+          className={`w-full px-3 py-2 border rounded-md ${
+            step1Errors.area ? 'border-red-500' : 'border-gray-300'
+          }`}
+          value={step1Data.area}
+          onChange={(e) => setStep1Data({...step1Data, area: e.target.value})}
+          placeholder="Enter area"
+        />
+        {step1Errors.area && <p className="text-red-500 text-xs mt-1">{step1Errors.area}</p>}
+      </div>
+
+      {/* Row 4 */}
+<div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">Customer Number *</label>
+  <div className="flex">
+    <span className="inline-flex items-center px-3 py-2 border border-r-0 border-gray-300 bg-gray-50 text-gray-500 rounded-l-md">
+      CN
+    </span>
+    <input 
+      type="text" 
+      className={`flex-1 px-3 py-2 border rounded-r-md ${
+        step1Errors.customerNumber ? 'border-red-500' : 'border-gray-300'
+      }`}
+      value={step1Data.customerNumber.replace('CN', '')}
+      onChange={(e) => {
+        const numbersOnly = e.target.value.replace(/\D/g, '');
+        const newCustomerNumber = `CN${numbersOnly}`;
+        
+        // Check for duplicates
+        if (numbersOnly && isCustomerNumberExists(newCustomerNumber)) {
+          setStep1Errors(prev => ({
+            ...prev,
+            customerNumber: 'Customer number already exists'
+          }));
+        } else {
+          setStep1Errors(prev => ({
+            ...prev,
+            customerNumber: ''
+          }));
+        }
+        
+        setStep1Data({...step1Data, customerNumber: newCustomerNumber});
+      }}
+      placeholder="Enter numbers only"
+      maxLength={10}
+    />
+  </div>
+  {step1Errors.customerNumber && (
+    <p className="text-red-500 text-xs mt-1">{step1Errors.customerNumber}</p>
+  )}
+  <div className="flex justify-between items-center mt-1">
+    <p className="text-xs text-gray-500">
+      Full customer number: {step1Data.customerNumber || 'CN___'}
+    </p>
+    <button
+      type="button"
+      onClick={() => {
+        const nextNumber = getNextAvailableCustomerNumber();
+        setStep1Data({...step1Data, customerNumber: nextNumber});
+        setStep1Errors(prev => ({...prev, customerNumber: ''}));
+      }}
+      className="text-xs text-blue-600 hover:text-blue-800 underline"
+    >
+      Suggest Next Available
+    </button>
+  </div>
+</div>
+      
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Address *</label>
+        <textarea 
+          className={`w-full px-3 py-2 border rounded-md ${
+            step1Errors.address ? 'border-red-500' : 'border-gray-300'
+          }`}
+          rows={3}
+          value={step1Data.address}
+          onChange={(e) => setStep1Data({...step1Data, address: e.target.value})}
+          placeholder="Enter complete address"
+        />
+        {step1Errors.address && <p className="text-red-500 text-xs mt-1">{step1Errors.address}</p>}
+      </div>
+
+      {/* Row 5 - Category and Office Category */}
+<div className="md:col-span-2">
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    {/* Category Field */}
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">Category *</label>
+      <select 
+        className={`w-full px-3 py-2 border rounded-md ${
+          step1Errors.category ? 'border-red-500' : 'border-gray-300'
+        }`}
+        value={step1Data.category}
+        onChange={(e) => setStep1Data({...step1Data, category: e.target.value})}
+        required
+      >
+        <option value="">Select Category</option>
+        <option value="A">Category A</option>
+        <option value="B">Category B</option>
+        <option value="C">Category C</option>
+      </select>
+      {step1Errors.category && <p className="text-red-500 text-xs mt-1">{step1Errors.category}</p>}
+      <p className="text-xs text-gray-500 mt-1">Customer priority category</p>
+    </div>
+
+    {/* Office Category Field */}
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">Office Category *</label>
+      <select 
+        className={`w-full px-3 py-2 border rounded-md ${
+          step1Errors.officeCategory ? 'border-red-500' : 'border-gray-300'
+        }`}
+        value={step1Data.officeCategory}
+        onChange={(e) => setStep1Data({...step1Data, officeCategory: e.target.value})}
+        required
+      >
+        <option value="">Select Office Category</option>
+        <option value="Office 1">Office 1</option>
+        <option value="Office 2">Office 2</option>
+      </select>
+      {step1Errors.officeCategory && <p className="text-red-500 text-xs mt-1">{step1Errors.officeCategory}</p>}
+      <p className="text-xs text-gray-500 mt-1">Assigned office location</p>
+    </div>
+  </div>
+</div>
+    </div>
+
+    {/* File Upload Section */}
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Profile Picture (Image)</label>
+        <div className="border-2 border-dashed border-gray-300 rounded-md p-4 text-center">
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => handleFileUpload('profilePicture', e.target.files?.[0] || null)}
+            className="hidden"
+            id="profile-picture"
+          />
+          <label htmlFor="profile-picture" className="cursor-pointer">
+            <div className="text-gray-400 mb-2">📷</div>
+            <p className="text-sm text-gray-600">
+              {step1Data.profilePicture ? step1Data.profilePicture.name : 'Click to upload profile picture'}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">PNG, JPEG, JPG, etc.</p>
+          </label>
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">FI Document - Shop (PDF)</label>
+        <div className="border-2 border-dashed border-gray-300 rounded-md p-4 text-center">
+          <input
+            type="file"
+            accept=".pdf"
+            onChange={(e) => handleFileUpload('fiDocuments', e.target.files?.[0] || null, 'shop')}
+            className="hidden"
+            id="fi-doc-shop"
+          />
+          <label htmlFor="fi-doc-shop" className="cursor-pointer">
+            <div className="text-gray-400 mb-2">📄</div>
+            <p className="text-sm text-gray-600">
+              {step1Data.fiDocuments.shop ? step1Data.fiDocuments.shop.name : 'Upload Shop FI Document'}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">PDF format only</p>
+          </label>
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">FI Document - Home (PDF)</label>
+        <div className="border-2 border-dashed border-gray-300 rounded-md p-4 text-center">
+          <input
+            type="file"
+            accept=".pdf"
+            onChange={(e) => handleFileUpload('fiDocuments', e.target.files?.[0] || null, 'home')}
+            className="hidden"
+            id="fi-doc-home"
+          />
+          <label htmlFor="fi-doc-home" className="cursor-pointer">
+            <div className="text-gray-400 mb-2">📄</div>
+            <p className="text-sm text-gray-600">
+              {step1Data.fiDocuments.home ? step1Data.fiDocuments.home.name : 'Upload Home FI Document'}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">PDF format only</p>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div className="flex justify-end space-x-3 mt-6">
+      <button 
+        onClick={() => {
+          setShowAddCustomer(false);
+          resetCustomerForm();
+        }}
+        className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+      >
+        Cancel
+      </button>
+      <button 
+        onClick={handleStep1Next}
+        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+      >
+        Next Step
+      </button>
+    </div>
+  </div>
+)}
+
+          {currentStep === 2 && (
+  <div className="space-y-6">
+    <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+      <h4 className="text-lg font-semibold text-blue-900 mb-2">Customer Information</h4>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+        <div>
+          <span className="text-blue-700 font-medium">Customer Number:</span>
+          <p className="text-blue-900">CN{step1Data.customerNumber}</p>
+        </div>
+        <div>
+          <span className="text-blue-700 font-medium">Customer Name:</span>
+          <p className="text-blue-900">{step1Data.name}</p>
+        </div>
+        <div>
+          <span className="text-blue-700 font-medium">Business Name:</span>
+          <p className="text-blue-900">{step1Data.businessName}</p>
+        </div>
+      </div>
+    </div>
+
+    <h4 className="text-lg font-semibold">Step 2: Enter Loan Details</h4>
+    
+    <div className="space-y-6">
+      {/* Loan Type Selection */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="md:col-span-2 lg:col-span-1">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Loan Type *</label>
+          <select 
+            className={`w-full px-3 py-2 border rounded-md ${
+              step2Errors.loanType ? 'border-red-500' : 'border-gray-300'
+            }`}
+            value={step2Data.loanType}
+            onChange={(e) => {
+              const newLoanType = e.target.value;
+              setStep2Data({
+                ...step2Data, 
+                loanType: newLoanType,
+                loanDays: newLoanType === 'Monthly' ? '1' : 
+                         newLoanType === 'Weekly' ? '1' : '30',
+                emiType: newLoanType === 'Daily' ? 'fixed' : step2Data.emiType
+              });
+            }}
+            required
+          >
+            <option value="Daily">Daily EMI</option>
+            <option value="Weekly">Weekly EMI</option>
+            <option value="Monthly">Monthly EMI</option>
+          </select>
+          {step2Errors.loanType && <p className="text-red-500 text-xs mt-1">{step2Errors.loanType}</p>}
+        </div>
+        
+        {/* EMI Collection Type - Only show for Weekly/Monthly */}
+        {step2Data.loanType !== 'Daily' && (
+          <div className="md:col-span-2 lg:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2">EMI Collection Type *</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                step2Data.emiType === 'fixed' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+              }`}>
+                <input
+                  type="radio"
+                  name="emiType"
+                  value="fixed"
+                  checked={step2Data.emiType === 'fixed'}
+                  onChange={(e) => setStep2Data({...step2Data, emiType: e.target.value as 'fixed' | 'custom'})}
+                  className="mr-3 text-blue-600 focus:ring-blue-500"
+                />
+                <div>
+                  <div className="font-medium text-gray-900">Fixed EMI</div>
+                  <div className="text-sm text-gray-600">Same EMI amount for all periods</div>
+                </div>
+              </label>
+              
+              <label className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                step2Data.emiType === 'custom' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+              }`}>
+                <input
+                  type="radio"
+                  name="emiType"
+                  value="custom"
+                  checked={step2Data.emiType === 'custom'}
+                  onChange={(e) => setStep2Data({...step2Data, emiType: e.target.value as 'fixed' | 'custom'})}
+                  className="mr-3 text-blue-600 focus:ring-blue-500"
+                />
+                <div>
+                  <div className="font-medium text-gray-900">Custom EMI</div>
+                  <div className="text-sm text-gray-600">Different EMI for last period</div>
+                </div>
+              </label>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Loan Details Form */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Common Fields */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Loan Date *</label>
+          <input 
+            type="date" 
+            className={`w-full px-3 py-2 border rounded-md ${
+              step2Errors.loanDate ? 'border-red-500' : 'border-gray-300'
+            }`}
+            value={step2Data.loanDate}
+            onChange={(e) => setStep2Data({...step2Data, loanDate: e.target.value})}
+            required
+          />
+          {step2Errors.loanDate && <p className="text-red-500 text-xs mt-1">{step2Errors.loanDate}</p>}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Amount *</label>
+          <input 
+            type="number" 
+            className={`w-full px-3 py-2 border rounded-md ${
+              step2Errors.loanAmount ? 'border-red-500' : 'border-gray-300'
+            }`}
+            value={step2Data.loanAmount}
+            onChange={(e) => setStep2Data({...step2Data, loanAmount: e.target.value})}
+            placeholder="Amount"
+            min="0"
+            step="0.01"
+            required
+          />
+          {step2Errors.loanAmount && <p className="text-red-500 text-xs mt-1">{step2Errors.loanAmount}</p>}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {step2Data.loanType === 'Daily' ? 'No. of Days *' : 
+             step2Data.loanType === 'Weekly' ? 'No. of Weeks *' : 'No. of Months *'}
+          </label>
+          <input 
+            type="number" 
+            className={`w-full px-3 py-2 border rounded-md ${
+              step2Errors.loanDays ? 'border-red-500' : 'border-gray-300'
+            }`}
+            value={step2Data.loanDays}
+            onChange={(e) => setStep2Data({...step2Data, loanDays: e.target.value})}
+            placeholder={step2Data.loanType === 'Daily' ? 'Days' : 
+                       step2Data.loanType === 'Weekly' ? 'Weeks' : 'Months'}
+            min="1"
+            required
+          />
+          {step2Errors.loanDays && <p className="text-red-500 text-xs mt-1">{step2Errors.loanDays}</p>}
+          <p className="text-xs text-gray-500 mt-1">
+            {step2Data.loanType === 'Daily' ? 'Total duration in days' : 
+             step2Data.loanType === 'Weekly' ? 'Total duration in weeks' : 'Total duration in months'}
+          </p>
+        </div>
+
+        {/* EMI Amount Fields */}
+        {/* EMI Amount Fields - Dynamic based on loan type and EMI type */}
+{(step2Data.emiType === 'fixed' || step2Data.loanType === 'Daily') ? (
+  <div>
+    <label className="block text-sm font-medium text-gray-700 mb-2">EMI Amount *</label>
+    <input 
+      type="number" 
+      className={`w-full px-3 py-2 border rounded-md ${
+        step2Errors.emiAmount ? 'border-red-500' : 'border-gray-300'
+      }`}
+      value={step2Data.emiAmount}
+      onChange={(e) => setStep2Data({...step2Data, emiAmount: e.target.value})}
+      placeholder="EMI Amount"
+      min="0"
+      step="0.01"
+      required
+    />
+    {step2Errors.emiAmount && <p className="text-red-500 text-xs mt-1">{step2Errors.emiAmount}</p>}
+  </div>
+) : (
+  <>
+    {/* Custom EMI Fields for Weekly/Monthly */}
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">Fixed EMI Amount *</label>
+      <input 
+        type="number" 
+        className={`w-full px-3 py-2 border rounded-md ${
+          step2Errors.emiAmount ? 'border-red-500' : 'border-gray-300'
+        }`}
+        value={step2Data.emiAmount}
+        onChange={(e) => setStep2Data({...step2Data, emiAmount: e.target.value})}
+        placeholder="Fixed EMI Amount"
+        min="0"
+        step="0.01"
+        required
+      />
+      {step2Errors.emiAmount && <p className="text-red-500 text-xs mt-1">{step2Errors.emiAmount}</p>}
+      <p className="text-xs text-gray-500 mt-1">
+        For first {Number(step2Data.loanDays || 1) - 1} {step2Data.loanType === 'Weekly' ? 'weeks' : 'months'}
+      </p>
+    </div>
+
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">Last EMI Amount *</label>
+      <input 
+        type="number" 
+        className={`w-full px-3 py-2 border rounded-md ${
+          step2Errors.customEmiAmount ? 'border-red-500' : 'border-gray-300'
+        }`}
+        value={step2Data.customEmiAmount || ''}
+        onChange={(e) => setStep2Data({...step2Data, customEmiAmount: e.target.value})}
+        placeholder="Last EMI Amount"
+        min="0"
+        step="0.01"
+        required
+      />
+      {step2Errors.customEmiAmount && <p className="text-red-500 text-xs mt-1">{step2Errors.customEmiAmount}</p>}
+      <p className="text-xs text-gray-500 mt-1">
+        For last 1 {step2Data.loanType === 'Weekly' ? 'week' : 'month'}
+      </p>
+    </div>
+  </>
+)}
+
+        {/* Total Loan Amount */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Total Loan Amount</label>
+          <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+            <p className="text-gray-900 font-semibold text-lg">
+              ₹{step2Data.emiType === 'custom' && step2Data.loanType !== 'Daily' ? (
+                ((Number(step2Data.emiAmount || 0) * (Number(step2Data.loanDays || 1) - 1)) + 
+                 (Number(step2Data.customEmiAmount || 0) * 1)).toLocaleString()
+              ) : (
+                (Number(step2Data.emiAmount || 0) * Number(step2Data.loanDays || 1)).toLocaleString()
+              )}
+            </p>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            {step2Data.emiType === 'custom' && step2Data.loanType !== 'Daily' ? (
+              `Fixed Periods + Last Period (Auto-calculated)`
+            ) : (
+              `EMI × Duration (Auto-calculated)`
+            )}
+          </p>
+        </div>
+
+        {/* EMI Starting Date */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">EMI Starting Date *</label>
+          <input 
+            type="date" 
+            className={`w-full px-3 py-2 border rounded-md ${
+              step2Errors.emiStartDate ? 'border-red-500' : 'border-gray-300'
+            }`}
+            value={step2Data.emiStartDate}
+            onChange={(e) => setStep2Data({...step2Data, emiStartDate: e.target.value})}
+            required
+          />
+          {step2Errors.emiStartDate && <p className="text-red-500 text-xs mt-1">{step2Errors.emiStartDate}</p>}
+          <p className="text-xs text-gray-500 mt-1">When EMI collection will start</p>
+        </div>
+      </div>
+
+      {/* Custom EMI Breakdown */}
+      {step2Data.emiType === 'custom' && step2Data.loanType !== 'Daily' && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+          <h5 className="font-medium text-yellow-800 mb-3">Custom EMI Breakdown</h5>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+            <div className="text-center">
+              <div className="font-semibold text-yellow-700">Fixed Periods</div>
+              <div className="text-lg font-bold text-yellow-900">{Number(step2Data.loanDays || 1) - 1}</div>
+              <div className="text-xs text-yellow-600">{step2Data.loanType === 'Weekly' ? 'weeks' : 'months'}</div>
+            </div>
+            <div className="text-center">
+              <div className="font-semibold text-yellow-700">Fixed EMI</div>
+              <div className="text-lg font-bold text-yellow-900">₹{step2Data.emiAmount || '0'}</div>
+              <div className="text-xs text-yellow-600">per period</div>
+            </div>
+            <div className="text-center">
+              <div className="font-semibold text-yellow-700">Last Period</div>
+              <div className="text-lg font-bold text-yellow-900">1</div>
+              <div className="text-xs text-yellow-600">{step2Data.loanType === 'Weekly' ? 'week' : 'month'}</div>
+            </div>
+            <div className="text-center">
+              <div className="font-semibold text-yellow-700">Last EMI</div>
+              <div className="text-lg font-bold text-yellow-900">₹{step2Data.customEmiAmount || '0'}</div>
+              <div className="text-xs text-yellow-600">final period</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loan Summary */}
+      <div className="bg-green-50 border border-green-200 rounded-md p-4">
+        <h5 className="font-semibold text-green-900 mb-3">Loan Summary</h5>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div>
+            <span className="text-green-700 font-medium">Loan Amount:</span>
+            <p className="font-semibold text-green-900">₹{step2Data.loanAmount || '0'}</p>
+          </div>
+          <div>
+            <span className="text-green-700 font-medium">Total Loan:</span>
+            <p className="font-semibold text-green-900">
+              ₹{step2Data.emiType === 'custom' && step2Data.loanType !== 'Daily' ? (
+                ((Number(step2Data.emiAmount || 0) * (Number(step2Data.loanDays || 1) - 1)) + 
+                 (Number(step2Data.customEmiAmount || 0) * 1)).toLocaleString()
+              ) : (
+                (Number(step2Data.emiAmount || 0) * Number(step2Data.loanDays || 1)).toLocaleString()
+              )}
+            </p>
+          </div>
+          <div>
+            <span className="text-green-700 font-medium">Duration:</span>
+            <p className="font-semibold text-green-900">
+              {step2Data.loanDays || '0'} 
+              {step2Data.loanType === 'Daily' ? ' days' : 
+               step2Data.loanType === 'Weekly' ? ' weeks' : ' months'}
+            </p>
+          </div>
+          <div>
+            <span className="text-green-700 font-medium">EMI Starts From:</span>
+            <p className="font-semibold text-green-900">
+              {step2Data.emiStartDate ? formatDateToDDMMYYYY(step2Data.emiStartDate) : 'Not set'}
+            </p>
+          </div>
+        </div>
+
+        {/* EMI Type Summary */}
+        <div className="mt-3 pt-3 border-t border-green-200">
+          <span className="text-green-700 font-medium">EMI Type:</span>
+          <p className="font-semibold text-green-900">
+            {step2Data.loanType === 'Daily' ? (
+              `Daily EMI - All ${step2Data.loanDays} days at ₹${step2Data.emiAmount || '0'}`
+            ) : step2Data.emiType === 'fixed' ? (
+              `Fixed EMI - All ${step2Data.loanDays} ${step2Data.loanType.toLowerCase()} periods at ₹${step2Data.emiAmount || '0'}`
+            ) : (
+              `Custom EMI - ${Number(step2Data.loanDays || 1) - 1} periods at ₹${step2Data.emiAmount || '0'} + 1 period at ₹${step2Data.customEmiAmount || '0'}`
+            )}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div className="flex justify-between space-x-3 mt-6">
+      <button 
+        onClick={() => setCurrentStep(1)}
+        className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+      >
+        Previous
+      </button>
+      <button 
+        onClick={handleStep2Next}
+        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+      >
+        Next Step
+      </button>
+    </div>
+  </div>
+)}
+
+          {currentStep === 3 && (
+            <div className="space-y-6">
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+                <h4 className="text-lg font-semibold text-blue-900 mb-2">Create Login Credentials</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex flex-wrap gap-4">
+                    <div>
+                      <span className="text-blue-700 font-medium">Customer:</span>
+                      <span className="text-blue-900 ml-1">{step1Data.name}</span>
+                    </div>
+                    <div>
+                      <span className="text-blue-700 font-medium">Customer No:</span>
+                      <span className="text-blue-900 ml-1">CN{step1Data.customerNumber}</span>
+                    </div>
+                    <div>
+                      <span className="text-blue-700 font-medium">Category:</span>
+                      <span className="text-blue-900 ml-1">{step1Data.category || 'Not selected'}</span>
+                    </div>
+                    <div>
+                      <span className="text-blue-700 font-medium">Office:</span>
+                      <span className="text-blue-900 ml-1">{step1Data.officeCategory || 'Not selected'}</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-4">
+                    <div>
+                      <span className="text-blue-700 font-medium flex items-center gap-1">
+                        <span>📱</span>
+                        WhatsApp:
+                      </span>
+                      <span className="text-blue-900 ml-1">
+                        {step1Data.whatsappNumber || 'Not provided'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-blue-700 font-medium">Phone Numbers:</span>
+                      <span className="text-blue-900 ml-1">
+                        {step1Data.phone.filter(p => p.trim() !== '').join(', ') || 'Not provided'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <h4 className="text-lg font-semibold">Step 3: Generate Login ID & Password</h4>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Login ID *</label>
+                  <div className="flex space-x-2">
+                    <input 
+                      type="text" 
+                      className={`flex-1 px-3 py-2 border rounded-md ${
+                        step3Errors.loginId ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                      value={step3Data.loginId}
+                      onChange={(e) => setStep3Data({...step3Data, loginId: e.target.value})}
+                      placeholder="Login ID for customer"
+                    />
+                    <button 
+                      onClick={generateLoginId}
+                      className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 text-sm"
+                    >
+                      Generate
+                    </button>
+                  </div>
+                  {step3Errors.loginId && <p className="text-red-500 text-xs mt-1">{step3Errors.loginId}</p>}
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Password *</label>
+                  <div className="flex space-x-2">
+                    <div className="relative flex-1">
+                      <input 
+                        type={showPassword ? "text" : "password"}
+                        className={`w-full px-3 py-2 border rounded-md ${
+                          step3Errors.password ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                        value={step3Data.password}
+                        onChange={(e) => setStep3Data({...step3Data, password: e.target.value})}
+                        placeholder="Password"
+                      />
+                      <button 
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                      >
+                        {showPassword ? "👁️" : "👁️‍🗨️"}
+                      </button>
+                    </div>
+                    <button 
+                      onClick={generatePassword}
+                      className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 text-sm"
+                    >
+                      Generate
+                    </button>
+                  </div>
+                  {step3Errors.password && <p className="text-red-500 text-xs mt-1">{step3Errors.password}</p>}
+                </div>
+                
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Confirm Password *</label>
+                  <div className="relative">
+                    <input 
+                      type={showPassword ? "text" : "password"}
+                      className={`w-full px-3 py-2 border rounded-md ${
+                        step3Errors.confirmPassword ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                      value={step3Data.confirmPassword}
+                      onChange={(e) => setStep3Data({...step3Data, confirmPassword: e.target.value})}
+                      placeholder="Confirm password"
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    >
+                      {showPassword ? "👁️" : "👁️‍🗨️"}
+                    </button>
+                  </div>
+                  {step3Errors.confirmPassword && <p className="text-red-500 text-xs mt-1">{step3Errors.confirmPassword}</p>}
+                </div>
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+                <h5 className="font-semibold text-yellow-900 mb-2">Credentials Preview</h5>
+                <div className="space-y-2 text-sm">
+                  <div>
+                    <span className="text-yellow-700">Login ID:</span>
+                    <span className="font-mono ml-2">{step3Data.loginId || 'Not generated'}</span>
+                  </div>
+                  <div>
+                    <span className="text-yellow-700">Password:</span>
+                    <span className="font-mono ml-2">
+                      {step3Data.password ? (showPassword ? step3Data.password : '••••••••') : 'Not generated'}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-xs text-yellow-600 mt-2">
+                  Please save these credentials securely. They will be provided to the customer for login.
+                </p>
+              </div>
+
+              <div className="flex justify-between space-x-3 mt-6">
+                <button 
+                  onClick={() => setCurrentStep(2)}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  Previous
+                </button>
+                <button 
+                  onClick={handleAddCustomer}
+                  disabled={isLoading}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400"
+                >
+                  {isLoading ? 'Submitting Request...' : 'Submit for Approval'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderAddLoanModal = () => (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-bold">Add New Loan</h3>
+          <button 
+            onClick={() => setShowAddLoanModal(false)}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            ✕
+          </button>
+        </div>
+        
+        <div className="space-y-6">
+          <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+            <h4 className="text-lg font-semibold text-blue-900 mb-2">Customer Information</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div>
+                <span className="text-blue-700 font-medium">Customer Number:</span>
+                <p className="text-blue-900">{customerDetails?.customerNumber}</p>
+              </div>
+              <div>
+                <span className="text-blue-700 font-medium">Customer Name:</span>
+                <p className="text-blue-900">{customerDetails?.name}</p>
+              </div>
+              <div>
+                <span className="text-blue-700 font-medium">Business Name:</span>
+                <p className="text-blue-900">{customerDetails?.businessName}</p>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h4 className="text-lg font-semibold mb-4">Enter Loan Details</h4>
+            
+            <div className="space-y-6">
+              {/* Loan Type Selection */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="md:col-span-2 lg:col-span-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Type *</label>
+                  <select 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={newLoanData.loanType}
+                    onChange={(e) => {
+                      const newLoanType = e.target.value;
+                      setNewLoanData({
+                        ...newLoanData, 
+                        loanType: newLoanType,
+                        loanDays: newLoanType === 'Monthly' ? '1' : 
+                                 newLoanType === 'Weekly' ? '1' : '30',
+                        emiType: newLoanType === 'Daily' ? 'fixed' : newLoanData.emiType
+                      });
+                    }}
+                    required
+                  >
+                    <option value="Daily">Daily EMI</option>
+                    <option value="Weekly">Weekly EMI</option>
+                    <option value="Monthly">Monthly EMI</option>
+                  </select>
+                </div>
+                
+                {/* EMI Collection Type - Only show for Weekly/Monthly */}
+                {newLoanData.loanType !== 'Daily' && (
+                  <div className="md:col-span-2 lg:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">EMI Collection Type *</label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <label className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                        newLoanData.emiType === 'fixed' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="emiType"
+                          value="fixed"
+                          checked={newLoanData.emiType === 'fixed'}
+                          onChange={(e) => setNewLoanData({...newLoanData, emiType: e.target.value as 'fixed' | 'custom'})}
+                          className="mr-3 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div>
+                          <div className="font-medium text-gray-900">Fixed EMI</div>
+                          <div className="text-sm text-gray-600">Same EMI amount for all periods</div>
+                        </div>
+                      </label>
+                      
+                      <label className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                        newLoanData.emiType === 'custom' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="emiType"
+                          value="custom"
+                          checked={newLoanData.emiType === 'custom'}
+                          onChange={(e) => setNewLoanData({...newLoanData, emiType: e.target.value as 'fixed' | 'custom'})}
+                          className="mr-3 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div>
+                          <div className="font-medium text-gray-900">Custom EMI</div>
+                          <div className="text-sm text-gray-600">Different EMI for last period</div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Loan Details Form */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Common Fields */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Date *</label>
+                  <input 
+                    type="date" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={newLoanData.loanDate}
+                    onChange={(e) => setNewLoanData({...newLoanData, loanDate: e.target.value})}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">EMI Starting Date *</label>
+                  <input 
+                    type="date" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={newLoanData.emiStartDate}
+                    onChange={(e) => setNewLoanData({...newLoanData, emiStartDate: e.target.value})}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Amount *</label>
+                  <input 
+                    type="number" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={newLoanData.loanAmount}
+                    onChange={(e) => setNewLoanData({...newLoanData, loanAmount: e.target.value})}
+                    placeholder="Amount"
+                    min="0"
+                    step="0.01"
+                    required
+                  />
+                </div>
+
+                {/* EMI Amount Fields */}
+                {newLoanData.emiType === 'fixed' || newLoanData.loanType === 'Daily' ? (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">EMI Amount *</label>
+                    <input 
+                      type="number" 
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      value={newLoanData.emiAmount}
+                      onChange={(e) => setNewLoanData({...newLoanData, emiAmount: e.target.value})}
+                      placeholder="EMI Amount"
+                      min="0"
+                      step="0.01"
+                      required
+                    />
+                  </div>
+                ) : (
+                  <>
+                    {/* Custom EMI Fields */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Fixed EMI Amount *</label>
+                      <input 
+                        type="number" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={newLoanData.emiAmount}
+                        onChange={(e) => setNewLoanData({...newLoanData, emiAmount: e.target.value})}
+                        placeholder="Fixed EMI Amount"
+                        min="0"
+                        step="0.01"
+                        required
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        For first {Number(newLoanData.loanDays || 1) - 1} {newLoanData.loanType === 'Weekly' ? 'weeks' : 'months'}
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Last EMI Amount *</label>
+                      <input 
+                        type="number" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={newLoanData.customEmiAmount || ''}
+                        onChange={(e) => setNewLoanData({...newLoanData, customEmiAmount: e.target.value})}
+                        placeholder="Last EMI Amount"
+                        min="0"
+                        step="0.01"
+                        required
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        For last 1 {newLoanData.loanType === 'Weekly' ? 'week' : 'month'}
+                      </p>
+                    </div>
+                  </>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {newLoanData.loanType === 'Daily' ? 'No. of Days *' : 
+                     newLoanData.loanType === 'Weekly' ? 'No. of Weeks *' : 'No. of Months *'}
+                  </label>
+                  <input 
+                    type="number" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={newLoanData.loanDays}
+                    onChange={(e) => setNewLoanData({...newLoanData, loanDays: e.target.value})}
+                    placeholder={newLoanData.loanType === 'Daily' ? 'Days' : 
+                               newLoanData.loanType === 'Weekly' ? 'Weeks' : 'Months'}
+                    min="1"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {newLoanData.loanType === 'Daily' ? 'Total duration in days' : 
+                     newLoanData.loanType === 'Weekly' ? 'Total duration in weeks' : 'Total duration in months'}
+                  </p>
+                </div>
+
+                {/* Total Loan Amount */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Total Loan Amount</label>
+                  <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                    <p className="text-gray-900 font-semibold text-lg">
+                      ₹{newLoanData.emiType === 'custom' && newLoanData.loanType !== 'Daily' ? (
+                        ((Number(newLoanData.emiAmount || 0) * (Number(newLoanData.loanDays || 1) - 1)) + 
+                         (Number(newLoanData.customEmiAmount || 0) * 1)).toLocaleString()
+                      ) : (
+                        (Number(newLoanData.emiAmount || 0) * Number(newLoanData.loanDays || 1)).toLocaleString()
+                      )}
+                    </p>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {newLoanData.emiType === 'custom' && newLoanData.loanType !== 'Daily' ? (
+                      `Fixed Periods + Last Period (Auto-calculated)`
+                    ) : (
+                      `EMI × Duration (Auto-calculated)`
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              {/* Custom EMI Breakdown */}
+              {newLoanData.emiType === 'custom' && newLoanData.loanType !== 'Daily' && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+                  <h5 className="font-medium text-yellow-800 mb-3">Custom EMI Breakdown</h5>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                    <div className="text-center">
+                      <div className="font-semibold text-yellow-700">Fixed Periods</div>
+                      <div className="text-lg font-bold text-yellow-900">{Number(newLoanData.loanDays || 1) - 1}</div>
+                      <div className="text-xs text-yellow-600">{newLoanData.loanType === 'Weekly' ? 'weeks' : 'months'}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="font-semibold text-yellow-700">Fixed EMI</div>
+                      <div className="text-lg font-bold text-yellow-900">₹{newLoanData.emiAmount || '0'}</div>
+                      <div className="text-xs text-yellow-600">per period</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="font-semibold text-yellow-700">Last Period</div>
+                      <div className="text-lg font-bold text-yellow-900">1</div>
+                      <div className="text-xs text-yellow-600">{newLoanData.loanType === 'Weekly' ? 'week' : 'month'}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="font-semibold text-yellow-700">Last EMI</div>
+                      <div className="text-lg font-bold text-yellow-900">₹{newLoanData.customEmiAmount || '0'}</div>
+                      <div className="text-xs text-yellow-600">final period</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Loan Summary */}
+              <div className="bg-green-50 border border-green-200 rounded-md p-4">
+                <h5 className="font-semibold text-green-900 mb-3">Loan Summary</h5>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <span className="text-green-700 font-medium">Loan Amount:</span>
+                    <p className="font-semibold text-green-900">₹{newLoanData.loanAmount || '0'}</p>
+                  </div>
+                  <div>
+                    <span className="text-green-700 font-medium">Total Loan:</span>
+                    <p className="font-semibold text-green-900">
+                      ₹{newLoanData.emiType === 'custom' && newLoanData.loanType !== 'Daily' ? (
+                        ((Number(newLoanData.emiAmount || 0) * (Number(newLoanData.loanDays || 1) - 1)) + 
+                         (Number(newLoanData.customEmiAmount || 0) * 1)).toLocaleString()
+                      ) : (
+                        (Number(newLoanData.emiAmount || 0) * Number(newLoanData.loanDays || 1)).toLocaleString()
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-green-700 font-medium">Duration:</span>
+                    <p className="font-semibold text-green-900">
+                      {newLoanData.loanDays || '0'} 
+                      {newLoanData.loanType === 'Daily' ? ' days' : 
+                       newLoanData.loanType === 'Weekly' ? ' weeks' : ' months'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-green-700 font-medium">EMI Starts From:</span>
+                    <p className="font-semibold text-green-900">
+                      {newLoanData.emiStartDate ? formatDateToDDMMYYYY(newLoanData.emiStartDate) : 'Not set'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* EMI Type Summary */}
+                <div className="mt-3 pt-3 border-t border-green-200">
+                  <span className="text-green-700 font-medium">EMI Type:</span>
+                  <p className="font-semibold text-green-900">
+                    {newLoanData.loanType === 'Daily' ? (
+                      `Daily EMI - All ${newLoanData.loanDays} days at ₹${newLoanData.emiAmount || '0'}`
+                    ) : newLoanData.emiType === 'fixed' ? (
+                      `Fixed EMI - All ${newLoanData.loanDays} ${newLoanData.loanType.toLowerCase()} periods at ₹${newLoanData.emiAmount || '0'}`
+                    ) : (
+                      `Custom EMI - ${Number(newLoanData.loanDays || 1) - 1} periods at ₹${newLoanData.emiAmount || '0'} + 1 period at ₹${newLoanData.customEmiAmount || '0'}`
+                    )}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="flex justify-end space-x-3 mt-6">
+          <button 
+            onClick={() => setShowAddLoanModal(false)}
+            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+            disabled={isLoading}
+          >
+            Cancel
+          </button>
+          <button 
+            onClick={handleAddNewLoan}
+            disabled={isLoading || !newLoanData.loanAmount || !newLoanData.emiAmount || !newLoanData.loanDays}
+            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            {isLoading ? 'Adding...' : 'Submit Loan Addition Request'}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+  const renderEditLoanModal = () => {
+  // Get the complete loan data including EMI type and custom EMI amount
+  const getCompleteLoanData = () => {
+    if (!editLoanData.loanId) return null;
+    
+    // Find the loan in customerDetails to get all fields including emiType and customEmiAmount
+    const customerLoans = customerDetails ? getAllCustomerLoans(customerDetails, customerDetails) : [];
+    const completeLoan = customerLoans.find(loan => loan._id === editLoanData.loanId);
+    
+    return completeLoan;
+  };
+
+  const completeLoanData = getCompleteLoanData();
+  
+  // Determine EMI type and custom EMI amount - UPDATED to use editLoanData state
+  const emiType = editLoanData.emiType || completeLoanData?.emiType || 'fixed';
+  const customEmiAmount = editLoanData.customEmiAmount || completeLoanData?.customEmiAmount?.toString() || '';
+  const emiStartDate = editLoanData.emiStartDate || completeLoanData?.emiStartDate || editLoanData.dateApplied;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold">Edit Loan</h3>
+            <button 
+              onClick={() => setShowEditLoan(false)}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              ✕
+            </button>
+          </div>
+          
+          <div className="space-y-6">
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+              <h4 className="text-lg font-semibold text-blue-900 mb-2">Customer Information</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div>
+                  <span className="text-blue-700 font-medium">Customer Name:</span>
+                  <p className="text-blue-900">{editLoanData.customerName}</p>
+                </div>
+                <div>
+                  <span className="text-blue-700 font-medium">Customer Number:</span>
+                  <p className="text-blue-900">{editLoanData.customerNumber}</p>
+                </div>
+                <div>
+                  <span className="text-blue-700 font-medium">Loan Number:</span>
+                  <p className="text-blue-900">{editLoanData.loanNumber}</p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h4 className="text-lg font-semibold mb-4">Edit Loan Details</h4>
+              
+              <div className="space-y-6">
+                {/* Loan Type Selection */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="md:col-span-2 lg:col-span-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Loan Type *</label>
+                    <select 
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      value={editLoanData.loanType}
+                      onChange={(e) => {
+                        const newLoanType = e.target.value;
+                        setEditLoanData({
+                          ...editLoanData, 
+                          loanType: newLoanType,
+                          loanDays: newLoanType === 'Monthly' ? '1' : 
+                                   newLoanType === 'Weekly' ? '1' : '30'
+                        });
+                      }}
+                      required
+                    >
+                      <option value="Daily">Daily EMI</option>
+                      <option value="Weekly">Weekly EMI</option>
+                      <option value="Monthly">Monthly EMI</option>
+                    </select>
+                  </div>
+                  
+                  {/* EMI Collection Type - Only show for Weekly/Monthly */}
+                  {editLoanData.loanType !== 'Daily' && (
+                    <div className="md:col-span-2 lg:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">EMI Collection Type *</label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <label className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                          emiType === 'fixed' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                        }`}>
+                          <input
+                            type="radio"
+                            name="emiType"
+                            value="fixed"
+                            checked={emiType === 'fixed'}
+                            onChange={(e) => {
+                              setEditLoanData(prev => ({
+                                ...prev,
+                                emiType: e.target.value as 'fixed' | 'custom'
+                              }));
+                            }}
+                            className="mr-3 text-blue-600 focus:ring-blue-500"
+                          />
+                          <div>
+                            <div className="font-medium text-gray-900">Fixed EMI</div>
+                            <div className="text-sm text-gray-600">Same EMI amount for all periods</div>
+                          </div>
+                        </label>
+                        
+                        <label className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                          emiType === 'custom' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                        }`}>
+                          <input
+                            type="radio"
+                            name="emiType"
+                            value="custom"
+                            checked={emiType === 'custom'}
+                            onChange={(e) => {
+                              setEditLoanData(prev => ({
+                                ...prev,
+                                emiType: e.target.value as 'fixed' | 'custom'
+                              }));
+                            }}
+                            className="mr-3 text-blue-600 focus:ring-blue-500"
+                          />
+                          <div>
+                            <div className="font-medium text-gray-900">Custom EMI</div>
+                            <div className="text-sm text-gray-600">Different EMI for last period</div>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Loan Details Form */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {/* Common Fields */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Loan Date *</label>
+                    <input 
+                      type="date" 
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      value={formatDateForInput(editLoanData.dateApplied)}
+                      onChange={(e) => setEditLoanData({...editLoanData, dateApplied: e.target.value})}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">EMI Starting Date *</label>
+                    <input 
+                      type="date" 
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      value={formatDateForInput(emiStartDate)}
+                      onChange={(e) => setEditLoanData(prev => ({
+                        ...prev,
+                        emiStartDate: e.target.value
+                      }))}
+                      required
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Loan Amount *</label>
+                    <input 
+                      type="number" 
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      value={editLoanData.amount}
+                      onChange={(e) => setEditLoanData({...editLoanData, amount: e.target.value})}
+                      placeholder="Amount"
+                      min="0"
+                      step="0.01"
+                      required
+                    />
+                  </div>
+                  
+                  {/* EMI Amount Fields */}
+                  {emiType === 'fixed' || editLoanData.loanType === 'Daily' ? (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">EMI Amount *</label>
+                      <input 
+                        type="number" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={editLoanData.emiAmount}
+                        onChange={(e) => setEditLoanData({...editLoanData, emiAmount: e.target.value})}
+                        placeholder="EMI Amount"
+                        min="0"
+                        step="0.01"
+                        required
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      {/* Custom EMI Fields */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Fixed EMI Amount *</label>
+                        <input 
+                          type="number" 
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          value={editLoanData.emiAmount}
+                          onChange={(e) => setEditLoanData({...editLoanData, emiAmount: e.target.value})}
+                          placeholder="Fixed EMI Amount"
+                          min="0"
+                          step="0.01"
+                          required
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          For first {Number(editLoanData.loanDays || 1) - 1} {editLoanData.loanType === 'Weekly' ? 'weeks' : 'months'}
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Last EMI Amount *</label>
+                        <input 
+                          type="number" 
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          value={customEmiAmount || ''}
+                          onChange={(e) => {
+                            setEditLoanData(prev => ({
+                              ...prev,
+                              customEmiAmount: e.target.value
+                            }));
+                          }}
+                          placeholder="Last EMI Amount"
+                          min="0"
+                          step="0.01"
+                          required
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          For last 1 {editLoanData.loanType === 'Weekly' ? 'week' : 'month'}
+                        </p>
+                      </div>
+                    </>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {editLoanData.loanType === 'Daily' ? 'No. of Days *' : 
+                       editLoanData.loanType === 'Weekly' ? 'No. of Weeks *' : 'No. of Months *'}
+                    </label>
+                    <input 
+                      type="number" 
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      value={editLoanData.loanDays}
+                      onChange={(e) => setEditLoanData({...editLoanData, loanDays: e.target.value})}
+                      placeholder={editLoanData.loanType === 'Daily' ? 'Days' : 
+                                 editLoanData.loanType === 'Weekly' ? 'Weeks' : 'Months'}
+                      min="1"
+                      required
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      {editLoanData.loanType === 'Daily' ? 'Total duration in days' : 
+                       editLoanData.loanType === 'Weekly' ? 'Total duration in weeks' : 'Total duration in months'}
+                    </p>
+                  </div>
+
+                  {/* Total Loan Amount */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Total Loan Amount</label>
+                    <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                      <p className="text-gray-900 font-semibold text-lg">
+                        ₹{emiType === 'custom' && editLoanData.loanType !== 'Daily' ? (
+                          ((Number(editLoanData.emiAmount || 0) * (Number(editLoanData.loanDays || 1) - 1)) + 
+                           (Number(customEmiAmount || 0) * 1)).toLocaleString()
+                        ) : (
+                          (Number(editLoanData.emiAmount || 0) * Number(editLoanData.loanDays || 1)).toLocaleString()
+                        )}
+                      </p>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {emiType === 'custom' && editLoanData.loanType !== 'Daily' ? (
+                        `Fixed Periods + Last Period (Auto-calculated)`
+                      ) : (
+                        `EMI × Duration (Auto-calculated)`
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Custom EMI Breakdown */}
+                {emiType === 'custom' && editLoanData.loanType !== 'Daily' && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+                    <h5 className="font-medium text-yellow-800 mb-3">Custom EMI Breakdown</h5>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                      <div className="text-center">
+                        <div className="font-semibold text-yellow-700">Fixed Periods</div>
+                        <div className="text-lg font-bold text-yellow-900">{Number(editLoanData.loanDays || 1) - 1}</div>
+                        <div className="text-xs text-yellow-600">{editLoanData.loanType === 'Weekly' ? 'weeks' : 'months'}</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="font-semibold text-yellow-700">Fixed EMI</div>
+                        <div className="text-lg font-bold text-yellow-900">₹{editLoanData.emiAmount || '0'}</div>
+                        <div className="text-xs text-yellow-600">per period</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="font-semibold text-yellow-700">Last Period</div>
+                        <div className="text-lg font-bold text-yellow-900">1</div>
+                        <div className="text-xs text-yellow-600">{editLoanData.loanType === 'Weekly' ? 'week' : 'month'}</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="font-semibold text-yellow-700">Last EMI</div>
+                        <div className="text-lg font-bold text-yellow-900">₹{customEmiAmount || '0'}</div>
+                        <div className="text-xs text-yellow-600">final period</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Loan Summary */}
+                <div className="bg-green-50 border border-green-200 rounded-md p-4">
+                  <h5 className="font-semibold text-green-900 mb-3">Loan Summary</h5>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <span className="text-green-700 font-medium">Loan Amount:</span>
+                      <p className="font-semibold text-green-900">₹{editLoanData.amount || '0'}</p>
+                    </div>
+                    <div>
+                      <span className="text-green-700 font-medium">Total Loan:</span>
+                      <p className="font-semibold text-green-900">
+                        ₹{emiType === 'custom' && editLoanData.loanType !== 'Daily' ? (
+                          ((Number(editLoanData.emiAmount || 0) * (Number(editLoanData.loanDays || 1) - 1)) + 
+                           (Number(customEmiAmount || 0) * 1)).toLocaleString()
+                        ) : (
+                          (Number(editLoanData.emiAmount || 0) * Number(editLoanData.loanDays || 1)).toLocaleString()
+                        )}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-green-700 font-medium">Duration:</span>
+                      <p className="font-semibold text-green-900">
+                        {editLoanData.loanDays || '0'} 
+                        {editLoanData.loanType === 'Daily' ? ' days' : 
+                         editLoanData.loanType === 'Weekly' ? ' weeks' : ' months'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-green-700 font-medium">EMI Starts From:</span>
+                      <p className="font-semibold text-green-900">
+                        {emiStartDate ? formatDateToDDMMYYYY(emiStartDate) : 'Not set'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* EMI Type Summary */}
+                  <div className="mt-3 pt-3 border-t border-green-200">
+                    <span className="text-green-700 font-medium">EMI Type:</span>
+                    <p className="font-semibold text-green-900">
+                      {editLoanData.loanType === 'Daily' ? (
+                        `Daily EMI - All ${editLoanData.loanDays} days at ₹${editLoanData.emiAmount || '0'}`
+                      ) : emiType === 'fixed' ? (
+                        `Fixed EMI - All ${editLoanData.loanDays} ${editLoanData.loanType.toLowerCase()} periods at ₹${editLoanData.emiAmount || '0'}`
+                      ) : (
+                        `Custom EMI - ${Number(editLoanData.loanDays || 1) - 1} periods at ₹${editLoanData.emiAmount || '0'} + 1 period at ₹${customEmiAmount || '0'}`
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {editLoanData.originalData && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+                <h5 className="font-semibold text-yellow-900 mb-2">Changes Summary</h5>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <span className="text-yellow-700">Loan Amount:</span>
+                    <p className="font-semibold">
+                      <span className="text-red-600 line-through">₹{editLoanData.originalData.amount}</span>
+                      <span className="text-green-600 ml-2">→ ₹{editLoanData.amount || '0'}</span>
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-yellow-700">EMI Amount:</span>
+                    <p className="font-semibold">
+                      <span className="text-red-600 line-through">₹{editLoanData.originalData.emiAmount}</span>
+                      <span className="text-green-600 ml-2">→ ₹{editLoanData.emiAmount || '0'}</span>
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-yellow-700">Loan Type:</span>
+                    <p className="font-semibold">
+                      <span className="text-red-600 line-through">{editLoanData.originalData.loanType}</span>
+                      <span className="text-green-600 ml-2">→ {editLoanData.loanType}</span>
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-yellow-700">Duration:</span>
+                    <p className="font-semibold">
+                      <span className="text-red-600 line-through">{editLoanData.originalData.loanDays}</span>
+                      <span className="text-green-600 ml-2">→ {editLoanData.loanDays || '0'}</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+              <h5 className="font-semibold text-blue-900 mb-2">Note</h5>
+              <p className="text-sm text-blue-700">
+                This edit request will be sent to the admin for approval. The changes will only be applied after admin approval.
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex justify-end space-x-3 mt-6">
+            <button 
+              onClick={() => setShowEditLoan(false)}
+              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+              disabled={isLoading}
+            >
+              Cancel
+            </button>
+            <button 
+              onClick={handleSaveEditLoan}
+              disabled={isLoading || !editLoanData.amount || !editLoanData.emiAmount || !editLoanData.loanDays}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400"
+            >
+              {isLoading ? 'Submitting...' : 'Submit Edit Request'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+  const renderRenewLoanModal = () => (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-bold">Renew Loan</h3>
+          <button 
+            onClick={() => setShowRenewLoan(false)}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            ✕
+          </button>
+        </div>
+        
+        <div className="space-y-6">
+          <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+            <h4 className="text-lg font-semibold text-blue-900 mb-2">Customer Information</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div>
+                <span className="text-blue-700 font-medium">Customer Name:</span>
+                <p className="text-blue-900">{renewLoanData.customerName}</p>
+              </div>
+              <div>
+                <span className="text-blue-700 font-medium">Customer Number:</span>
+                <p className="text-blue-900">{renewLoanData.customerNumber}</p>
+              </div>
+              <div>
+                <span className="text-blue-700 font-medium">Renewal Date:</span>
+                <p className="text-blue-900">{renewLoanData.renewalDate}</p>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h4 className="text-lg font-semibold mb-4">Renew Loan Details</h4>
+            
+            <div className="space-y-6">
+              {/* Loan Type Selection */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="md:col-span-2 lg:col-span-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Type *</label>
+                  <select 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={renewLoanData.newLoanType}
+                    onChange={(e) => {
+                      const newLoanType = e.target.value;
+                      setRenewLoanData({
+                        ...renewLoanData, 
+                        newLoanType: newLoanType,
+                        newLoanDays: newLoanType === 'Monthly' ? '1' : 
+                                   newLoanType === 'Weekly' ? '1' : '30',
+                        emiType: newLoanType === 'Daily' ? 'fixed' : renewLoanData.emiType
+                      });
+                    }}
+                    required
+                  >
+                    <option value="Daily">Daily EMI</option>
+                    <option value="Weekly">Weekly EMI</option>
+                    <option value="Monthly">Monthly EMI</option>
+                  </select>
+                </div>
+                
+                {/* EMI Collection Type - Only show for Weekly/Monthly */}
+                {renewLoanData.newLoanType !== 'Daily' && (
+                  <div className="md:col-span-2 lg:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">EMI Collection Type *</label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <label className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                        renewLoanData.emiType === 'fixed' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="emiType"
+                          value="fixed"
+                          checked={renewLoanData.emiType === 'fixed'}
+                          onChange={(e) => setRenewLoanData({...renewLoanData, emiType: e.target.value as 'fixed' | 'custom'})}
+                          className="mr-3 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div>
+                          <div className="font-medium text-gray-900">Fixed EMI</div>
+                          <div className="text-sm text-gray-600">Same EMI amount for all periods</div>
+                        </div>
+                      </label>
+                      
+                      <label className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                        renewLoanData.emiType === 'custom' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="emiType"
+                          value="custom"
+                          checked={renewLoanData.emiType === 'custom'}
+                          onChange={(e) => setRenewLoanData({...renewLoanData, emiType: e.target.value as 'fixed' | 'custom'})}
+                          className="mr-3 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div>
+                          <div className="font-medium text-gray-900">Custom EMI</div>
+                          <div className="text-sm text-gray-600">Different EMI for last period</div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Loan Details Form */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Common Fields */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Renewal Date *</label>
+                  <input 
+                    type="date" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={renewLoanData.renewalDate}
+                    onChange={(e) => setRenewLoanData({...renewLoanData, renewalDate: e.target.value})}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">EMI Starting Date *</label>
+                  <input 
+                    type="date" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={renewLoanData.emiStartDate}
+                    onChange={(e) => setRenewLoanData({...renewLoanData, emiStartDate: e.target.value})}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Loan Amount *</label>
+                  <input 
+                    type="number" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={renewLoanData.newLoanAmount}
+                    onChange={(e) => setRenewLoanData({...renewLoanData, newLoanAmount: e.target.value})}
+                    placeholder="Loan Amount"
+                    min="0"
+                    step="0.01"
+                    required
+                  />
+                </div>
+
+                {/* EMI Amount Fields */}
+                {renewLoanData.emiType === 'fixed' || renewLoanData.newLoanType === 'Daily' ? (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">EMI Amount *</label>
+                    <input 
+                      type="number" 
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      value={renewLoanData.newEmiAmount}
+                      onChange={(e) => setRenewLoanData({...renewLoanData, newEmiAmount: e.target.value})}
+                      placeholder="EMI Amount"
+                      min="0"
+                      step="0.01"
+                      required
+                    />
+                  </div>
+                ) : (
+                  <>
+                    {/* Custom EMI Fields */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Fixed EMI Amount *</label>
+                      <input 
+                        type="number" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={renewLoanData.newEmiAmount}
+                        onChange={(e) => setRenewLoanData({...renewLoanData, newEmiAmount: e.target.value})}
+                        placeholder="Fixed EMI Amount"
+                        min="0"
+                        step="0.01"
+                        required
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        For first {Number(renewLoanData.newLoanDays || 1) - 1} {renewLoanData.newLoanType === 'Weekly' ? 'weeks' : 'months'}
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Last EMI Amount *</label>
+                      <input 
+                        type="number" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={renewLoanData.customEmiAmount || ''}
+                        onChange={(e) => setRenewLoanData({...renewLoanData, customEmiAmount: e.target.value})}
+                        placeholder="Last EMI Amount"
+                        min="0"
+                        step="0.01"
+                        required
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        For last 1 {renewLoanData.newLoanType === 'Weekly' ? 'week' : 'month'}
+                      </p>
+                    </div>
+                  </>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {renewLoanData.newLoanType === 'Daily' ? 'No. of Days *' : 
+                     renewLoanData.newLoanType === 'Weekly' ? 'No. of Weeks *' : 'No. of Months *'}
+                  </label>
+                  <input 
+                    type="number" 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={renewLoanData.newLoanDays}
+                    onChange={(e) => setRenewLoanData({...renewLoanData, newLoanDays: e.target.value})}
+                    placeholder={renewLoanData.newLoanType === 'Daily' ? 'Days' : 
+                               renewLoanData.newLoanType === 'Weekly' ? 'Weeks' : 'Months'}
+                    min="1"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {renewLoanData.newLoanType === 'Daily' ? 'Total duration in days' : 
+                     renewLoanData.newLoanType === 'Weekly' ? 'Total duration in weeks' : 'Total duration in months'}
+                  </p>
+                </div>
+
+                {/* Total Loan Amount */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Total Loan Amount</label>
+                  <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                    <p className="text-gray-900 font-semibold text-lg">
+                      ₹{renewLoanData.emiType === 'custom' && renewLoanData.newLoanType !== 'Daily' ? (
+                        ((Number(renewLoanData.newEmiAmount || 0) * (Number(renewLoanData.newLoanDays || 1) - 1)) + 
+                         (Number(renewLoanData.customEmiAmount || 0) * 1)).toLocaleString()
+                      ) : (
+                        (Number(renewLoanData.newEmiAmount || 0) * Number(renewLoanData.newLoanDays || 1)).toLocaleString()
+                      )}
+                    </p>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {renewLoanData.emiType === 'custom' && renewLoanData.newLoanType !== 'Daily' ? (
+                      `Fixed Periods + Last Period (Auto-calculated)`
+                    ) : (
+                      `EMI × Duration (Auto-calculated)`
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              {/* Custom EMI Breakdown */}
+              {renewLoanData.emiType === 'custom' && renewLoanData.newLoanType !== 'Daily' && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+                  <h5 className="font-medium text-yellow-800 mb-3">Custom EMI Breakdown</h5>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                    <div className="text-center">
+                      <div className="font-semibold text-yellow-700">Fixed Periods</div>
+                      <div className="text-lg font-bold text-yellow-900">{Number(renewLoanData.newLoanDays || 1) - 1}</div>
+                      <div className="text-xs text-yellow-600">{renewLoanData.newLoanType === 'Weekly' ? 'weeks' : 'months'}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="font-semibold text-yellow-700">Fixed EMI</div>
+                      <div className="text-lg font-bold text-yellow-900">₹{renewLoanData.newEmiAmount || '0'}</div>
+                      <div className="text-xs text-yellow-600">per period</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="font-semibold text-yellow-700">Last Period</div>
+                      <div className="text-lg font-bold text-yellow-900">1</div>
+                      <div className="text-xs text-yellow-600">{renewLoanData.newLoanType === 'Weekly' ? 'week' : 'month'}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="font-semibold text-yellow-700">Last EMI</div>
+                      <div className="text-lg font-bold text-yellow-900">₹{renewLoanData.customEmiAmount || '0'}</div>
+                      <div className="text-xs text-yellow-600">final period</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Loan Summary */}
+              <div className="bg-green-50 border border-green-200 rounded-md p-4">
+                <h5 className="font-semibold text-green-900 mb-3">Renewal Summary</h5>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <span className="text-green-700 font-medium">Loan Amount:</span>
+                    <p className="font-semibold text-green-900">₹{renewLoanData.newLoanAmount || '0'}</p>
+                  </div>
+                  <div>
+                    <span className="text-green-700 font-medium">Total Loan:</span>
+                    <p className="font-semibold text-green-900">
+                      ₹{renewLoanData.emiType === 'custom' && renewLoanData.newLoanType !== 'Daily' ? (
+                        ((Number(renewLoanData.newEmiAmount || 0) * (Number(renewLoanData.newLoanDays || 1) - 1)) + 
+                         (Number(renewLoanData.customEmiAmount || 0) * 1)).toLocaleString()
+                      ) : (
+                        (Number(renewLoanData.newEmiAmount || 0) * Number(renewLoanData.newLoanDays || 1)).toLocaleString()
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-green-700 font-medium">Duration:</span>
+                    <p className="font-semibold text-green-900">
+                      {renewLoanData.newLoanDays || '0'} 
+                      {renewLoanData.newLoanType === 'Daily' ? ' days' : 
+                       renewLoanData.newLoanType === 'Weekly' ? ' weeks' : ' months'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-green-700 font-medium">EMI Starts From:</span>
+                    <p className="font-semibold text-green-900">
+                      {renewLoanData.emiStartDate ? formatDateToDDMMYYYY(renewLoanData.emiStartDate) : 'Not set'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* EMI Type Summary */}
+                <div className="mt-3 pt-3 border-t border-green-200">
+                  <span className="text-green-700 font-medium">EMI Type:</span>
+                  <p className="font-semibold text-green-900">
+                    {renewLoanData.newLoanType === 'Daily' ? (
+                      `Daily EMI - All ${renewLoanData.newLoanDays} days at ₹${renewLoanData.newEmiAmount || '0'}`
+                    ) : renewLoanData.emiType === 'fixed' ? (
+                      `Fixed EMI - All ${renewLoanData.newLoanDays} ${renewLoanData.newLoanType.toLowerCase()} periods at ₹${renewLoanData.newEmiAmount || '0'}`
+                    ) : (
+                      `Custom EMI - ${Number(renewLoanData.newLoanDays || 1) - 1} periods at ₹${renewLoanData.newEmiAmount || '0'} + 1 period at ₹${renewLoanData.customEmiAmount || '0'}`
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Remarks</label>
+                <textarea 
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  rows={3}
+                  value={renewLoanData.remarks}
+                  onChange={(e) => setRenewLoanData({...renewLoanData, remarks: e.target.value})}
+                  placeholder="Enter any remarks or notes for this renewal..."
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+            <h5 className="font-semibold text-blue-900 mb-2">Note</h5>
+            <p className="text-sm text-blue-700">
+              This renewal request will create a new loan and add it to the customer's loan list. 
+              The original loan will be marked as "Renewed". This request requires admin approval.
+            </p>
+          </div>
+        </div>
+        
+        <div className="flex justify-end space-x-3 mt-6">
+          <button 
+            onClick={() => setShowRenewLoan(false)}
+            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+            disabled={isLoading}
+          >
+            Cancel
+          </button>
+          <button 
+            onClick={handleSaveRenewLoan}
+            disabled={isLoading || !renewLoanData.newLoanAmount || !renewLoanData.newEmiAmount || !renewLoanData.newLoanDays}
+            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400"
+          >
+            {isLoading ? 'Submitting...' : 'Submit Renewal Request'}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+  const renderEditCustomer = () => {
+  const phoneNumbers = Array.isArray(editCustomerData.phone) ? editCustomerData.phone : [editCustomerData.phone || ''];
+  
+  // Ensure we have at least two phone number slots
+  const primaryPhone = phoneNumbers[0] || '';
+  const secondaryPhone = phoneNumbers[1] || '';
+  const whatsappNumber = editCustomerData.whatsappNumber || '';
+  
+  const handleFileUpload = (file: File | null) => {
+    if (file && !file.type.startsWith('image/')) {
+      alert('Please upload an image file (PNG, JPEG, etc.) for profile picture');
+      return;
+    }
+    // In a real implementation, you would handle the file upload here
+    console.log('Profile picture selected:', file);
+    alert('Profile picture upload functionality would be implemented here');
+  };
+
+  const toggleEditField = (fieldName: string) => {
+    setEditingFields(prev => ({
+      ...prev,
+      [fieldName]: !prev[fieldName]
+    }));
+  };
+
+  const handleSaveEditCustomer = async () => {
+    setIsLoading(true);
+    try {
+      console.log('🔄 Starting edit customer request...');
+      console.log('📦 Edit data:', editCustomerData);
+
+      if (!editCustomerData.name || !primaryPhone || !editCustomerData.area || !editCustomerData.customerNumber) {
+        alert('Please fill all required fields');
+        setIsLoading(false);
+        return;
+      }
+
+      // Prepare phone array with valid numbers only
+      const phoneArray = [primaryPhone];
+      if (secondaryPhone.trim()) {
+        phoneArray.push(secondaryPhone);
+      }
+
+      const apiUrl = '/api/data-entry/edit-customer-request';
+      console.log('🌐 Calling API:', apiUrl);
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...editCustomerData,
+          phone: phoneArray,
+          whatsappNumber: whatsappNumber || '',
+          loanAmount: Number(editCustomerData.loanAmount),
+          emiAmount: Number(editCustomerData.emiAmount),
+          requestedBy: 'data_entry_operator_1'
+        }),
+      });
+
+      console.log('📡 Response status:', response.status);
+
+      const responseText = await response.text();
+      console.log('📄 Raw response:', responseText);
+
+      if (responseText.trim().startsWith('<!') || responseText.trim().startsWith('<html')) {
+        console.error('❌ Server returned HTML instead of JSON. Likely a 404 error.');
+        throw new Error('API endpoint not found. Please check the server.');
+      }
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('❌ Failed to parse response as JSON:', parseError);
+        throw new Error('Server returned invalid JSON. Response: ' + responseText.substring(0, 200));
+      }
+
+      console.log('✅ Parsed response data:', data);
+      
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+      }
+
+      alert('Edit request submitted successfully! Waiting for admin approval.');
+      setShowEditCustomer(false);
+      setEditingFields({});
+      setEditCustomerData({
+        name: '',
+        phone: [''],
+        whatsappNumber: '',
+        businessName: '',
+        area: '',
+        customerNumber: '',
+        loanAmount: '',
+        emiAmount: '',
+        loanType: 'Daily',
+        address: '',
+        customerId: '',
+        category: 'A',
+        officeCategory: 'Office 1'
+      });
+      
+      if (activeTab === 'requests') fetchPendingRequests();
+    } catch (error: any) {
+      console.error('💥 Error in handleSaveEditCustomer:', error);
+      alert('Error: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold">Edit Customer Profile</h3>
+            <button 
+              onClick={() => setShowEditCustomer(false)}
+              className="text-gray-500 hover:text-gray-700 text-2xl"
+            >
+              ✕
+            </button>
+          </div>
+          
+          <div className="space-y-6">
+            {/* Customer Information Header */}
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+              <h4 className="text-lg font-semibold text-blue-900 mb-2">Customer Information</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div>
+                  <span className="text-blue-700 font-medium">Customer ID:</span>
+                  <p className="text-blue-900">{editCustomerData.customerId}</p>
+                </div>
+                <div>
+                  <span className="text-blue-700 font-medium">Current Customer Number:</span>
+                  <p className="text-blue-900">{editCustomerData.customerNumber}</p>
+                </div>
+                <div>
+                  <span className="text-blue-700 font-medium">Status:</span>
+                  <p className="text-blue-900">Active</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Profile Picture Section */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <h4 className="text-lg font-semibold text-gray-900 mb-4">Profile Picture</h4>
+              <div className="flex items-center space-x-6">
+                <div className="flex-shrink-0">
+                  <div className="w-24 h-24 bg-gray-200 rounded-full flex items-center justify-center">
+                    <span className="text-gray-400 text-2xl">👤</span>
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <div className="flex space-x-3">
+                    <div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleFileUpload(e.target.files?.[0] || null)}
+                        className="hidden"
+                        id="profile-picture-edit"
+                      />
+                      <label 
+                        htmlFor="profile-picture-edit"
+                        className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 cursor-pointer text-sm"
+                      >
+                        Upload New Photo
+                      </label>
+                    </div>
+                    <button className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 text-sm">
+                      Remove Current
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Recommended: Square image, 500x500 pixels, max 2MB
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Personal Information Section */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <h4 className="text-lg font-semibold text-gray-900 mb-4">Personal Information</h4>
+              
+              <div className="space-y-4">
+                {/* Customer Name */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Customer Name *
+                    </label>
+                    {editingFields.name ? (
+                      <input 
+                        type="text" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={editCustomerData.name}
+                        onChange={(e) => setEditCustomerData({...editCustomerData, name: e.target.value})}
+                        required
+                      />
+                    ) : (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                        <p className="text-gray-900">{editCustomerData.name}</p>
+                      </div>
+                    )}
+                  </div>
+                  <button 
+                    onClick={() => toggleEditField('name')}
+                    className={`px-4 py-2 rounded-md text-sm whitespace-nowrap mt-6 ${
+                      editingFields.name 
+                        ? 'bg-green-600 text-white hover:bg-green-700' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {editingFields.name ? 'Save' : 'Edit'}
+                  </button>
+                </div>
+
+                {/* Phone Numbers */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Primary Phone */}
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Primary Phone Number *
+                      </label>
+                      {editingFields.primaryPhone ? (
+                        <input 
+                          type="tel" 
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          value={primaryPhone}
+                          onChange={(e) => {
+                            const value = e.target.value.replace(/\D/g, '');
+                            if (value.length <= 10) {
+                              const newPhones = [value, secondaryPhone];
+                              setEditCustomerData({...editCustomerData, phone: newPhones});
+                            }
+                          }}
+                          placeholder="10-digit primary phone"
+                          maxLength={10}
+                          required
+                        />
+                      ) : (
+                        <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                          <p className="text-gray-900">{primaryPhone}</p>
+                        </div>
+                      )}
+                    </div>
+                    <button 
+                      onClick={() => toggleEditField('primaryPhone')}
+                      className={`px-4 py-2 rounded-md text-sm whitespace-nowrap mt-6 ${
+                        editingFields.primaryPhone 
+                          ? 'bg-green-600 text-white hover:bg-green-700' 
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                      }`}
+                    >
+                      {editingFields.primaryPhone ? 'Save' : 'Edit'}
+                  </button>
+                  </div>
+
+                  {/* Secondary Phone */}
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Secondary Phone Number
+                      </label>
+                      {editingFields.secondaryPhone ? (
+                        <input 
+                          type="tel" 
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          value={secondaryPhone}
+                          onChange={(e) => {
+                            const value = e.target.value.replace(/\D/g, '');
+                            if (value.length <= 10) {
+                              const newPhones = [primaryPhone, value];
+                              setEditCustomerData({...editCustomerData, phone: newPhones});
+                            }
+                          }}
+                          placeholder="10-digit secondary phone"
+                          maxLength={10}
+                        />
+                      ) : (
+                        <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                          <p className="text-gray-900">{secondaryPhone || 'Not provided'}</p>
+                        </div>
+                      )}
+                    </div>
+                    <button 
+                      onClick={() => toggleEditField('secondaryPhone')}
+                      className={`px-4 py-2 rounded-md text-sm whitespace-nowrap mt-6 ${
+                        editingFields.secondaryPhone 
+                          ? 'bg-green-600 text-white hover:bg-green-700' 
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                      }`}
+                    >
+                      {editingFields.secondaryPhone ? 'Save' : 'Edit'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* WhatsApp Number */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <span className="flex items-center gap-1">
+                        <span>WhatsApp Number</span>
+                        <span className="text-green-600">📱</span>
+                      </span>
+                    </label>
+                    {editingFields.whatsappNumber ? (
+                      <input 
+                        type="tel" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={whatsappNumber}
+                        onChange={(e) => {
+                          const value = e.target.value.replace(/\D/g, '');
+                          if (value.length <= 10) {
+                            setEditCustomerData({...editCustomerData, whatsappNumber: value});
+                          }
+                        }}
+                        placeholder="10-digit WhatsApp number"
+                        maxLength={10}
+                      />
+                    ) : (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                        <p className="text-gray-900">{whatsappNumber || 'Not provided'}</p>
+                      </div>
+                    )}
+                  </div>
+                  <button 
+                    onClick={() => toggleEditField('whatsappNumber')}
+                    className={`px-4 py-2 rounded-md text-sm whitespace-nowrap mt-6 ${
+                      editingFields.whatsappNumber 
+                        ? 'bg-green-600 text-white hover:bg-green-700' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {editingFields.whatsappNumber ? 'Save' : 'Edit'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Business Information Section */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <h4 className="text-lg font-semibold text-gray-900 mb-4">Business Information</h4>
+              
+              <div className="space-y-4">
+                {/* Business Name */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Business Name *
+                    </label>
+                    {editingFields.businessName ? (
+                      <input 
+                        type="text" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={editCustomerData.businessName}
+                        onChange={(e) => setEditCustomerData({...editCustomerData, businessName: e.target.value})}
+                        required
+                      />
+                    ) : (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                        <p className="text-gray-900">{editCustomerData.businessName}</p>
+                      </div>
+                    )}
+                  </div>
+                  <button 
+                    onClick={() => toggleEditField('businessName')}
+                    className={`px-4 py-2 rounded-md text-sm whitespace-nowrap mt-6 ${
+                      editingFields.businessName 
+                        ? 'bg-green-600 text-white hover:bg-green-700' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {editingFields.businessName ? 'Save' : 'Edit'}
+                  </button>
+                </div>
+
+                {/* Area */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Area *
+                    </label>
+                    {editingFields.area ? (
+                      <input 
+                        type="text" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={editCustomerData.area}
+                        onChange={(e) => setEditCustomerData({...editCustomerData, area: e.target.value})}
+                        required
+                      />
+                    ) : (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                        <p className="text-gray-900">{editCustomerData.area}</p>
+                      </div>
+                    )}
+                  </div>
+                  <button 
+                    onClick={() => toggleEditField('area')}
+                    className={`px-4 py-2 rounded-md text-sm whitespace-nowrap mt-6 ${
+                      editingFields.area 
+                        ? 'bg-green-600 text-white hover:bg-green-700' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {editingFields.area ? 'Save' : 'Edit'}
+                  </button>
+                </div>
+
+                {/* Customer Number */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Customer Number *
+                    </label>
+                    {editingFields.customerNumber ? (
+                      <div className="flex">
+                        <span className="inline-flex items-center px-3 py-2 border border-r-0 border-gray-300 bg-gray-50 text-gray-500 rounded-l-md">
+                          CN
+                        </span>
+                        <input 
+                          type="text" 
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-r-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          value={editCustomerData.customerNumber.replace('CN', '')}
+                          onChange={(e) => setEditCustomerData({
+                            ...editCustomerData, 
+                            customerNumber: `CN${e.target.value.replace(/\D/g, '')}`
+                          })}
+                          placeholder="Enter numbers only"
+                          maxLength={10}
+                          required
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                        <p className="text-gray-900">{editCustomerData.customerNumber}</p>
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-500 mt-1">Full customer number: {editCustomerData.customerNumber}</p>
+                  </div>
+                  <button 
+                    onClick={() => toggleEditField('customerNumber')}
+                    className={`px-4 py-2 rounded-md text-sm whitespace-nowrap mt-6 ${
+                      editingFields.customerNumber 
+                        ? 'bg-green-600 text-white hover:bg-green-700' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {editingFields.customerNumber ? 'Save' : 'Edit'}
+                  </button>
+                </div>
+
+                {/* Address */}
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Address
+                    </label>
+                    {editingFields.address ? (
+                      <textarea 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        rows={3}
+                        value={editCustomerData.address}
+                        onChange={(e) => setEditCustomerData({...editCustomerData, address: e.target.value})}
+                        placeholder="Enter complete address"
+                      />
+                    ) : (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 min-h-[80px]">
+                        <p className="text-gray-900 whitespace-pre-wrap">{editCustomerData.address || 'Not provided'}</p>
+                      </div>
+                    )}
+                  </div>
+                  <button 
+                    onClick={() => toggleEditField('address')}
+                    className={`px-4 py-2 rounded-md text-sm whitespace-nowrap mt-6 ${
+                      editingFields.address 
+                        ? 'bg-green-600 text-white hover:bg-green-700' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {editingFields.address ? 'Save' : 'Edit'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Category & Office Information */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <h4 className="text-lg font-semibold text-gray-900 mb-4">Category & Office Information</h4>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Category */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Category *
+                    </label>
+                    {editingFields.category ? (
+                      <select 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={editCustomerData.category}
+                        onChange={(e) => setEditCustomerData({...editCustomerData, category: e.target.value})}
+                        required
+                      >
+                        <option value="A">Category A</option>
+                        <option value="B">Category B</option>
+                        <option value="C">Category C</option>
+                      </select>
+                    ) : (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                        <p className="text-gray-900">{editCustomerData.category}</p>
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-500 mt-1">Customer priority category</p>
+                  </div>
+                  <button 
+                    onClick={() => toggleEditField('category')}
+                    className={`px-4 py-2 rounded-md text-sm whitespace-nowrap mt-6 ${
+                      editingFields.category 
+                        ? 'bg-green-600 text-white hover:bg-green-700' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {editingFields.category ? 'Save' : 'Edit'}
+                  </button>
+                </div>
+
+                {/* Office Category */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Office Category *
+                    </label>
+                    {editingFields.officeCategory ? (
+                      <select 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={editCustomerData.officeCategory}
+                        onChange={(e) => setEditCustomerData({...editCustomerData, officeCategory: e.target.value})}
+                        required
+                      >
+                        <option value="Office 1">Office 1</option>
+                        <option value="Office 2">Office 2</option>
+                      </select>
+                    ) : (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                        <p className="text-gray-900">{editCustomerData.officeCategory}</p>
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-500 mt-1">Assigned office location</p>
+                  </div>
+                  <button 
+                    onClick={() => toggleEditField('officeCategory')}
+                    className={`px-4 py-2 rounded-md text-sm whitespace-nowrap mt-6 ${
+                      editingFields.officeCategory 
+                        ? 'bg-green-600 text-white hover:bg-green-700' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {editingFields.officeCategory ? 'Save' : 'Edit'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Note Section */}
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+              <h5 className="font-semibold text-blue-900 mb-2">Note</h5>
+              <p className="text-sm text-blue-700">
+                This edit request will be sent to the admin for approval. The changes will only be applied after admin approval.
+                Click the "Edit" buttons next to each field to make changes, then click "Submit Profile Edit" below to send for approval.
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex justify-end space-x-3 mt-6 pt-6 border-t border-gray-200">
+            <button 
+              onClick={() => setShowEditCustomer(false)}
+              className="px-6 py-3 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
+              disabled={isLoading}
+            >
+              Cancel
+            </button>
+            <button 
+              onClick={handleSaveEditCustomer}
+              disabled={isLoading || !editCustomerData.name || !primaryPhone || !editCustomerData.businessName || !editCustomerData.area || !editCustomerData.customerNumber}
+              className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+            >
+              {isLoading ? (
+                <span className="flex items-center">
+                  <span className="animate-spin mr-2">⏳</span>
+                  Submitting...
+                </span>
+              ) : (
+                'Submit Profile Edit Request'
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+  const renderEMI = () => {
+  // Filter customers for EMI section
+  const filteredEMICustomers = customers.filter(customer => {
+    const matchesSearch = emiSearchQuery === '' || 
+      customer.name.toLowerCase().includes(emiSearchQuery.toLowerCase()) ||
+      (customer.customerNumber && customer.customerNumber.toLowerCase().includes(emiSearchQuery.toLowerCase()));
+    
+    return matchesSearch && customer.status === 'active';
+  });
+
+  // Get EMI status for a customer with real data
+  const getEMIStatus = (customer: Customer) => {
+    const today = new Date().toISOString().split('T')[0];
+    const customerLoans = getAllCustomerLoans(customer, null);
+    
+    let hasPaid = false;
+    let hasPartial = false;
+    let hasUnpaid = false;
+
+    customerLoans.forEach(loan => {
+      if (loan.emiHistory && loan.emiHistory.length > 0) {
+        const todayPayment = loan.emiHistory.find(payment => 
+          payment.paymentDate === today
+        );
+        
+        if (todayPayment) {
+          if (todayPayment.status === 'Paid') {
+            hasPaid = true;
+          } else if (todayPayment.status === 'Partial') {
+            hasPartial = true;
+          }
+        } else {
+          hasUnpaid = true;
+        }
+      } else {
+        hasUnpaid = true;
+      }
+    });
+
+    if (hasPaid) return 'paid';
+    if (hasPartial) return 'partial';
+    return 'unpaid';
+  };
+
+  // Apply EMI status filter
+  const getFilteredEMICustomers = () => {
+    if (emiStatusFilter === 'all') {
+      return filteredEMICustomers;
+    }
+    return filteredEMICustomers.filter(customer => getEMIStatus(customer) === emiStatusFilter);
+  };
+
+  // Sort EMI customers by customer number (numeric sorting)
+  const sortedEMICustomers = [...getFilteredEMICustomers()].sort((a, b) => {
+    // Extract and normalize numeric parts from customer numbers
+    const extractNumber = (customerNumber: string): number => {
+      if (!customerNumber) return 0;
+      
+      // Remove "CN" prefix and any leading zeros, then parse as number
+      const normalized = normalizeCustomerNumber(customerNumber);
+      const numericPart = normalized.replace(/^CN/, '');
+      return parseInt(numericPart) || 0;
+    };
+
+    const aNumber = extractNumber(a.customerNumber || '');
+    const bNumber = extractNumber(b.customerNumber || '');
+    
+    if (emiSortOrder === 'asc') {
+      return aNumber - bNumber; // Numeric ascending
+    } else {
+      return bNumber - aNumber; // Numeric descending
+    }
+  });
+
+  const getEMIStatusColor = (status: string) => {
+    switch (status) {
+      case 'paid': return 'bg-green-100 text-green-800';
+      case 'partial': return 'bg-yellow-100 text-yellow-800';
+      case 'unpaid': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getEMIStatusText = (status: string) => {
+    switch (status) {
+      case 'paid': return 'Paid';
+      case 'partial': return 'Partial Paid';
+      case 'unpaid': return 'Unpaid';
+      default: return 'Unknown';
+    }
+  };
+
+  const handleCustomerSelectForEMI = (customer: Customer) => {
+    setSelectedCustomerForEMI(customer);
+    setSelectedCustomer(customer);
+    setShowUpdateEMI(true);
+  };
+
+  const handleViewCustomerLoans = (customer: Customer) => {
+    // Toggle - if same customer is clicked again, close it
+    if (selectedCustomerForEMI?._id === customer._id) {
+      setSelectedCustomerForEMI(null);
+    } else {
+      setSelectedCustomerForEMI(customer);
+    }
+  };
+
+  // Get payment status for a specific loan with real data
+  const getLoanPaymentStatus = (loan: Loan) => {
+    const today = new Date().toISOString().split('T')[0];
+    const todayPayment = loan.emiHistory?.find(payment => payment.paymentDate === today);
+    
+    return {
+      status: todayPayment?.status || 'Unpaid',
+      amount: todayPayment?.amount || 0,
+      date: todayPayment?.paymentDate || today
+    };
+  };
+
+  const getPaymentStatusColor = (status: string) => {
+    switch (status) {
+      case 'Paid': return 'bg-green-100 text-green-800';
+      case 'Partial': return 'bg-yellow-100 text-yellow-800';
+      case 'Advance': return 'bg-blue-100 text-blue-800';
+      default: return 'bg-red-100 text-red-800';
+    }
+  };
+
+  return (
+    <div className="px-4 py-6 sm:px-0">
+      <div className="bg-white shadow rounded-lg">
+        <div className="px-4 py-5 sm:px-6">
+          <h3 className="text-lg leading-6 font-medium text-gray-900">EMI Management</h3>
+          <p className="mt-1 max-w-2xl text-sm text-gray-500">Manage daily EMI collections for all customers</p>
+        </div>
+        
+        <div className="border-t border-gray-200">
+          <div className="px-4 py-5 sm:p-6">
+            {/* Search and Sort Section */}
+            <div className="mb-6 space-y-4">
+              <div className="flex flex-col sm:flex-row gap-4 justify-between">
+                <div className="flex-1">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Search by customer name or customer number..."
+                      className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      value={emiSearchQuery}
+                      onChange={(e) => setEmiSearchQuery(e.target.value)}
+                    />
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <span className="text-gray-400">🔍</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex gap-2">
+                  {/* Filter Button */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowEMIFilters(!showEMIFilters)}
+                      className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      <span>Filter</span>
+                      <span className={`transform transition-transform ${showEMIFilters ? 'rotate-180' : ''}`}>
+                        ▼
+                      </span>
+                    </button>
+                    
+                    {/* Filter Dropdown */}
+                    {showEMIFilters && (
+                      <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                        <div className="p-2">
+                          <div className="space-y-1">
+                            <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                              <input
+                                type="radio"
+                                name="emiStatusFilter"
+                                value="all"
+                                checked={emiStatusFilter === 'all'}
+                                onChange={(e) => setEmiStatusFilter(e.target.value)}
+                                className="mr-3 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-sm text-gray-700">All Status</span>
+                            </label>
+                            <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                              <input
+                                type="radio"
+                                name="emiStatusFilter"
+                                value="paid"
+                                checked={emiStatusFilter === 'paid'}
+                                onChange={(e) => setEmiStatusFilter(e.target.value)}
+                                className="mr-3 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-sm text-green-700">Paid Only</span>
+                            </label>
+                            <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                              <input
+                                type="radio"
+                                name="emiStatusFilter"
+                                value="unpaid"
+                                checked={emiStatusFilter === 'unpaid'}
+                                onChange={(e) => setEmiStatusFilter(e.target.value)}
+                                className="mr-3 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-sm text-red-700">Unpaid Only</span>
+                            </label>
+                            <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                              <input
+                                type="radio"
+                                name="emiStatusFilter"
+                                value="partial"
+                                checked={emiStatusFilter === 'partial'}
+                                onChange={(e) => setEmiStatusFilter(e.target.value)}
+                                className="mr-3 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-sm text-yellow-700">Partial Only</span>
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <button
+                    onClick={() => setEmiSortOrder(emiSortOrder === 'asc' ? 'desc' : 'asc')}
+                    className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    <span>Sort {emiSortOrder === 'asc' ? '↑' : '↓'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Active Filter Display */}
+              {(emiStatusFilter !== 'all' || emiSearchQuery) && (
+                <div className="flex flex-wrap gap-2 items-center">
+                  <span className="text-sm text-gray-600">Active filters:</span>
+                  
+                  {emiStatusFilter !== 'all' && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      Status: {emiStatusFilter === 'paid' ? 'Paid' : emiStatusFilter === 'unpaid' ? 'Unpaid' : 'Partial'}
+                      <button 
+                        onClick={() => setEmiStatusFilter('all')}
+                        className="ml-1 text-blue-600 hover:text-blue-800"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                  
+                  {emiSearchQuery && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                      Search: "{emiSearchQuery}"
+                      <button 
+                        onClick={() => setEmiSearchQuery('')}
+                        className="ml-1 text-purple-600 hover:text-purple-800"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                  
+                  {(emiStatusFilter !== 'all' || emiSearchQuery) && (
+                    <button
+                      onClick={() => {
+                        setEmiStatusFilter('all');
+                        setEmiSearchQuery('');
+                      }}
+                      className="text-xs text-red-600 hover:text-red-800 underline"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">
+                  Showing {sortedEMICustomers.length} of {getFilteredEMICustomers().length} customers
+                  {emiStatusFilter !== 'all' && (
+                    <span className="text-gray-500">
+                      {' '}({getFilteredEMICustomers().length} total after filter)
+                    </span>
+                  )}
+                </span>
+                
+                {emiSearchQuery && (
+                  <button
+                    onClick={() => setEmiSearchQuery('')}
+                    className="text-sm text-blue-600 hover:text-blue-800"
+                  >
+                    Clear search
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Customers List */}
+            <div className="bg-white shadow-sm rounded-lg border border-gray-200">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
+                        Customer Number
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
+                        Customer Name
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
+                        Business Name
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
+                        Office
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
+                        EMI Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {sortedEMICustomers.map((customer) => {
+                      const emiStatus = getEMIStatus(customer);
+                      const isSelected = selectedCustomerForEMI?._id === customer._id;
+                      const customerLoans = getAllCustomerLoans(customer, null);
+                      
+                      return (
+                        <>
+                          <tr 
+                            key={customer._id} 
+                            className={`hover:bg-gray-50 cursor-pointer transition-colors duration-200 ${
+                              isSelected ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
+                            }`}
+                            onClick={() => handleViewCustomerLoans(customer)}
+                          >
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 w-1/6">
+                              {customer.customerNumber}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 w-1/6">
+                              {customer.name}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/6">
+                              {customer.businessName}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/6">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                customer.officeCategory === 'Office 1' 
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : 'bg-purple-100 text-purple-800'
+                              }`}>
+                                {customer.officeCategory || 'N/A'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm w-1/6">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getEMIStatusColor(emiStatus)}`}>
+                                {getEMIStatusText(emiStatus)}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium w-1/6">
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCustomerSelectForEMI(customer);
+                                }}
+                                className="bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 text-sm transition-colors"
+                              >
+                                Update EMI
+                              </button>
+                            </td>
+                          </tr>
+                          
+                          {/* Expanded Loan Details with smooth transition */}
+                          {isSelected && (
+                            <tr className="bg-blue-50">
+                              <td colSpan={6} className="px-6 py-4">
+                                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm transition-all duration-300 ease-in-out">
+                                  <h5 className="font-semibold text-gray-900 mb-3 text-lg">
+                                    Loan Details - {customer.name} - {customer.customerNumber}
+                                  </h5>
+                                  <div className="space-y-3">
+                                    {customerLoans.map((loan, index) => {
+                                      const paymentInfo = getLoanPaymentStatus(loan);
+                                      const completion = calculateEMICompletion(loan);
+                                      
+                                      return (
+                                        <div key={loan._id} className="flex justify-between items-center p-4 border border-gray-200 rounded-md bg-gray-50 hover:bg-white transition-colors">
+                                          <div className="flex-1">
+                                            <div className="flex items-center gap-6 mb-2">
+                                              <span className="font-medium text-gray-900 text-lg">
+                                                {loan.loanNumber}
+                                              </span>
+                                              <span className="text-sm text-gray-700 font-semibold">
+                                                EMI: ₹{loan.emiAmount}
+                                              </span>
+                                              <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getPaymentStatusColor(paymentInfo.status)}`}>
+                                                {paymentInfo.status}
+                                              </span>
+                                            </div>
+                                            <div className="text-sm text-gray-600 grid grid-cols-1 md:grid-cols-2 gap-2">
+                                              <div>
+                                                <span className="font-medium">Next EMI Date: </span>
+                                                {formatDateToDDMMYYYY(loan.nextEmiDate)}
+                                              </div>
+                                              <div>
+                                                <span className="font-medium">Paid: </span>
+                                                {loan.emiPaidCount || 0} / {loan.totalEmiCount || loan.loanDays || 30} EMIs
+                                              </div>
+                                            </div>
+                                            {paymentInfo.amount > 0 && paymentInfo.status !== 'Unpaid' && (
+                                              <div className="text-xs text-green-600 mt-1">
+                                                Today's Payment: ₹{paymentInfo.amount} on {formatDateToDDMMYYYY(paymentInfo.date)}
+                                              </div>
+                                            )}
+                                          </div>
+                                          <button 
+                                            onClick={() => {
+                                              setSelectedCustomerForEMI(customer);
+                                              setSelectedCustomer(customer);
+                                              setSelectedLoanForPayment(loan);
+                                              setShowUpdateEMI(true);
+                                            }}
+                                            className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 text-sm transition-colors"
+                                          >
+                                            Pay EMI
+                                          </button>
+                                        </div>
+                                      );
+                                    })}
+                                    
+                                    {customerLoans.length === 0 && (
+                                      <div className="text-center py-4 text-gray-500">
+                                        No loans found for this customer
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </>
+                      );
+                    })}
+                    
+                    {sortedEMICustomers.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="px-6 py-8 text-center">
+                          <div className="text-gray-400 text-4xl mb-4">💰</div>
+                          <p className="text-gray-500 text-lg">No customers found</p>
+                          <p className="text-sm text-gray-400 mt-2">
+                            {emiSearchQuery || emiStatusFilter !== 'all'
+                              ? 'Try adjusting your search terms or filters' 
+                              : 'No active customers available for EMI management'
+                            }
+                          </p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Summary Cards */}
+            <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="bg-white p-4 rounded-lg border border-gray-200">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <span className="text-green-500 text-2xl">✅</span>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm font-medium text-gray-500">Paid Today</p>
+                    <p className="text-2xl font-semibold text-green-600">
+                      {sortedEMICustomers.filter(c => getEMIStatus(c) === 'paid').length}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white p-4 rounded-lg border border-gray-200">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <span className="text-red-500 text-2xl">⏰</span>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm font-medium text-gray-500">Pending</p>
+                    <p className="text-2xl font-semibold text-red-600">
+                      {sortedEMICustomers.filter(c => getEMIStatus(c) === 'unpaid').length}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white p-4 rounded-lg border border-gray-200">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <span className="text-yellow-500 text-2xl">💰</span>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm font-medium text-gray-500">Partial</p>
+                    <p className="text-2xl font-semibold text-yellow-600">
+                      {sortedEMICustomers.filter(c => getEMIStatus(c) === 'partial').length}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+  const renderRequests = () => {
+
+  const requestTypes = [
+    'all',
+    'New Customer',
+    'New Loan', 
+    'Customer Edit',
+    'Loan Edit',
+    'Loan Renew',
+    'Loan Addition',
+    'Loan Deletion',
+    'EMI Correction'
+  ];
+
+  const statusOptions = [
+    'all',
+    'Pending',
+    'Approved',
+    'Rejected',
+    'Processing'
+  ];
+
+  const dateSortOptions = [
+    { value: 'latest', label: 'Latest First' },
+    { value: 'oldest', label: 'Oldest First' }
+  ];
+
+  // Filter and sort requests
+  const filteredRequests = pendingRequests
+    .filter(request => {
+      const matchesType = requestFilters.type === 'all' || request.type === requestFilters.type;
+      const matchesStatus = requestFilters.status === 'all' || request.status === requestFilters.status;
+      return matchesType && matchesStatus;
+    })
+    .sort((a, b) => {
+      if (requestFilters.dateSort === 'latest') {
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      } else {
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      }
+    });
+
+  const clearFilters = () => {
+    setRequestFilters({
+      type: 'all',
+      dateSort: 'latest',
+      status: 'all'
+    });
+  };
+
+  const hasActiveFilters = requestFilters.type !== 'all' || requestFilters.status !== 'all' || requestFilters.dateSort !== 'latest';
+
+  return (
+    <div className="px-4 py-6 sm:px-0">
+      <div className="bg-white shadow rounded-lg">
+        <div className="px-4 py-5 sm:px-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h3 className="text-lg leading-6 font-medium text-gray-900">Pending Requests</h3>
+              <p className="mt-1 max-w-2xl text-sm text-gray-500">Requests waiting for admin approval</p>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                filteredRequests.length > 0 ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-800'
+              }`}>
+                {filteredRequests.length} request(s)
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Filters Section */}
+        <div className="border-t border-gray-200 px-4 py-4 bg-gray-50">
+          <div className="flex flex-col lg:flex-row gap-4">
+            {/* Request Type Filter */}
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Request Type
+              </label>
+              <select
+                value={requestFilters.type}
+                onChange={(e) => setRequestFilters(prev => ({ ...prev, type: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              >
+                {requestTypes.map(type => (
+                  <option key={type} value={type}>
+                    {type === 'all' ? 'All Types' : type}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Status Filter */}
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Status
+              </label>
+              <select
+                value={requestFilters.status}
+                onChange={(e) => setRequestFilters(prev => ({ ...prev, status: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              >
+                {statusOptions.map(status => (
+                  <option key={status} value={status}>
+                    {status === 'all' ? 'All Status' : status}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Date Sort */}
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Sort by Date
+              </label>
+              <select
+                value={requestFilters.dateSort}
+                onChange={(e) => setRequestFilters(prev => ({ ...prev, dateSort: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              >
+                {dateSortOptions.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Clear Filters Button */}
+            <div className="flex items-end">
+              <button
+                onClick={clearFilters}
+                disabled={!hasActiveFilters}
+                className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Clear Filters
+              </button>
+            </div>
+          </div>
+
+          {/* Active Filters Display */}
+          {hasActiveFilters && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className="text-xs text-gray-600">Active filters:</span>
+              {requestFilters.type !== 'all' && (
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
+                  Type: {requestFilters.type}
+                  <button 
+                    onClick={() => setRequestFilters(prev => ({ ...prev, type: 'all' }))}
+                    className="ml-1 text-blue-600 hover:text-blue-800"
+                  >
+                    ×
+                  </button>
+                </span>
+              )}
+              {requestFilters.status !== 'all' && (
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
+                  Status: {requestFilters.status}
+                  <button 
+                    onClick={() => setRequestFilters(prev => ({ ...prev, status: 'all' }))}
+                    className="ml-1 text-green-600 hover:text-green-800"
+                  >
+                    ×
+                  </button>
+                </span>
+              )}
+              {requestFilters.dateSort !== 'latest' && (
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
+                  Sort: {dateSortOptions.find(opt => opt.value === requestFilters.dateSort)?.label}
+                  <button 
+                    onClick={() => setRequestFilters(prev => ({ ...prev, dateSort: 'latest' }))}
+                    className="ml-1 text-purple-600 hover:text-purple-800"
+                  >
+                    ×
+                  </button>
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-gray-200">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Request Type</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer Name</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Details</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {Array.isArray(filteredRequests) && filteredRequests.length > 0 ? (
+                  filteredRequests.map((request) => (
+                    <tr key={request._id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            request.type === 'New Customer' ? 'bg-green-100 text-green-800' :
+                            request.type === 'New Loan' ? 'bg-blue-100 text-blue-800' :
+                            request.type === 'Customer Edit' ? 'bg-yellow-100 text-yellow-800' :
+                            request.type === 'Loan Edit' ? 'bg-orange-100 text-orange-800' :
+                            request.type === 'Loan Renew' ? 'bg-purple-100 text-purple-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {request.type}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {request.customerName || 'N/A'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {formatDateToDDMMYYYY(request.createdAt)}
+                        <div className="text-xs text-gray-400">
+                          {new Date(request.createdAt).toLocaleTimeString()}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          request.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
+                          request.status === 'Approved' ? 'bg-green-100 text-green-800' :
+                          request.status === 'Rejected' ? 'bg-red-100 text-red-800' :
+                          request.status === 'Processing' ? 'bg-blue-100 text-blue-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {request.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {request.description || request.type}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-8 text-center">
+                      <div className="text-gray-400 text-4xl mb-4">📋</div>
+                      <p className="text-gray-500 text-lg">No requests found</p>
+                      <p className="text-sm text-gray-400 mt-2">
+                        {hasActiveFilters 
+                          ? 'Try adjusting your filters to see more results' 
+                          : 'All requests are processed or no requests submitted yet'
+                        }
+                      </p>
+                      {hasActiveFilters && (
+                        <button
+                          onClick={clearFilters}
+                          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+                        >
+                          Clear All Filters
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Summary */}
+          {filteredRequests.length > 0 && (
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+              <div className="flex flex-wrap gap-6 text-sm text-gray-600">
+                <div>
+                  <span className="font-medium">Total shown:</span> {filteredRequests.length}
+                </div>
+                {requestFilters.type !== 'all' && (
+                  <div>
+                    <span className="font-medium">Type:</span> {requestFilters.type}
+                  </div>
+                )}
+                {requestFilters.status !== 'all' && (
+                  <div>
+                    <span className="font-medium">Status:</span> {requestFilters.status}
+                  </div>
+                )}
+                <div>
+                  <span className="font-medium">Sorted:</span> {dateSortOptions.find(opt => opt.value === requestFilters.dateSort)?.label}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const renderCollection = () => {
+  return (
+    <div className="px-4 py-6 sm:px-0">
       <div className="bg-white shadow rounded-lg">
         <div className="px-4 py-5 sm:px-6">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
               <h3 className="text-lg leading-6 font-medium text-gray-900">Daily Collection Report</h3>
-              <p className="mt-1 max-w-2xl text-sm text-gray-500">View EMI collections by date across all offices</p>
+              <p className="mt-1 max-w-2xl text-sm text-gray-500">View EMI collections by date</p>
             </div>
             <div className="flex items-center gap-4">
               <div>
@@ -145,23 +7650,11 @@ function CollectionView({ onBack }: { onBack: () => void }) {
           {/* Summary Cards */}
           {collectionData && (
             <div className="px-4 py-5 sm:p-6 bg-gray-50">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div className="bg-white p-4 rounded-lg shadow-sm border">
                   <dt className="text-sm font-medium text-gray-500 truncate">Total Collection</dt>
                   <dd className="mt-1 text-2xl font-semibold text-green-600">
                     ₹{collectionData.summary?.totalCollection?.toLocaleString() || '0'}
-                  </dd>
-                </div>
-                <div className="bg-white p-4 rounded-lg shadow-sm border">
-                  <dt className="text-sm font-medium text-gray-500 truncate">Office 1 Collection</dt>
-                  <dd className="mt-1 text-2xl font-semibold text-blue-600">
-                    ₹{collectionData.summary?.office1Collection?.toLocaleString() || '0'}
-                  </dd>
-                </div>
-                <div className="bg-white p-4 rounded-lg shadow-sm border">
-                  <dt className="text-sm font-medium text-gray-500 truncate">Office 2 Collection</dt>
-                  <dd className="mt-1 text-2xl font-semibold text-purple-600">
-                    ₹{collectionData.summary?.office2Collection?.toLocaleString() || '0'}
                   </dd>
                 </div>
                 <div className="bg-white p-4 rounded-lg shadow-sm border">
@@ -264,3530 +7757,1809 @@ function CollectionView({ onBack }: { onBack: () => void }) {
       </div>
     </div>
   );
-}
+};
+  const renderDashboard = () => (
+    <div className="px-4 py-6 sm:px-0">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="px-4 py-5 sm:p-6">
+            <dt className="text-sm font-medium text-gray-500 truncate">EMI Collected Today</dt>
+            <dd className="mt-1 text-3xl font-semibold text-green-600">{todayStats.emiCollected}</dd>
+            <p className="text-xs text-gray-500 mt-1">From approved customers</p>
+          </div>
+        </div>
 
-// Loan Details Modal Component
-// Loan Details Modal Component - UPDATED
-function LoanDetailsModal({ stats, onClose }: { 
-  stats: any;
-  onClose: () => void;
-}) {
-  const [timeRange, setTimeRange] = useState('daily');
-  const [loanData, setLoanData] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="px-4 py-5 sm:p-6">
+            <dt className="text-sm font-medium text-gray-500 truncate">Approved Customers</dt>
+            <dd className="mt-1 text-3xl font-semibold text-blue-600">{todayStats.newCustomers}</dd>
+            <p className="text-xs text-gray-500 mt-1">Active customers</p>
+          </div>
+        </div>
 
-  const fetchLoanDetails = async (range: string) => {
-    try {
-      setLoading(true);
-      const response = await fetch(`/api/admin/loan-details?range=${range}`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setLoanData(data.data || []);
-        }
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="px-4 py-5 sm:p-6">
+            <dt className="text-sm font-medium text-gray-500 truncate">Pending Requests</dt>
+            <dd className="mt-1 text-3xl font-semibold text-orange-600">{todayStats.pendingRequests}</dd>
+            <p className="text-xs text-gray-500 mt-1">Waiting for admin approval</p>
+          </div>
+        </div>
+
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="px-4 py-5 sm:p-6">
+            <dt className="text-sm font-medium text-gray-500 truncate">Today's Collection</dt>
+            <dd className="mt-1 text-3xl font-semibold text-gray-900">₹{todayStats.totalCollection}</dd>
+            <p className="text-xs text-gray-500 mt-1">Total EMI collected</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="bg-white shadow rounded-lg p-6">
+          <div className="flex items-center mb-4">
+            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
+              <span className="text-blue-600 text-lg">💰</span>
+            </div>
+            <h3 className="text-lg font-medium">Update EMI</h3>
+          </div>
+          <p className="text-gray-600 mb-4">Record daily EMI payments from approved customers</p>
+          <button 
+            onClick={() => setShowUpdateEMI(true)}
+            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
+          >
+            Update EMI
+          </button>
+        </div>
+
+        <div className="bg-white shadow rounded-lg p-6">
+          <div className="flex items-center mb-4">
+            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mr-4">
+              <span className="text-green-600 text-lg">👥</span>
+            </div>
+            <h3 className="text-lg font-medium">Add New Customer</h3>
+          </div>
+          <p className="text-gray-600 mb-4">Submit new customer requests for admin approval</p>
+          <button 
+            onClick={() => setShowAddCustomer(true)}
+            className="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition-colors"
+          >
+            Submit Request
+          </button>
+          <p className="text-xs text-gray-500 mt-2 text-center">
+            Requires admin approval
+          </p>
+        </div>
+
+        <div className="bg-white shadow rounded-lg p-6">
+          <div className="flex items-center mb-4">
+            <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mr-4">
+              <span className="text-purple-600 text-lg">🔍</span>
+            </div>
+            <h3 className="text-lg font-medium">Search Customers</h3>
+          </div>
+          <p className="text-gray-600 mb-4">Find and view approved customer details</p>
+          <button 
+            onClick={() => setActiveTab('customers')}
+            className="w-full bg-purple-600 text-white py-2 px-4 rounded-md hover:bg-purple-700 transition-colors"
+          >
+            Search Customers
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white shadow rounded-lg">
+          <div className="px-4 py-5 sm:px-6">
+            <h3 className="text-lg leading-6 font-medium text-gray-900">Recent Activity</h3>
+            <p className="mt-1 max-w-2xl text-sm text-gray-500">Your recent actions and updates</p>
+          </div>
+          <div className="border-t border-gray-200">
+            <div className="px-4 py-5 sm:p-6">
+              <div className="text-center py-8">
+                <div className="text-gray-400 text-4xl mb-4">📊</div>
+                <p className="text-gray-600">Your recent activities will appear here</p>
+                <p className="text-sm text-gray-500 mt-2">EMI updates, customer searches, etc.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white shadow rounded-lg">
+          <div className="px-4 py-5 sm:px-6">
+            <h3 className="text-lg leading-6 font-medium text-gray-900">How It Works</h3>
+            <p className="mt-1 max-w-2xl text-sm text-gray-500">Customer approval process</p>
+          </div>
+          <div className="border-t border-gray-200">
+            <div className="px-4 py-5 sm:p-6">
+              <div className="space-y-4">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                    <span className="text-blue-600 text-sm font-semibold">1</span>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm font-medium text-gray-900">Submit Request</p>
+                    <p className="text-sm text-gray-500">Fill customer details and submit for approval</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start">
+                  <div className="flex-shrink-0 w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center">
+                    <span className="text-yellow-600 text-sm font-semibold">2</span>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm font-medium text-gray-900">Admin Review</p>
+                    <p className="text-sm text-gray-500">Super Admin reviews and approves the request</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start">
+                  <div className="flex-shrink-0 w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                    <span className="text-green-600 text-sm font-semibold">3</span>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm font-medium text-gray-900">Customer Active</p>
+                    <p className="text-sm text-gray-500">Customer becomes active and appears in lists</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start">
+                  <div className="flex-shrink-0 w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
+                    <span className="text-purple-600 text-sm font-semibold">4</span>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm font-medium text-gray-900">Manage EMI</p>
+                    <p className="text-sm text-gray-500">Start collecting EMI from approved customers</p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+                <p className="text-sm text-blue-700">
+                  <strong>Note:</strong> New customers won't appear in search results until approved by Super Admin.
+                  Check the "Requests" tab to track approval status.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {pendingRequests.length > 0 && (
+        <div className="mt-8 bg-yellow-50 border border-yellow-200 rounded-lg p-6">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <span className="text-yellow-400 text-2xl">📋</span>
+            </div>
+            <div className="ml-3 flex-1">
+              <h3 className="text-lg font-medium text-yellow-800">Pending Approval Requests</h3>
+              <p className="text-yellow-700">
+                You have {pendingRequests.length} customer request(s) waiting for admin approval.
+              </p>
+            </div>
+            <button 
+              onClick={() => setActiveTab('requests')}
+              className="ml-4 bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 transition-colors"
+            >
+              View Requests
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderCustomers = () => {
+  // Check for duplicate customer numbers
+  const hasDuplicateCustomerNumbers = () => {
+    const seen = new Set();
+    return customers.some(customer => {
+      const normalized = normalizeCustomerNumber(customer.customerNumber || '');
+      if (seen.has(normalized)) {
+        return true;
       }
-    } catch (error) {
-      console.error('Error fetching loan details:', error);
-      setLoanData([]);
-    } finally {
-      setLoading(false);
-    }
+      seen.add(normalized);
+      return false;
+    });
   };
 
-  useEffect(() => {
-    fetchLoanDetails(timeRange);
-  }, [timeRange]);
-
-  const handleTimeRangeChange = (range: string) => {
-    setTimeRange(range);
-  };
-
-  // Calculate totals for the selected time range
-  const calculateTotals = () => {
-    const totalLoanAmount = loanData.reduce((sum, item) => sum + (item.totalAmount || 0), 0);
-    const totalRecoveredAmount = loanData.reduce((sum, item) => sum + (item.recoveredAmount || 0), 0);
-    const totalAmountToRecover = totalLoanAmount - totalRecoveredAmount;
-    const totalLoans = loanData.reduce((sum, item) => sum + (item.newLoans || 0), 0);
-
-    return {
-      totalLoanAmount,
-      totalRecoveredAmount,
-      totalAmountToRecover,
-      totalLoans
+  // Sort customers by customer number (numeric sorting)
+  const sortedCustomers = [...filteredCustomers].sort((a, b) => {
+    // Extract and normalize numeric parts from customer numbers
+    const extractNumber = (customerNumber: string): number => {
+      if (!customerNumber) return 0;
+      
+      // Remove "CN" prefix and any leading zeros, then parse as number
+      const normalized = normalizeCustomerNumber(customerNumber);
+      const numericPart = normalized.replace(/^CN/, '');
+      return parseInt(numericPart) || 0;
     };
+
+    const aNumber = extractNumber(a.customerNumber || '');
+    const bNumber = extractNumber(b.customerNumber || '');
+    
+    if (customerSortOrder === 'asc') {
+      return aNumber - bNumber; // Numeric ascending
+    } else {
+      return bNumber - aNumber; // Numeric descending
+    }
+  });
+
+  return (
+    <div className="px-4 py-6 sm:px-0">
+      <div className="mb-6">
+        <div className="flex flex-col sm:flex-row gap-4 mb-4">
+          <div className="flex-1">
+            <button 
+              onClick={() => setShowAddCustomer(true)}
+              className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 w-full sm:w-auto"
+            >
+              Add New Customer (Requires Approval)
+            </button>
+          </div>
+        </div>
+        
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <span className="text-blue-400 text-lg">ℹ️</span>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-blue-800">Information</h3>
+              <div className="mt-1 text-sm text-blue-700">
+                <p>Only approved customers are shown here. New customers require admin approval.</p>
+                <p className="text-xs mt-1">Check the "Requests" tab to see pending approvals.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Duplicate Customer Number Warning */}
+        {hasDuplicateCustomerNumbers() && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <span className="text-yellow-400 text-lg">⚠️</span>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-yellow-800">Duplicate Customer Numbers Detected</h3>
+                <div className="mt-1 text-sm text-yellow-700">
+                  <p>Some customer numbers have duplicates when ignoring leading zeros.</p>
+                  <p className="text-xs mt-1">New customers will be validated to prevent duplicates.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Search and Status Filter - Office Category Filter Removed */}
+        <div className="flex flex-col sm:flex-row gap-4 justify-between">
+          <div className="flex-1">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search by customer name or customer number..."
+                className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <span className="text-gray-400">🔍</span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex gap-2">
+            {/* Status Filter Button */}
+            <div className="relative">
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <span>Status Filter</span>
+                <span className={`transform transition-transform ${showFilters ? 'rotate-180' : ''}`}>
+                  ▼
+                </span>
+              </button>
+              
+              {/* Status Filter Dropdown */}
+              {showFilters && (
+                <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                  <div className="p-2">
+                    <div className="space-y-1">
+                      <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                        <input
+                          type="radio"
+                          name="statusFilter"
+                          value="all"
+                          checked={filters.status === ''}
+                          onChange={(e) => setFilters(prev => ({ ...prev, status: '' }))}
+                          className="mr-3 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">All Status</span>
+                      </label>
+                      <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                        <input
+                          type="radio"
+                          name="statusFilter"
+                          value="active"
+                          checked={filters.status === 'active'}
+                          onChange={(e) => setFilters(prev => ({ ...prev, status: 'active' }))}
+                          className="mr-3 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-green-700">Active Only</span>
+                      </label>
+                      <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
+                        <input
+                          type="radio"
+                          name="statusFilter"
+                          value="inactive"
+                          checked={filters.status === 'inactive'}
+                          onChange={(e) => setFilters(prev => ({ ...prev, status: 'inactive' }))}
+                          className="mr-3 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-red-700">Inactive Only</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <button
+              onClick={() => setCustomerSortOrder(customerSortOrder === 'asc' ? 'desc' : 'asc')}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <span>Sort {customerSortOrder === 'asc' ? '↑' : '↓'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Active Filter Display */}
+        {(filters.status !== '' || searchQuery) && (
+          <div className="flex flex-wrap gap-2 items-center mt-4">
+            <span className="text-sm text-gray-600">Active filters:</span>
+            
+            {filters.status !== '' && (
+              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                Status: {filters.status === 'active' ? 'Active' : 'Inactive'}
+                <button 
+                  onClick={() => setFilters(prev => ({ ...prev, status: '' }))}
+                  className="ml-1 text-blue-600 hover:text-blue-800"
+                >
+                  ×
+                </button>
+              </span>
+            )}
+            
+            {searchQuery && (
+              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                Search: "{searchQuery}"
+                <button 
+                  onClick={() => setSearchQuery('')}
+                  className="ml-1 text-purple-600 hover:text-purple-800"
+                >
+                  ×
+                </button>
+              </span>
+            )}
+            
+            {(filters.status !== '' || searchQuery) && (
+              <button
+                onClick={() => {
+                  setFilters(prev => ({ ...prev, status: '' }));
+                  setSearchQuery('');
+                }}
+                className="text-xs text-red-600 hover:text-red-800 underline"
+              >
+                Clear all
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="flex justify-between items-center mt-4">
+          <span className="text-sm text-gray-600">
+            Showing {sortedCustomers.length} of {customers.length} customers
+            {filters.status !== '' && (
+              <span className="text-gray-500">
+                {' '}({filteredCustomers.length} total after filter)
+              </span>
+            )}
+          </span>
+          
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              Clear search
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white shadow rounded-lg">
+        <div className="px-4 py-5 sm:px-6">
+          <h3 className="text-lg leading-6 font-medium text-gray-900">Customers List</h3>
+          <p className="mt-1 max-w-2xl text-sm text-gray-500">
+            All active customers and their loan details
+          </p>
+        </div>
+        <div className="border-t border-gray-200">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">
+                    Customer Number
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">
+                    Name
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">
+                    Business
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">
+                    Office
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {sortedCustomers.map((customer) => (
+                  <tr key={customer._id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 w-1/5">
+                      {customer.customerNumber}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 w-1/5">
+                      {customer.name}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/5">
+                      {customer.businessName}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/5">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        customer.officeCategory === 'Office 1' 
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-purple-100 text-purple-800'
+                      }`}>
+                        {customer.officeCategory || 'N/A'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium w-1/5">
+                      <div className="flex space-x-2">
+                        <button 
+                          onClick={() => {
+                            handleSearchCustomer(customer);
+                            setShowUpdateEMI(true);
+                          }}
+                          className="bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 text-sm"
+                        >
+                          Update EMI
+                        </button>
+                        <button 
+                          onClick={() => handleViewDetails(customer)}
+                          className="bg-green-600 text-white px-3 py-1 rounded-md hover:bg-green-700 text-sm"
+                        >
+                          View Details
+                        </button>
+                        <button 
+                          onClick={() => handleViewEMICalendar(customer)}
+                          className="bg-purple-600 text-white px-3 py-1 rounded-md hover:bg-purple-700 text-sm"
+                        >
+                          EMI Calendar
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {sortedCustomers.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
+                      No customers found
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+  const renderUpdateEMIForm = () => {
+    const displayLoans = selectedCustomer ? getAllCustomerLoans(selectedCustomer, customerDetails) : [];
+    const currentOperator = "Operator 1";
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold">Update EMI Payment</h3>
+              <button 
+                onClick={() => {
+                  setShowUpdateEMI(false);
+                  setSelectedCustomer(null);
+                  setSelectedLoanForPayment(null);
+                  setShowPaymentForm(false);
+                  setSearchQuery('');
+                  setFilters({
+                    customerNumber: '',
+                    loanType: '',
+                    status: '',
+                    officeCategory: ''
+                  });
+                  setShowFilters(false);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+            
+            {!showPaymentForm ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Search Customer *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Search by customer name or customer number..."
+                      className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <span className="text-gray-400">🔍</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Search for active customers to record EMI payments
+                  </p>
+                </div>
+
+                {searchQuery && !selectedCustomer && (
+                  <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-md">
+                    {filteredCustomers.length > 0 ? (
+                      filteredCustomers.map(customer => (
+                        <div 
+                          key={customer._id || customer.id}
+                          className={`p-3 border-b border-gray-200 cursor-pointer transition-colors ${
+                            customer.status === 'active' 
+                              ? 'hover:bg-green-50' 
+                              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          }`}
+                          onClick={() => {
+                            if (customer.status === 'active') {
+                              handleSearchCustomer(customer);
+                            } else {
+                              alert('This customer is not active. Only active customers can make EMI payments.');
+                            }
+                          }}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <div className="font-medium">{customer.name}</div>
+                              <div className="text-sm text-gray-600">
+                                {customer.customerNumber} • ₹{customer.emiAmount} {customer.loanType} EMI
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {customer.businessName} • {customer.area}
+                              </div>
+                              <div className="text-xs text-gray-400 mt-1">
+                                Category: {customer.category} • Office: {customer.officeCategory}
+                              </div>
+                            </div>
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              customer.status === 'active' 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-red-100 text-red-800'
+                            }`}>
+                              {customer.status === 'active' ? 'Active' : 'Inactive'}
+                            </span>
+                          </div>
+                          {customer.status !== 'active' && (
+                            <div className="text-xs text-red-600 mt-1">
+                              Cannot accept payments - customer is inactive
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-3 text-center text-gray-500">
+                        {customers.length === 0 ? 'No customers found' : 'No customers match your search'}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {customers.length === 0 && !searchQuery && !selectedCustomer && (
+                  <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <span className="text-yellow-400 text-lg">⚠️</span>
+                      </div>
+                      <div className="ml-3">
+                        <h3 className="text-sm font-medium text-yellow-800">No Active Customers</h3>
+                        <div className="mt-1 text-sm text-yellow-700">
+                          <p>No active customers found. Customers need to be approved by Super Admin first.</p>
+                          <p className="text-xs mt-1">Check the "Requests" tab to see pending approvals.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {selectedCustomer && (
+                  <div className="p-4 bg-blue-50 rounded-md border border-blue-200">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center">
+                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-3">
+                          <span className="text-blue-600 font-semibold text-sm">
+                            {selectedCustomer?.name?.split(' ').map((n: string) => n[0]).join('') || 'CU'}
+                          </span>
+                        </div>
+                        <div>
+                          <div className="font-medium text-blue-900">{selectedCustomer.name}</div>
+                          <div className="text-sm text-blue-700">
+                            {selectedCustomer.customerNumber}
+                          </div>
+                        </div>
+                      </div>
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        selectedCustomer.status === 'active' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-red-100 text-red-800'
+                      }`}>
+                        {selectedCustomer.status === 'active' ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <span className="text-blue-600 font-medium">Business:</span>
+                        <p className="text-blue-900">{selectedCustomer.businessName}</p>
+                      </div>
+                      <div>
+                        <span className="text-blue-600 font-medium">Area:</span>
+                        <p className="text-blue-900">{selectedCustomer.area}</p>
+                      </div>
+                      <div>
+                        <span className="text-blue-600 font-medium">Category:</span>
+                        <p className="text-blue-900">{selectedCustomer.category}</p>
+                      </div>
+                      <div>
+                        <span className="text-blue-600 font-medium">Office:</span>
+                        <p className="text-blue-900">{selectedCustomer.officeCategory}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex space-x-2 mt-3">
+                      <button 
+                        onClick={() => {
+                          setSelectedCustomer(null);
+                          setSearchQuery('');
+                          setEmiUpdate(prev => ({
+                            ...prev,
+                            customerId: '',
+                            customerName: '',
+                            customerNumber: '',
+                            amount: ''
+                          }));
+                        }}
+                        className="px-3 py-1 bg-gray-600 text-white rounded-md hover:bg-gray-700 text-sm"
+                      >
+                        Change Customer
+                      </button>
+                      <button 
+                        onClick={() => handleViewEMICalendar(selectedCustomer)}
+                        className="px-3 py-1 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm"
+                      >
+                        View EMI Calendar
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {selectedCustomer && (
+                  <div className="mt-6">
+                    <h4 className="text-lg font-semibold mb-4">Customer Loans</h4>
+                    <div className="space-y-4">
+                      {displayLoans.map((loan, index) => {
+                        const completion = calculateEMICompletion(loan);
+                        const behavior = calculatePaymentBehavior(loan);
+                        const totalLoanAmount = calculateTotalLoanAmount(loan);
+                        
+                        return (
+                          <div key={loan._id} className="border border-gray-200 rounded-lg p-4 bg-white">
+                            {/* Loan Header */}
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <div className="flex items-center gap-4">
+                                  <h5 className="font-medium text-gray-900 text-lg">
+                                    {loan.loanNumber}
+                                  </h5>
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                    {loan.loanType} Loan
+                                  </span>
+                                </div>
+                                <p className="text-sm text-gray-500 mt-1">
+                                  Loan Date: {formatDateToDDMMYYYY(loan.dateApplied)}
+                                </p>
+                              </div>
+                              {/* Behavior Score Section */}
+                              <div className="text-right">
+                                <div className="text-xs font-medium text-gray-500">Behavior Score</div>
+                                <div className={`text-lg font-semibold ${
+                                  behavior.punctualityScore >= 90 ? 'text-green-600' :
+                                  behavior.punctualityScore >= 75 ? 'text-blue-600' :
+                                  behavior.punctualityScore >= 60 ? 'text-yellow-600' : 'text-red-600'
+                                }`}>
+                                  {behavior.punctualityScore.toFixed(0)}%
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Completion Progress */}
+                            <div className="mb-4">
+                              <div className="flex justify-between text-sm mb-1">
+                                <span>Completion: {completion.completionPercentage.toFixed(1)}%</span>
+                                <span>{completion.remainingEmis} EMIs remaining</span>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full h-2">
+                                <div 
+                                  className="bg-green-600 h-2 rounded-full transition-all duration-300" 
+                                  style={{width: `${Math.min(completion.completionPercentage, 100)}%`}}
+                                ></div>
+                              </div>
+                              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                                <span>Paid: ₹{completion.totalPaid}</span>
+                                <span>Remaining: ₹{completion.remainingAmount} of ₹{completion.totalLoanAmount || calculateTotalLoanAmount(loan)}</span>
+                              </div>
+                            </div>
+
+                            {/* Loan Details Grid */}
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-500">
+                                  Amount
+                                </label>
+                                <p className="text-gray-900">
+                                  ₹{loan.amount?.toLocaleString()}
+                                </p>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-500">
+                                  EMI Amount
+                                </label>
+                                <p className="text-gray-900">
+                                  ₹{loan.emiAmount}
+                                </p>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-500">
+                                  {loan.loanType === 'Daily' ? 'No. of Days' : 
+                                  loan.loanType === 'Weekly' ? 'No. of Weeks' : 'No. of Months'}
+                                </label>
+                                <p className="text-gray-900">
+                                  {loan.loanDays}
+                                </p>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-500">
+                                  Total Loan Amount
+                                </label>
+                                <p className="text-gray-900 font-semibold">
+                                  ₹{totalLoanAmount.toLocaleString()}
+                                </p>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-500">
+                                  Next EMI Date
+                                </label>
+                                <p className="text-gray-900">
+                                  {formatDateToDDMMYYYY(loan.nextEmiDate)}
+                                </p>
+                              </div>
+                            </div>
+                            
+                            <div className="mt-4 flex justify-end">
+                              <button 
+                                onClick={() => handlePayNow(loan)}
+                                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
+                              >
+                                Pay Now
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {!selectedCustomer && (
+                  <div className="mt-4 p-3 bg-blue-50 rounded-md border border-blue-200">
+                    <p className="text-sm text-blue-700">
+                      <strong>How to record EMI payment:</strong>
+                    </p>
+                    <ol className="text-xs text-blue-600 mt-1 list-decimal list-inside space-y-1">
+                      <li>Search for an active customer using name or customer number</li>
+                      <li>Select the customer from the search results</li>
+                      <li>View the customer's loans and click "Pay Now" for the relevant loan</li>
+                      <li>Fill in the payment details in the next screen</li>
+                      <li>Click "Record EMI Payment" to save</li>
+                    </ol>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="bg-blue-50 p-4 rounded-md border border-blue-200">
+                  <h4 className="text-lg font-semibold text-blue-900 mb-2">EMI Payment</h4>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-blue-600 font-medium">Customer:</span>
+                      <p className="text-blue-900">{selectedCustomer?.name}</p>
+                    </div>
+                    <div>
+                      <span className="text-blue-600 font-medium">Customer Number:</span>
+                      <p className="text-blue-900">{selectedCustomer?.customerNumber}</p>
+                    </div>
+                    <div>
+                      <span className="text-blue-600 font-medium">Loan:</span>
+                      <p className="text-blue-900">
+                        {selectedLoanForPayment?.loanNumber}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-blue-600 font-medium">EMI Amount:</span>
+                      <p className="text-blue-900 font-semibold">₹{selectedLoanForPayment?.emiAmount}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Payment Type Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Payment Type *
+                  </label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <label className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                      emiUpdate.paymentType === 'single' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="paymentType"
+                        value="single"
+                        checked={emiUpdate.paymentType === 'single'}
+                        onChange={(e) => setEmiUpdate({...emiUpdate, paymentType: e.target.value as 'single' | 'advance'})}
+                        className="mr-3 text-blue-600 focus:ring-blue-500"
+                      />
+                      <div>
+                        <div className="font-medium text-gray-900">Single EMI</div>
+                        <div className="text-sm text-gray-600">Payment for a single date</div>
+                      </div>
+                    </label>
+                    
+                    <label className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                      emiUpdate.paymentType === 'advance' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="paymentType"
+                        value="advance"
+                        checked={emiUpdate.paymentType === 'advance'}
+                        onChange={(e) => setEmiUpdate({...emiUpdate, paymentType: e.target.value as 'single' | 'advance'})}
+                        className="mr-3 text-blue-600 focus:ring-blue-500"
+                      />
+                      <div>
+                        <div className="font-medium text-gray-900">Advance EMI</div>
+                        <div className="text-sm text-gray-600">Payment for multiple future dates</div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Single EMI Fields */}
+                {emiUpdate.paymentType === 'single' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Payment Date *
+                      </label>
+                      <input 
+                        type="date" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={formatDateForInput(emiUpdate.paymentDate)}
+                        onChange={(e) => setEmiUpdate({...emiUpdate, paymentDate: e.target.value})}
+                        required
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Amount Paid (₹) *
+                      </label>
+                      <input 
+                        type="number" 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={emiUpdate.amount}
+                        onChange={(e) => setEmiUpdate({...emiUpdate, amount: e.target.value})}
+                        placeholder="Enter amount paid"
+                        min="0"
+                        step="0.01"
+                        required
+                      />
+                      {selectedLoanForPayment?.emiAmount && emiUpdate.amount && (
+                        <p className={`text-xs mt-1 ${
+                          Number(emiUpdate.amount) === selectedLoanForPayment.emiAmount 
+                            ? 'text-green-600' 
+                            : 'text-orange-600'
+                        }`}>
+                          {Number(emiUpdate.amount) === selectedLoanForPayment.emiAmount 
+                            ? '✓ Full EMI amount matches' 
+                            : `ℹ️ Expected EMI: ₹${selectedLoanForPayment.emiAmount}`}
+                        </p>
+                      )}
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Payment Status *
+                      </label>
+                      <select 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={emiUpdate.status}
+                        onChange={(e) => setEmiUpdate({...emiUpdate, status: e.target.value})}
+                        required
+                      >
+                        <option value="Paid">Paid</option>
+                        <option value="Partial">Partial Payment</option>
+                        <option value="Due">Due</option>
+                      </select>
+                      {emiUpdate.status === 'Partial' && (
+                        <p className="text-xs text-orange-600 mt-1">
+                          Partial payments will be recorded and remaining amount will be carried forward.
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Collected By *
+                      </label>
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                        <p className="text-gray-900 font-medium">{currentOperator}</p>
+                        <p className="text-xs text-gray-500 mt-1">Automatically set to logged-in operator</p>
+                      </div>
+                      <input 
+                        type="hidden" 
+                        value={currentOperator}
+                        onChange={(e) => setEmiUpdate({...emiUpdate, collectedBy: currentOperator})}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Advance EMI Fields */}
+                {emiUpdate.paymentType === 'advance' && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          From Date *
+                        </label>
+                        <input 
+                          type="date" 
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          value={emiUpdate.advanceFromDate || new Date().toISOString().split('T')[0]}
+                          onChange={(e) => {
+                            const fromDate = e.target.value;
+                            setEmiUpdate(prev => ({
+                              ...prev, 
+                              advanceFromDate: fromDate,
+                              // Auto-set to date if not set
+                              advanceToDate: prev.advanceToDate || fromDate,
+                              // Auto-calculate EMI count
+                              advanceEmiCount: calculateEmiCount(fromDate, prev.advanceToDate || fromDate, selectedLoanForPayment?.loanType)
+                            }));
+                          }}
+                          required
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          To Date *
+                        </label>
+                        <input 
+                          type="date" 
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          value={emiUpdate.advanceToDate || emiUpdate.advanceFromDate || new Date().toISOString().split('T')[0]}
+                          onChange={(e) => {
+                            const toDate = e.target.value;
+                            setEmiUpdate(prev => ({
+                              ...prev, 
+                              advanceToDate: toDate,
+                              // Auto-calculate EMI count when dates change
+                              advanceEmiCount: calculateEmiCount(prev.advanceFromDate || new Date().toISOString().split('T')[0], toDate, selectedLoanForPayment?.loanType)
+                            }));
+                          }}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          EMI Amount (₹) *
+                        </label>
+                        <input 
+                          type="number" 
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          value={emiUpdate.amount || selectedLoanForPayment?.emiAmount || ''}
+                          onChange={(e) => {
+                            const emiAmount = e.target.value;
+                            setEmiUpdate(prev => ({
+                              ...prev, 
+                              amount: emiAmount,
+                              // Auto-calculate total amount
+                              advanceTotalAmount: calculateTotalAmount(emiAmount, prev.advanceEmiCount || '1')
+                            }));
+                          }}
+                          placeholder="EMI Amount"
+                          min="0"
+                          step="0.01"
+                          required
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          No. of EMI *
+                        </label>
+                        <input 
+                          type="number" 
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          value={emiUpdate.advanceEmiCount || '1'}
+                          onChange={(e) => {
+                            const emiCount = e.target.value;
+                            setEmiUpdate(prev => ({
+                              ...prev, 
+                              advanceEmiCount: emiCount,
+                              // Auto-calculate total amount
+                              advanceTotalAmount: calculateTotalAmount(prev.amount || selectedLoanForPayment?.emiAmount || '0', emiCount)
+                            }));
+                          }}
+                          placeholder="Number of EMI"
+                          min="1"
+                          required
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Total Amount (₹)
+                        </label>
+                        <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                          <p className="text-gray-900 font-semibold text-lg">
+                            ₹{emiUpdate.advanceTotalAmount || calculateTotalAmount(emiUpdate.amount || selectedLoanForPayment?.emiAmount || '0', emiUpdate.advanceEmiCount || '1')}
+                          </p>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">Auto-calculated: EMI Amount × No. of EMI</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Payment Status
+                        </label>
+                        <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-green-50">
+                          <p className="text-green-900 font-medium">Advance</p>
+                          <p className="text-xs text-green-600 mt-1">Automatically set for advance payments</p>
+                        </div>
+                        <input 
+                          type="hidden" 
+                          value="Advance"
+                          onChange={(e) => setEmiUpdate({...emiUpdate, status: 'Advance'})}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Collected By *
+                        </label>
+                        <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
+                          <p className="text-gray-900 font-medium">{currentOperator}</p>
+                          <p className="text-xs text-gray-500 mt-1">Automatically set to logged-in operator</p>
+                        </div>
+                        <input 
+                          type="hidden" 
+                          value={currentOperator}
+                          onChange={(e) => setEmiUpdate({...emiUpdate, collectedBy: currentOperator})}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Advance Payment Summary */}
+                    <div className="bg-green-50 border border-green-200 rounded-md p-4">
+                      <h5 className="font-semibold text-green-900 mb-2">Advance Payment Summary</h5>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div>
+                          <span className="text-green-700">Period:</span>
+                          <p className="font-semibold text-green-900">
+                            {emiUpdate.advanceFromDate ? formatDateToDDMMYYYY(emiUpdate.advanceFromDate) : 'N/A'} to {' '}
+                            {emiUpdate.advanceToDate ? formatDateToDDMMYYYY(emiUpdate.advanceToDate) : 'N/A'}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-green-700">EMI Count:</span>
+                          <p className="font-semibold text-green-900">{emiUpdate.advanceEmiCount || '1'}</p>
+                        </div>
+                        <div>
+                          <span className="text-green-700">EMI Amount:</span>
+                          <p className="font-semibold text-green-900">
+                            ₹{emiUpdate.amount || selectedLoanForPayment?.emiAmount || '0'}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-green-700">Total:</span>
+                          <p className="font-semibold text-green-900">
+                            ₹{emiUpdate.advanceTotalAmount || calculateTotalAmount(emiUpdate.amount || selectedLoanForPayment?.emiAmount || '0', emiUpdate.advanceEmiCount || '1')}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Notes (Optional)
+                  </label>
+                  <textarea 
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    rows={3}
+                    value={emiUpdate.notes || ''}
+                    onChange={(e) => setEmiUpdate({...emiUpdate, notes: e.target.value})}
+                    placeholder={
+                      emiUpdate.paymentType === 'advance' 
+                        ? `Advance payment notes...` 
+                        : `Add any notes about this payment...`
+                    }
+                  />
+                </div>
+
+                <div className="flex justify-between space-x-3 mt-6">
+                  <button 
+                    onClick={() => setShowPaymentForm(false)}
+                    className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
+                    disabled={isLoading}
+                  >
+                    Back
+                  </button>
+                  <button 
+                    onClick={handleUpdateEMI}
+                    disabled={!emiUpdate.amount || isLoading || (emiUpdate.paymentType === 'advance' && (!emiUpdate.advanceFromDate || !emiUpdate.advanceToDate))}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+                  >
+                    {isLoading ? (
+                      <>
+                        <span className="animate-spin mr-2">⏳</span>
+                        Processing...
+                      </>
+                    ) : emiUpdate.paymentType === 'advance' ? (
+                      'Record Advance EMI Payment'
+                    ) : (
+                      'Record EMI Payment'
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
   };
 
-  const totals = calculateTotals();
+  const renderCustomerDetails = () => {
+  const displayLoans = customerDetails ? getAllCustomerLoans(customerDetails, customerDetails) : [];
+
+  // Helper function to render loan details based on type and EMI type
+  const renderLoanDetails = (loan: Loan) => {
+    const loanData = loan as any; // Use any to access custom properties
+    
+    // Check if it's a custom EMI type
+    const isCustomEMI = loanData.emiType === 'custom' && loanData.loanType !== 'Daily';
+    const fixedEMIAmount = loanData.fixedEmiAmount || loan.emiAmount;
+    const lastEMIAmount = loanData.customEmiAmount;
+    
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
+        {/* Loan Amount - Always shown */}
+        <div>
+          <label className="block text-xs font-medium text-gray-500">
+            Loan Amount
+          </label>
+          <p className="text-gray-900 font-semibold">
+            ₹{loan.amount?.toLocaleString()}
+          </p>
+        </div>
+
+        {/* EMI Details based on loan type and EMI type */}
+        {loan.loanType === 'Daily' && (
+          <>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                EMI Amount
+              </label>
+              <p className="text-gray-900 font-semibold">
+                ₹{loan.emiAmount}
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                No. of Days
+              </label>
+              <p className="text-gray-900 font-semibold">
+                {loan.loanDays}
+              </p>
+            </div>
+          </>
+        )}
+
+        {loan.loanType === 'Weekly' && isCustomEMI && (
+          <>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                Fixed EMI Amount
+              </label>
+              <p className="text-gray-900 font-semibold">
+                ₹{fixedEMIAmount}
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                No. of Weeks
+              </label>
+              <p className="text-gray-900 font-semibold">
+                {loan.loanDays}
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                Last EMI Amount
+              </label>
+              <p className="text-gray-900 font-semibold">
+                ₹{lastEMIAmount}
+              </p>
+            </div>
+          </>
+        )}
+
+        {loan.loanType === 'Weekly' && !isCustomEMI && (
+          <>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                EMI Amount
+              </label>
+              <p className="text-gray-900 font-semibold">
+                ₹{loan.emiAmount}
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                No. of Weeks
+              </label>
+              <p className="text-gray-900 font-semibold">
+                {loan.loanDays}
+              </p>
+            </div>
+          </>
+        )}
+
+        {loan.loanType === 'Monthly' && isCustomEMI && (
+          <>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                Fixed EMI Amount
+              </label>
+              <p className="text-gray-900 font-semibold">
+                ₹{fixedEMIAmount}
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                No. of Months
+              </label>
+              <p className="text-gray-900 font-semibold">
+                {loan.loanDays}
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                Last EMI Amount
+              </label>
+              <p className="text-gray-900 font-semibold">
+                ₹{lastEMIAmount}
+              </p>
+            </div>
+          </>
+        )}
+
+        {loan.loanType === 'Monthly' && !isCustomEMI && (
+          <>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                EMI Amount
+              </label>
+              <p className="text-gray-900 font-semibold">
+                ₹{loan.emiAmount}
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                No. of Months
+              </label>
+              <p className="text-gray-900 font-semibold">
+                {loan.loanDays}
+              </p>
+            </div>
+          </>
+        )}
+
+        {/* Next EMI Date - Always shown as the last item */}
+        <div>
+          <label className="block text-xs font-medium text-gray-500">
+            Next EMI Date
+          </label>
+          <p className="text-gray-900 font-semibold">
+            {formatDateToDDMMYYYY(loan.nextEmiDate)}
+          </p>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">Total Loan Amount Details</h2>
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold">Customer Details</h3>
             <button 
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 text-2xl"
+              onClick={() => setShowCustomerDetails(false)}
+              className="text-gray-500 hover:text-gray-700"
             >
               ✕
             </button>
           </div>
-
-          {/* Time Range Filter - UPDATED */}
-          <div className="flex space-x-2 mb-6">
-            {['daily', 'weekly', 'monthly'].map((range) => (
-              <button
-                key={range}
-                onClick={() => handleTimeRangeChange(range)}
-                className={`px-4 py-2 rounded-md text-sm font-medium ${
-                  timeRange === range
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
-              >
-                {range.charAt(0).toUpperCase() + range.slice(1)}
-              </button>
-            ))}
-          </div>
-
-          {/* Summary Cards - UPDATED */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-              <p className="text-sm font-medium text-blue-600">Total {timeRange.charAt(0).toUpperCase() + timeRange.slice(1)} Loans</p>
-              <p className="text-2xl font-bold text-blue-900">{totals.totalLoans}</p>
-            </div>
-            <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-              <p className="text-sm font-medium text-green-600">Total Loan Amount</p>
-              <p className="text-2xl font-bold text-green-900">₹{(totals.totalLoanAmount / 100000).toFixed(1)}L</p>
-            </div>
-            <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
-              <p className="text-sm font-medium text-purple-600">Total Recovered</p>
-              <p className="text-2xl font-bold text-purple-900">₹{(totals.totalRecoveredAmount / 100000).toFixed(1)}L</p>
-            </div>
-            <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
-              <p className="text-sm font-medium text-orange-600">Amount to Recover</p>
-              <p className="text-2xl font-bold text-orange-900">₹{(totals.totalAmountToRecover / 100000).toFixed(1)}L</p>
-            </div>
-          </div>
-
-          {/* Loan Details Table */}
-          <div className="bg-white border border-gray-200 rounded-lg">
-            <div className="p-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">
-                {timeRange.charAt(0).toUpperCase() + timeRange.slice(1)} Loan Breakdown
-              </h3>
-            </div>
-            <div className="overflow-x-auto">
-              {loading ? (
-                <div className="text-center py-8">
-                  <div className="text-gray-400 text-4xl mb-4">⏳</div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Loading loan details...</h3>
+          
+          {customerDetails ? (
+            <div className="space-y-6">
+              {/* Personal Information Section */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="text-lg font-semibold text-gray-900 mb-4">Personal Information</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Customer Name</label>
+                    <p className="mt-1 text-sm text-gray-900">{customerDetails.name}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Status</label>
+                    <p className="mt-1">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        customerDetails.status === 'active' 
+                          ? 'bg-green-100 text-green-800'
+                          : customerDetails.status === 'inactive'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {customerDetails.status || 'Unknown'}
+                      </span>
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Category</label>
+                    <p className="mt-1">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        customerDetails.category === 'A' ? 'bg-green-100 text-green-800' :
+                        customerDetails.category === 'B' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-blue-100 text-blue-800'
+                      }`}>
+                        {customerDetails.category || 'Not specified'}
+                      </span>
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Office Category</label>
+                    <p className="mt-1 text-sm text-gray-900">{customerDetails.officeCategory || 'Not specified'}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Customer Number</label>
+                    <p className="mt-1 text-sm text-gray-900 font-mono">{customerDetails.customerNumber}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Primary Phone Number</label>
+                    <p className="mt-1 text-sm text-gray-900">
+                      {Array.isArray(customerDetails.phone) 
+                        ? customerDetails.phone[0] || 'Not provided'
+                        : customerDetails.phone
+                      }
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Secondary Phone Number</label>
+                    <p className="mt-1 text-sm text-gray-900">
+                      {Array.isArray(customerDetails.phone) && customerDetails.phone.length > 1
+                        ? customerDetails.phone[1] || 'Not provided'
+                        : 'Not provided'
+                      }
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      <span className="flex items-center gap-1">
+                        <span>WhatsApp Number</span>
+                        <span className="text-green-600">📱</span>
+                      </span>
+                    </label>
+                    <p className="mt-1 text-sm text-gray-900">
+                      {customerDetails.whatsappNumber || 'Not provided'}
+                    </p>
+                  </div>
                 </div>
-              ) : (
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                        Period
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                        New Loans
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                        Total Amount
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                        Recovered Amount
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                        Amount to Recover
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {loanData.map((item: any, index: number) => {
-                      const amountToRecover = (item.totalAmount || 0) - (item.recoveredAmount || 0);
-                      return (
-                        <tr key={index}>
-                          <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                            {item.date || item.week || item.month || 'N/A'}
-                          </td>
-                          <td className="px-6 py-4 text-sm text-gray-900">{item.newLoans || 0}</td>
-                          <td className="px-6 py-4 text-sm text-gray-900">
-                            ₹{((item.totalAmount || 0) / 100000).toFixed(1)}L
-                          </td>
-                          <td className="px-6 py-4 text-sm text-green-600">
-                            ₹{((item.recoveredAmount || 0) / 100000).toFixed(1)}L
-                          </td>
-                          <td className="px-6 py-4 text-sm text-orange-600">
-                            ₹{(amountToRecover / 100000).toFixed(1)}L
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {loanData.length === 0 && (
-                      <tr>
-                        <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
-                          No loan data available for {timeRange} range
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+              </div>
 
-// Enhanced Reports Component with Charts
-function EnhancedReportsView({ onBack }: { onBack: () => void }) {
-  const [dateRange, setDateRange] = useState('monthly');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [reportData, setReportData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+              {/* Business Information Section */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="text-lg font-semibold text-gray-900 mb-4">Business Information</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Business Name</label>
+                    <p className="mt-1 text-sm text-gray-900">{customerDetails.businessName}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Area</label>
+                    <p className="mt-1 text-sm text-gray-900">{customerDetails.area}</p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700">Address</label>
+                    <p className="mt-1 text-sm text-gray-900">{customerDetails.address || 'Not provided'}</p>
+                  </div>
+                </div>
+              </div>
 
-  const fetchReportData = async (range: string, customStart?: string, customEnd?: string) => {
-    try {
-      setLoading(true);
-      let url = `/api/admin/reports?range=${range}`;
-      if (range === 'custom' && customStart && customEnd) {
-        url += `&startDate=${customStart}&endDate=${customEnd}`;
-      }
-      
-      const response = await fetch(url);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setReportData(data.data);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching report data:', error);
-      setReportData(null);
-    } finally {
-      setLoading(false);
-    }
-  };
+              {/* Loan Information Section */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="flex justify-between items-center mb-4">
+                  <h4 className="text-lg font-semibold text-gray-900">Loan Information</h4>
+                  <div className="flex space-x-2">
+                    <button 
+                      onClick={() => setShowAddLoanModal(true)}
+                      className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm"
+                    >
+                      + Add New Loan
+                    </button>
+                    <button 
+                      onClick={() => handleViewEMICalendar(customerDetails)}
+                      className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 text-sm"
+                    >
+                      📅 EMI Calendar
+                    </button>
+                  </div>
+                </div>
 
-  useEffect(() => {
-    fetchReportData(dateRange);
-  }, [dateRange]);
+                <div className="space-y-4">
+                
 
-  const handleDateRangeChange = (range: string) => {
-    setDateRange(range);
-    if (range !== 'custom') {
-      fetchReportData(range);
-    }
-  };
 
-  const handleCustomDateApply = () => {
-    if (startDate && endDate) {
-      fetchReportData('custom', startDate, endDate);
-    }
-  };
 
-  const PieChart = ({ data }: { data: Record<string, number> }) => {
-    if (!data) return null;
-    
-    const colors = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444'];
-    const total = Object.values(data).reduce((sum, value) => sum + value, 0);
-    
-    let currentAngle = 0;
+{displayLoans.length > 0 ? (
+  displayLoans.map((loan, index) => {
+    const completion = calculateEMICompletion(loan);
+    const behavior = calculatePaymentBehavior(loan);
+    const totalLoanAmount = calculateTotalLoanAmount(loan);
+    const isRenewed = loan.isRenewed || loan.status === 'renewed';
     
     return (
-      <div className="relative w-48 h-48">
-        <svg width="192" height="192" viewBox="0 0 32 32" className="transform -rotate-90">
-          {Object.entries(data).map(([label, value], index) => {
-            const percentage = (value / total) * 100;
-            const angle = (value / total) * 360;
-            const largeArcFlag = angle > 180 ? 1 : 0;
-            
-            const x1 = 16 + 16 * Math.cos(currentAngle * Math.PI / 180);
-            const y1 = 16 + 16 * Math.sin(currentAngle * Math.PI / 180);
-            const x2 = 16 + 16 * Math.cos((currentAngle + angle) * Math.PI / 180);
-            const y2 = 16 + 16 * Math.sin((currentAngle + angle) * Math.PI / 180);
-            
-            const pathData = [
-              `M 16 16`,
-              `L ${x1} ${y1}`,
-              `A 16 16 0 ${largeArcFlag} 1 ${x2} ${y2}`,
-              'Z'
-            ].join(' ');
-            
-            const segment = (
-              <path
-                key={label}
-                d={pathData}
-                fill={colors[index % colors.length]}
-                stroke="#fff"
-                strokeWidth="0.5"
-              />
-            );
-            
-            currentAngle += angle;
-            return segment;
-          })}
-        </svg>
-      </div>
-    );
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* Header with Back Button */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <button 
-            onClick={onBack}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <span className="text-gray-600">← Back</span>
-          </button>
+      <div 
+        key={loan._id} 
+        className={`border border-gray-200 rounded-lg p-4 ${
+          isRenewed 
+            ? 'bg-red-50 border-l-4 border-l-red-500' 
+            : 'bg-white'
+        }`}
+      >
+        {/* Loan Header */}
+        <div className="flex justify-between items-start mb-3">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Advanced Reports & Analytics</h1>
-            <p className="text-gray-600">Comprehensive business insights and performance metrics</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Date Range Filters */}
-      <div className="bg-white p-4 rounded-lg border border-gray-200">
-        <div className="flex flex-wrap gap-4 items-center">
-          <div className="flex space-x-2">
-            {['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'custom'].map((range) => (
-              <button
-                key={range}
-                onClick={() => handleDateRangeChange(range)}
-                className={`px-4 py-2 rounded-md text-sm font-medium ${
-                  dateRange === range
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
-              >
-                {range.charAt(0).toUpperCase() + range.slice(1)}
-              </button>
-            ))}
-          </div>
-          
-          {dateRange === 'custom' && (
-            <div className="flex space-x-2">
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm"
-              />
-              <span className="self-center text-gray-500">to</span>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm"
-              />
-              <button 
-                onClick={handleCustomDateApply}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium"
-              >
-                Apply
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="text-center py-8">
-          <div className="text-gray-400 text-4xl mb-4">⏳</div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Loading report data...</h3>
-        </div>
-      ) : reportData ? (
-        <>
-          {/* Key Metrics */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">New Loans</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-2">{reportData.newLoans || 0}</p>
-                </div>
-                <div className="bg-blue-50 p-3 rounded-lg">
-                  <span className="text-blue-600 text-xl">📈</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">New Customers</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-2">{reportData.newCustomers || 0}</p>
-                </div>
-                <div className="bg-green-50 p-3 rounded-lg">
-                  <span className="text-green-600 text-xl">👥</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Total Collection</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-2">₹{(reportData.totalCollection || 0).toLocaleString()}</p>
-                </div>
-                <div className="bg-purple-50 p-3 rounded-lg">
-                  <span className="text-purple-600 text-xl">💰</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Pending EMIs</p>
-                  <p className="text-2xl font-bold text-red-600 mt-2">{reportData.pendingEMIs || 0}</p>
-                </div>
-                <div className="bg-red-50 p-3 rounded-lg">
-                  <span className="text-red-600 text-xl">⏰</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Charts and Detailed Reports */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Growth Chart */}
-            <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Business Growth Trend</h3>
-              <div className="h-64 flex items-end justify-between space-x-2">
-                {reportData.chartData && reportData.chartData.length > 0 ? (
-                  reportData.chartData.map((value: number, index: number) => (
-                    <div key={index} className="flex-1 flex flex-col items-center">
-                      <div 
-                        className="w-full bg-blue-500 rounded-t-lg transition-all duration-300 hover:bg-blue-600"
-                        style={{ height: `${(value / Math.max(...reportData.chartData)) * 200}px` }}
-                      ></div>
-                      <span className="text-xs text-gray-500 mt-2">{value}</span>
-                    </div>
-                  ))
-                ) : (
-                  <div className="w-full text-center py-8 text-gray-500">
-                    No chart data available
-                  </div>
+            <div className="flex items-center gap-4 flex-wrap">
+              <h5 className={`font-medium text-lg ${
+                isRenewed ? 'text-gray-500' : 'text-gray-900'
+              }`}>
+                {loan.loanNumber}
+                {loan.originalLoanNumber && (
+                  <span className="text-sm text-gray-500 ml-2">
+                    (Renewed from {loan.originalLoanNumber})
+                  </span>
                 )}
-              </div>
-            </div>
-
-            {/* Loan Distribution */}
-            <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Loan Type Distribution</h3>
-              {reportData.loanDistribution ? (
-                <>
-                  <div className="h-64 flex items-center justify-center">
-                    <PieChart data={reportData.loanDistribution} />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 mt-4">
-                    {(Object.entries(reportData.loanDistribution) as [string, number][]).map(([type, percentage], index) => (
-                      <div key={type} className="space-y-1">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">{type}</span>
-                          <span className="font-medium text-gray-900">
-                            {typeof percentage === 'number' ? percentage.toFixed(1) : percentage}%
-                          </span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div 
-                            className="h-2 rounded-full"
-                            style={{ 
-                              width: `${percentage}%`,
-                              backgroundColor: ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444'][index % 5]
-                            }}
-                          ></div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <div className="h-64 flex items-center justify-center text-gray-500">
-                  No distribution data available
-                </div>
+              </h5>
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                isRenewed 
+                  ? 'bg-red-100 text-red-800' 
+                  : loan.loanType === 'Daily' 
+                    ? 'bg-blue-100 text-blue-800'
+                    : loan.loanType === 'Weekly'
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-purple-100 text-purple-800'
+              }`}>
+                {loan.loanType} Loan
+              </span>
+              {isRenewed && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                  🔄 Renewed
+                </span>
+              )}
+              {!isRenewed && loan.status === 'active' && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                  Active
+                </span>
+              )}
+              {!isRenewed && loan.status === 'completed' && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                  Completed
+                </span>
               )}
             </div>
-          </div>
-
-          {/* Detailed Report Table */}
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
-            <div className="p-6 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Detailed Report</h3>
-            </div>
-            <div className="p-6">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">New Loans</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">New Customers</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collection</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pending EMIs</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Growth Rate</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    <tr>
-                      <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                        {dateRange.charAt(0).toUpperCase() + dateRange.slice(1)}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-900">{reportData.newLoans || 0}</td>
-                      <td className="px-6 py-4 text-sm text-gray-900">{reportData.newCustomers || 0}</td>
-                      <td className="px-6 py-4 text-sm text-gray-900">₹{(reportData.totalCollection || 0).toLocaleString()}</td>
-                      <td className="px-6 py-4 text-sm text-red-600">{reportData.pendingEMIs || 0}</td>
-                      <td className="px-6 py-4 text-sm text-green-600">+{reportData.growthRate || 0}%</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </>
-      ) : (
-        <div className="text-center py-8">
-          <div className="text-gray-400 text-4xl mb-4">📊</div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No report data available</h3>
-          <p className="text-gray-600">Try selecting a different date range.</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Team Management Component
-// Team Management Component - UPDATED
-function TeamManagementView({ onBack }: { onBack: () => void }) {
-  const [teamMembers, setTeamMembers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
-  const [showDataEntryModal, setShowDataEntryModal] = useState(false);
-  const [editingMember, setEditingMember] = useState<any>(null);
-
-  const fetchTeamMembers = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/admin/team-members', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setTeamMembers(data.data || []);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching team members:', error);
-      setTeamMembers([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchTeamMembers();
-  }, []);
-
-  const handleDeleteMember = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this team member?')) {
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/admin/team-members?memberId=${id}`, {
-        method: 'DELETE',
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        alert('Team member deleted successfully!');
-        fetchTeamMembers();
-      } else {
-        alert(`Error deleting team member: ${data.error || 'Unknown error'}`);
-      }
-    } catch (error: any) {
-      console.error('Error deleting team member:', error);
-      alert('Error deleting team member: ' + error.message);
-    }
-  };
-
-  const handleEditMember = (member: any) => {
-    setEditingMember(member);
-    if (member.role === 'Recovery Team') {
-      setShowRecoveryModal(true);
-    } else {
-      setShowDataEntryModal(true);
-    }
-  };
-
-  const handleAddRecoveryMember = () => {
-    setEditingMember(null);
-    setShowRecoveryModal(true);
-  };
-
-  const handleAddDataEntryMember = () => {
-    setEditingMember(null);
-    setShowDataEntryModal(true);
-  };
-
-  const handleSaveMember = async (memberData: any, isRecovery: boolean) => {
-    try {
-      const url = '/api/admin/team-members';
-      const method = editingMember ? 'PUT' : 'POST';
-      
-      const role = isRecovery ? 'Recovery Team' : 'Data Entry Operator';
-      const requestBody = editingMember ? 
-        { ...memberData, memberId: editingMember._id, role } : 
-        { ...memberData, role };
-      
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      const responseData = await response.json();
-
-      if (response.ok) {
-        alert(editingMember ? 'Team member updated successfully!' : 'Team member added successfully!');
-        fetchTeamMembers();
-        setShowRecoveryModal(false);
-        setShowDataEntryModal(false);
-        setEditingMember(null);
-      } else {
-        alert(`Error: ${responseData.error || responseData.message || 'Unknown error'}`);
-      }
-    } catch (error: any) {
-      alert('Error saving team member: ' + (error.message || 'Check console for details'));
-    }
-  };
-
-  // Filter team members by role
-  const recoveryTeamMembers = teamMembers.filter(member => member.role === 'Recovery Team');
-  const dataEntryOperators = teamMembers.filter(member => member.role === 'Data Entry Operator');
-
-  return (
-    <div className="space-y-6">
-      {/* Enhanced Header with Background Color */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg p-6 text-white">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <button 
-              onClick={onBack}
-              className="flex items-center space-x-2 bg-white text-blue-700 px-4 py-2 rounded-lg hover:bg-blue-50 transition-colors font-medium"
-            >
-              <span className="text-lg">←</span>
-              <span>Back</span>
-            </button>
-            <div>
-              <h1 className="text-2xl font-bold">Team Management</h1>
-              <p className="text-blue-100 mt-1">Manage your team members and their roles</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Team Member Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Recovery Team Card */}
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-xl font-semibold text-gray-900">Recovery Team</h3>
-              <p className="text-gray-600 mt-1">Manage recovery team members who handle loan recovery operations</p>
-            </div>
-            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
-              <span className="text-red-600 text-xl">💰</span>
-            </div>
-          </div>
-          
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Total Members</span>
-              <span className="text-lg font-semibold text-gray-900">{recoveryTeamMembers.length}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Active Members</span>
-              <span className="text-lg font-semibold text-green-600">
-                {recoveryTeamMembers.filter(m => m.status === 'active').length}
-              </span>
-            </div>
-          </div>
-
-          <button 
-            onClick={handleAddRecoveryMember}
-            className="w-full mt-6 bg-red-600 text-white px-4 py-3 rounded-lg hover:bg-red-700 transition-colors font-medium"
-          >
-            Add Recovery Team Member
-          </button>
-        </div>
-
-        {/* Data Entry Operator Card */}
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-xl font-semibold text-gray-900">Data Entry Operators</h3>
-              <p className="text-gray-600 mt-1">Manage operators who handle customer data entry and management</p>
-            </div>
-            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-              <span className="text-blue-600 text-xl">📊</span>
-            </div>
-          </div>
-          
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Total Operators</span>
-              <span className="text-lg font-semibold text-gray-900">{dataEntryOperators.length}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Active Operators</span>
-              <span className="text-lg font-semibold text-green-600">
-                {dataEntryOperators.filter(m => m.status === 'active').length}
-              </span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Office Categories</span>
-              <span className="text-lg font-semibold text-purple-600">
-                {[...new Set(dataEntryOperators.map(m => m.officeCategory).filter(Boolean))].length}
-              </span>
-            </div>
-          </div>
-
-          <button 
-            onClick={handleAddDataEntryMember}
-            className="w-full mt-6 bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium"
-          >
-            Add Data Entry Operator
-          </button>
-        </div>
-      </div>
-
-      {/* Team Members List */}
-      <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">All Team Members</h3>
-          <p className="text-gray-600 mt-1">Manage existing team members and their permissions</p>
-        </div>
-        
-        <div className="p-6">
-          {loading ? (
-            <div className="text-center py-8">
-              <div className="text-gray-400 text-4xl mb-4">⏳</div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Loading team members...</h3>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {teamMembers.map((member) => (
-                <div key={member._id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center space-x-4">
-                    <div className="flex-shrink-0">
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                        member.role === 'Recovery Team' ? 'bg-red-100' : 'bg-blue-100'
-                      }`}>
-                        <span className={`font-semibold text-sm ${
-                          member.role === 'Recovery Team' ? 'text-red-600' : 'text-blue-600'
-                        }`}>
-                          {member.name.split(' ').map((n: string) => n[0]).join('')}
-                        </span>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <h4 className="text-lg font-semibold text-gray-900">{member.name}</h4>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          member.role === 'Recovery Team' 
-                            ? 'bg-red-100 text-red-800' 
-                            : 'bg-blue-100 text-blue-800'
-                        }`}>
-                          {member.role}
-                        </span>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          member.status === 'active' 
-                            ? 'bg-green-100 text-green-800' 
-                            : 'bg-red-100 text-red-800'
-                        }`}>
-                          {member.status}
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-4 mt-1">
-                        <p className="text-sm text-gray-600">{member.phone}</p>
-                        {member.officeCategory && (
-                          <p className="text-sm text-gray-600">
-                            Office: <span className="font-medium">{member.officeCategory}</span>
-                          </p>
-                        )}
-                        <p className="text-sm text-gray-500">
-                          Joined: {member.joinDate ? new Date(member.joinDate).toLocaleDateString() : 'N/A'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <button 
-                      onClick={() => handleEditMember(member)}
-                      className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-                    >
-                      Edit
-                    </button>
-                    <button 
-                      onClick={() => handleDeleteMember(member._id)}
-                      className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
-              
-              {teamMembers.length === 0 && (
-                <div className="text-center py-8">
-                  <div className="text-gray-400 text-4xl mb-4">👥</div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No team members found</h3>
-                  <p className="text-gray-600">Add your first team member using the cards above.</p>
-                </div>
+            <p className={`text-sm mt-1 ${
+              isRenewed ? 'text-gray-400' : 'text-gray-500'
+            }`}>
+              Loan Date: {formatDateToDDMMYYYY(loan.dateApplied)}
+              {loan.renewedDate && (
+                <span className="ml-2">
+                  • Renewed: {formatDateToDDMMYYYY(loan.renewedDate)}
+                </span>
               )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Recovery Team Member Modal */}
-      {showRecoveryModal && (
-        <RecoveryTeamModal
-          member={editingMember}
-          onSave={(data) => handleSaveMember(data, true)}
-          onClose={() => {
-            setShowRecoveryModal(false);
-            setEditingMember(null);
-          }}
-        />
-      )}
-
-      {/* Data Entry Operator Modal */}
-      {showDataEntryModal && (
-        <DataEntryOperatorModal
-          member={editingMember}
-          onSave={(data) => handleSaveMember(data, false)}
-          onClose={() => {
-            setShowDataEntryModal(false);
-            setEditingMember(null);
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-// Recovery Team Member Modal Component - UPDATED WIDTH
-function RecoveryTeamModal({ member, onSave, onClose }: { 
-  member: any; 
-  onSave: (data: any) => void;
-  onClose: () => void;
-}) {
-  const [formData, setFormData] = useState({
-    name: member?.name || '',
-    phone: member?.phone || '',
-    whatsappNumber: member?.whatsappNumber || '',
-    email: member?.email || '',
-    address: member?.address || '',
-    username: member?.username || '',
-    password: member?.password || '',
-    confirmPassword: '',
-    status: member?.status || 'active'
-  });
-
-  const generateRandomPassword = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
-    let password = '';
-    for (let i = 0; i < 12; i++) {
-      password += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return password;
-  };
-
-  const handleGeneratePassword = () => {
-    const newPassword = generateRandomPassword();
-    setFormData({
-      ...formData,
-      password: newPassword,
-      confirmPassword: newPassword
-    });
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!member && formData.password !== formData.confirmPassword) {
-      alert('Passwords do not match!');
-      return;
-    }
-
-    if (!member && !formData.password) {
-      alert('Please generate or enter a password!');
-      return;
-    }
-
-    const { confirmPassword, ...saveData } = formData;
-    onSave(saveData);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto"> {/* UPDATED WIDTH */}
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">
-              {member ? 'Edit Recovery Team Member' : 'Add Recovery Team Member'}
-            </h2>
-            <button 
-              onClick={onClose} 
-              className="text-gray-500 hover:text-gray-700 text-2xl"
-            >
-              ✕
-            </button>
-          </div>
-          
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Full Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg"
-                  placeholder="Enter full name"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Username *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.username}
-                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg"
-                  placeholder="Choose a unique username"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Phone Number *
-                </label>
-                <input
-                  type="tel"
-                  required
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg"
-                  placeholder="Phone number"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  WhatsApp Number
-                </label>
-                <input
-                  type="tel"
-                  value={formData.whatsappNumber}
-                  onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg"
-                  placeholder="WhatsApp number"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email Address
-              </label>
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg"
-                placeholder="Email address"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Address
-              </label>
-              <textarea
-                value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                rows={3}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg"
-                placeholder="Full address"
-              />
-            </div>
-
-            {/* Password Section */}
-            {!member && (
-              <div className="border-t border-gray-200 pt-6">
-                <div className="flex items-center justify-between mb-4">
-                  <label className="block text-lg font-medium text-gray-700">
-                    Login Password *
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleGeneratePassword}
-                    className="bg-red-100 text-red-700 px-4 py-2 rounded-lg hover:bg-red-200 font-medium"
-                  >
-                    Generate Password
-                  </button>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Password
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg"
-                      placeholder="Click generate or enter password"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Confirm Password
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.confirmPassword}
-                      onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg"
-                      placeholder="Confirm password"
-                    />
-                  </div>
-                </div>
-
-                {formData.password && (
-                  <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <p className="text-sm text-yellow-800 font-medium">
-                      <strong>Important:</strong> Save this password securely. It will be shown only once.
-                    </p>
-                    <p className="text-sm text-yellow-700 mt-2">
-                      Generated Password: <span className="font-mono bg-yellow-100 px-2 py-1 rounded">{formData.password}</span>
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Status
-                </label>
-                <select
-                  value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg"
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </div>
-            </div>
-            
-            <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium text-lg"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium text-lg"
-              >
-                {member ? 'Update' : 'Create'} Member
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Data Entry Operator Modal Component - UPDATED WIDTH
-function DataEntryOperatorModal({ member, onSave, onClose }: { 
-  member: any; 
-  onSave: (data: any) => void;
-  onClose: () => void;
-}) {
-  const [formData, setFormData] = useState({
-    name: member?.name || '',
-    phone: member?.phone || '',
-    whatsappNumber: member?.whatsappNumber || '',
-    email: member?.email || '',
-    address: member?.address || '',
-    officeCategory: member?.officeCategory || 'Office 1',
-    username: member?.username || '',
-    password: member?.password || '',
-    confirmPassword: '',
-    status: member?.status || 'active'
-  });
-
-  const generateRandomPassword = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
-    let password = '';
-    for (let i = 0; i < 12; i++) {
-      password += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return password;
-  };
-
-  const handleGeneratePassword = () => {
-    const newPassword = generateRandomPassword();
-    setFormData({
-      ...formData,
-      password: newPassword,
-      confirmPassword: newPassword
-    });
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!member && formData.password !== formData.confirmPassword) {
-      alert('Passwords do not match!');
-      return;
-    }
-
-    if (!member && !formData.password) {
-      alert('Please generate or enter a password!');
-      return;
-    }
-
-    const { confirmPassword, ...saveData } = formData;
-    onSave(saveData);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto"> {/* UPDATED WIDTH */}
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">
-              {member ? 'Edit Data Entry Operator' : 'Add Data Entry Operator'}
-            </h2>
-            <button 
-              onClick={onClose} 
-              className="text-gray-500 hover:text-gray-700 text-2xl"
-            >
-              ✕
-            </button>
-          </div>
-          
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Full Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                  placeholder="Enter full name"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Username *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.username}
-                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                  placeholder="Choose a unique username"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Phone Number *
-                </label>
-                <input
-                  type="tel"
-                  required
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                  placeholder="Phone number"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  WhatsApp Number
-                </label>
-                <input
-                  type="tel"
-                  value={formData.whatsappNumber}
-                  onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                  placeholder="WhatsApp number"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email Address
-              </label>
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                placeholder="Email address"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Address
-              </label>
-              <textarea
-                value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                rows={3}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                placeholder="Full address"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Office Category *
-                </label>
-                <select
-                  required
-                  value={formData.officeCategory}
-                  onChange={(e) => setFormData({ ...formData, officeCategory: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                >
-                  <option value="Office 1">Office 1</option>
-                  <option value="Office 2">Office 2</option>
-                  <option value="Office 3">Office 3</option>
-                  <option value="Head Office">Head Office</option>
-                </select>
-                <p className="text-sm text-gray-500 mt-2">
-                  This determines which customers the operator can access
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Status
-                </label>
-                <select
-                  value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Password Section */}
-            {!member && (
-              <div className="border-t border-gray-200 pt-6">
-                <div className="flex items-center justify-between mb-4">
-                  <label className="block text-lg font-medium text-gray-700">
-                    Login Password *
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleGeneratePassword}
-                    className="bg-blue-100 text-blue-700 px-4 py-2 rounded-lg hover:bg-blue-200 font-medium"
-                  >
-                    Generate Password
-                  </button>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Password
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                      placeholder="Click generate or enter password"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Confirm Password
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.confirmPassword}
-                      onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                      placeholder="Confirm password"
-                    />
-                  </div>
-                </div>
-
-                {formData.password && (
-                  <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <p className="text-sm text-yellow-800 font-medium">
-                      <strong>Important:</strong> Save this password securely. It will be shown only once.
-                    </p>
-                    <p className="text-sm text-yellow-700 mt-2">
-                      Generated Password: <span className="font-mono bg-yellow-100 px-2 py-1 rounded">{formData.password}</span>
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-            
-            <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium text-lg"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-lg"
-              >
-                {member ? 'Update' : 'Create'} Operator
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Recent Activities Component
-function RecentActivities() {
-  const [activities, setActivities] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showAllActivities, setShowAllActivities] = useState(false);
-  const [timeFilter, setTimeFilter] = useState('24h');
-
-  const fetchActivities = async (filter = '24h', showAll = false) => {
-    try {
-      setLoading(true);
-      const response = await fetch(`/api/admin/recent-activities?filter=${filter}&showAll=${showAll}`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setActivities(data.data || []);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching activities:', error);
-      setActivities([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchActivities(timeFilter, showAllActivities);
-  }, [timeFilter, showAllActivities]);
-
-  const getActivityIcon = (type: string) => {
-    switch (type) {
-      case 'customer': return '👤';
-      case 'loan': return '💰';
-      case 'emi': return '📊';
-      case 'team': return '👥';
-      case 'login': return '🔐';
-      case 'approval': return '✅';
-      case 'rejection': return '❌';
-      default: return '📝';
-    }
-  };
-
-  const getActivityColor = (type: string) => {
-    switch (type) {
-      case 'customer': return 'bg-blue-100 text-blue-800';
-      case 'loan': return 'bg-green-100 text-green-800';
-      case 'emi': return 'bg-purple-100 text-purple-800';
-      case 'team': return 'bg-orange-100 text-orange-800';
-      case 'login': return 'bg-gray-100 text-gray-800';
-      case 'approval': return 'bg-green-100 text-green-800';
-      case 'rejection': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getTimeAgo = (timestamp: string) => {
-    const now = new Date();
-    const activityDate = new Date(timestamp);
-    const diff = now.getTime() - activityDate.getTime();
-    const minutes = Math.floor(diff / (1000 * 60));
-    const hours = Math.floor(diff / (1000 * 60 * 60));
-    const days = Math.floor(hours / 24);
-
-    if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
-    if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
-    if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
-    return 'Just now';
-  };
-
-  const handleTimeFilterChange = (filter: string) => {
-    setTimeFilter(filter);
-  };
-
-  const handleViewAllClick = () => {
-    setShowAllActivities(true);
-  };
-
-  const handleBackToRecent = () => {
-    setShowAllActivities(false);
-    setTimeFilter('24h');
-  };
-
-  return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-      <div className="p-6 border-b border-gray-200">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">
-              {showAllActivities ? 'All Activities' : 'Recent Activities'}
-            </h3>
-            <p className="text-sm text-gray-600 mt-1">
-              {showAllActivities 
-                ? 'Complete activity log from all team members' 
-                : 'Latest actions from all team members'
-              }
             </p>
           </div>
-          
-          {showAllActivities && (
-            <button 
-              onClick={handleBackToRecent}
-              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-            >
-              ← Back to Recent
-            </button>
+          {!isRenewed && (
+            <div className="text-right">
+              <div className="text-xs font-medium text-gray-500">Behavior Score</div>
+              <div className={`text-lg font-semibold ${
+                behavior.punctualityScore >= 90 ? 'text-green-600' :
+                behavior.punctualityScore >= 75 ? 'text-blue-600' :
+                behavior.punctualityScore >= 60 ? 'text-yellow-600' : 'text-red-600'
+              }`}>
+                {behavior.punctualityScore.toFixed(0)}%
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                {behavior.behaviorRating}
+              </div>
+            </div>
           )}
         </div>
-
-        {/* Time Filter */}
-        {showAllActivities && (
-          <div className="flex space-x-2 mt-4">
-            {[
-              { value: '24h', label: '24 Hours' },
-              { value: '7d', label: '7 Days' },
-              { value: '30d', label: '30 Days' },
-              { value: 'all', label: 'All Time' }
-            ].map((filter) => (
-              <button
-                key={filter.value}
-                onClick={() => handleTimeFilterChange(filter.value)}
-                className={`px-3 py-1 rounded-md text-xs font-medium ${
-                  timeFilter === filter.value
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
-              >
-                {filter.label}
-              </button>
-            ))}
+        
+        {/* Completion Progress - Only show for active loans */}
+        {!isRenewed && (
+          <div className="mb-4">
+            <div className="flex justify-between text-sm mb-1">
+              <span>Completion: {completion.completionPercentage.toFixed(1)}%</span>
+              <span>{completion.remainingEmis} EMIs remaining</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div 
+                className={`h-2 rounded-full transition-all duration-300 ${
+                  completion.isCompleted ? 'bg-green-600' : 'bg-blue-600'
+                }`} 
+                style={{width: `${Math.min(completion.completionPercentage, 100)}%`}}
+              ></div>
+            </div>
+            <div className="flex justify-between text-xs text-gray-500 mt-1">
+              <span>Paid: ₹{completion.totalPaid.toLocaleString()}</span>
+              <span>Remaining: ₹{completion.remainingAmount.toLocaleString()} of ₹{completion.totalLoanAmount?.toLocaleString() || totalLoanAmount.toLocaleString()}</span>
+            </div>
           </div>
         )}
-      </div>
-      
-      <div className="p-6">
-        {loading ? (
-          <div className="text-center py-4">
-            <div className="text-gray-400 text-2xl mb-2">⏳</div>
-            <p className="text-gray-600">Loading activities...</p>
+
+        {/* Loan Details */}
+        <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4 ${
+          isRenewed ? 'text-gray-400' : ''
+        }`}>
+          <div>
+            <label className="block text-xs font-medium text-gray-500">Loan Amount</label>
+            <p className={`font-semibold ${isRenewed ? 'text-gray-400' : 'text-gray-900'}`}>
+              ₹{loan.amount?.toLocaleString()}
+            </p>
           </div>
-        ) : (
-          <div className="space-y-4 max-h-96 overflow-y-auto">
-            {activities.map((activity) => (
-              <div key={activity._id} className="flex items-start space-x-3 p-3 hover:bg-gray-50 rounded-lg transition-colors">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm">
-                  <span className={getActivityIcon(activity.type)}></span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center space-x-2 mb-1">
-                    <p className="text-sm text-gray-900">
-                      <span className="font-medium">{activity.userName || activity.user}</span> {activity.action}{' '}
-                      {activity.target && (
-                        <span className="font-medium text-blue-600">{activity.target}</span>
-                      )}
-                    </p>
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getActivityColor(activity.type)}`}>
-                      {activity.type}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs text-gray-500">
-                      {activity.role && `Role: ${activity.role} • `}
-                      {getTimeAgo(activity.timestamp)}
-                    </p>
-                    {activity.details && (
-                      <p className="text-xs text-gray-400">{activity.details}</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-            
-            {activities.length === 0 && (
-              <div className="text-center py-4">
-                <div className="text-gray-400 text-2xl mb-2">📝</div>
-                <p className="text-gray-600">No activities found</p>
-                <p className="text-sm text-gray-500 mt-1">Activities will appear here when team members perform actions.</p>
-              </div>
-            )}
+          <div>
+            <label className="block text-xs font-medium text-gray-500">EMI Amount</label>
+            <p className={`font-semibold ${isRenewed ? 'text-gray-400' : 'text-gray-900'}`}>
+              ₹{loan.emiAmount}
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500">
+              {loan.loanType === 'Daily' ? 'No. of Days' : 
+               loan.loanType === 'Weekly' ? 'No. of Weeks' : 'No. of Months'}
+            </label>
+            <p className={`font-semibold ${isRenewed ? 'text-gray-400' : 'text-gray-900'}`}>
+              {loan.loanDays}
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500">Next EMI Date</label>
+            <p className={`font-semibold ${isRenewed ? 'text-gray-400' : 'text-gray-900'}`}>
+              {isRenewed ? 'N/A' : formatDateToDDMMYYYY(loan.nextEmiDate)}
+            </p>
+          </div>
+        </div>
+
+        {/* Payment Statistics - Only show for active loans */}
+        {!isRenewed && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs bg-blue-50 p-3 rounded-md mb-4">
+            <div>
+              <span className="text-blue-700 font-medium">Total Paid:</span>
+              <p className="text-blue-900">₹{loan.totalPaidAmount?.toLocaleString() || '0'}</p>
+            </div>
+            <div>
+              <span className="text-blue-700 font-medium">EMI Paid:</span>
+              <p className="text-blue-900">{loan.emiPaidCount || 0}/{loan.totalEmiCount || loan.loanDays}</p>
+            </div>
+            <div>
+              <span className="text-blue-700 font-medium">On Time:</span>
+              <p className="text-blue-900">{behavior.onTimePayments}/{behavior.totalPayments}</p>
+            </div>
+            <div>
+              <span className="text-blue-700 font-medium">Last Payment:</span>
+              <p className="text-blue-900">
+                {loan.emiHistory && loan.emiHistory.length > 0 
+                  ? formatDateToDDMMYYYY(loan.emiHistory[loan.emiHistory.length - 1].paymentDate)
+                  : 'Never'
+                }
+              </p>
+            </div>
           </div>
         )}
         
-        <div className="mt-4 flex justify-between items-center">
-          {!showAllActivities && (
-            <button 
-              onClick={handleViewAllClick}
-              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-            >
-              View All Activities →
-            </button>
+        {/* Action Buttons */}
+        <div className="flex justify-end space-x-2 mt-4 pt-4 border-t border-gray-200">
+          {!isRenewed && loan.status !== 'completed' && (
+            <>
+              <button 
+                onClick={() => {
+                  setSelectedCustomer(customerDetails);
+                  setSelectedLoanForPayment(loan);
+                  setShowUpdateEMI(true);
+                  setShowCustomerDetails(false);
+                }}
+                className="bg-green-600 text-white px-3 py-1 rounded-md hover:bg-green-700 text-sm"
+              >
+                Pay EMI
+              </button>
+              <button 
+                onClick={() => handleEditLoan(loan)}
+                className="bg-yellow-600 text-white px-3 py-1 rounded-md hover:bg-yellow-700 text-sm"
+              >
+                Edit
+              </button>
+              <button 
+                onClick={() => handleRenewLoan(loan)}
+                className="bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 text-sm"
+              >
+                Renew
+              </button>
+            </>
           )}
-          
           <button 
-            onClick={() => fetchActivities(timeFilter, showAllActivities)}
-            className="text-gray-600 hover:text-gray-800 text-sm font-medium"
+            onClick={() => handleDeleteLoan(loan)}
+            className="bg-red-600 text-white px-3 py-1 rounded-md hover:bg-red-700 text-sm"
+            disabled={isLoading}
           >
-            Refresh
+            {isLoading ? 'Deleting...' : 'Delete'}
           </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Enhanced Customer Details View Component with FI Documents
-function CustomerDetailsView({ customer, onBack, onDelete }: { 
-  customer: any; 
-  onBack: () => void;
-  onDelete: (customerId: string) => void;
-}) {
-  const [activeTab, setActiveTab] = useState('loan-details');
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-
-  const handleDeleteClick = () => {
-    setShowDeleteConfirm(true);
-  };
-
-  const handleConfirmDelete = () => {
-    onDelete(customer._id);
-    setShowDeleteConfirm(false);
-  };
-
-  const handleCancelDelete = () => {
-    setShowDeleteConfirm(false);
-  };
-
-  // Function to handle document download
-  const handleDownload = (documentUrl: string, documentType: string) => {
-    if (documentUrl) {
-      const link = document.createElement('a');
-      link.href = documentUrl;
-      link.download = `${customer.name}_${documentType}.pdf`;
-      link.click();
-    } else {
-      alert('Document not available');
-    }
-  };
-
-  // Function to handle document share via WhatsApp
-  const handleShareWhatsApp = (documentUrl: string, documentType: string) => {
-    if (documentUrl) {
-      const message = `FI Document for ${customer.name} - ${documentType}`;
-      const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message + ' ' + documentUrl)}`;
-      window.open(whatsappUrl, '_blank');
-    } else {
-      alert('Document not available for sharing');
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* Enhanced Header with Background Color */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg p-6 text-white">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <button 
-              onClick={onBack}
-              className="flex items-center space-x-2 bg-white text-blue-700 px-4 py-2 rounded-lg hover:bg-blue-50 transition-colors font-medium"
-            >
-              <span className="text-lg">←</span>
-              <span>Back</span>
-            </button>
-            <div>
-              <div className="flex items-center space-x-4">
-                <h1 className="text-2xl font-bold">{customer.name}</h1>
-                <span className="bg-blue-500 text-white px-3 py-1 rounded-full text-sm font-medium">
-                  {customer.customerNumber}
-                </span>
-              </div>
-              <div className="flex items-center space-x-4 mt-2">
-                <p className="text-blue-100">{customer.businessName}</p>
-                <span className="text-blue-200">•</span>
-                <p className="text-blue-100">{customer.area}</p>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center space-x-3">
-            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-              customer.status === 'active' 
-                ? 'bg-green-500 text-white' 
-                : 'bg-red-500 text-white'
-            }`}>
-              {customer.status === 'active' ? 'Active' : 'Inactive'}
-            </span>
-            <button 
-              onClick={handleDeleteClick}
-              className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors text-sm font-medium"
-            >
-              Delete Profile
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full">
-            <div className="p-6">
-              <div className="flex items-center mb-4">
-                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mr-4">
-                  <span className="text-red-600 text-xl">⚠️</span>
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">Delete Customer</h3>
-                  <p className="text-gray-600">This action cannot be undone</p>
-                </div>
-              </div>
-              
-              <div className="bg-red-50 border border-red-200 rounded-md p-4 mb-6">
-                <p className="text-sm text-red-800">
-                  <strong>Warning:</strong> Deleting this customer will permanently remove all their data including:
-                </p>
-                <ul className="text-sm text-red-700 mt-2 list-disc list-inside">
-                  <li>Customer profile information</li>
-                  <li>Loan details</li>
-                  <li>EMI payment history</li>
-                  <li>All related records</li>
-                </ul>
-              </div>
-
-              <div className="flex justify-end space-x-3">
-                <button 
-                  onClick={handleCancelDelete}
-                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={handleConfirmDelete}
-                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-                >
-                  Yes, Delete Permanently
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Tabs - Added FI Documents */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
-          <button
-            onClick={() => setActiveTab('loan-details')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'loan-details'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            Loan Details
-          </button>
-          <button
-            onClick={() => setActiveTab('transaction-history')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'transaction-history'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            Transaction History
-          </button>
-          <button
-            onClick={() => setActiveTab('fi-documents')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'fi-documents'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            FI Documents
-          </button>
-        </nav>
-      </div>
-
-      {/* Tab Content */}
-      {activeTab === 'loan-details' && (
-        <div className="space-y-6">
-          {/* Customer Information Box */}
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-              <h3 className="text-lg font-semibold text-gray-900">Customer Information</h3>
-            </div>
-            <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Customer Name</p>
-                    <p className="text-lg font-semibold text-gray-900">{customer.name}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Business Name</p>
-                    <p className="text-lg font-semibold text-gray-900">{customer.businessName}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Primary Phone Number</p>
-                    <p className="text-lg font-semibold text-gray-900">{customer.phone}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Secondary Phone Number</p>
-                    <p className="text-lg font-semibold text-gray-900">{customer.secondaryPhone || 'N/A'}</p>
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">WhatsApp Number</p>
-                    <p className="text-lg font-semibold text-gray-900">{customer.whatsappNumber || customer.phone}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Address</p>
-                    <p className="text-lg font-semibold text-gray-900">{customer.address || 'No address provided'}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Area</p>
-                    <p className="text-lg font-semibold text-gray-900">{customer.area}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Office Category & Category</p>
-                    <div className="flex space-x-2 mt-1">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                        {customer.officeCategory || 'N/A'}
-                      </span>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        customer.category === 'A' ? 'bg-green-100 text-green-800' :
-                        customer.category === 'B' ? 'bg-yellow-100 text-yellow-800' :
-                        customer.category === 'C' ? 'bg-blue-100 text-blue-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {customer.category || 'Not specified'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Loan Details Box */}
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-            <div className="px-6 py-4 border-b border-gray-200 bg-blue-50">
-              <h3 className="text-lg font-semibold text-gray-900">Loan Details</h3>
-            </div>
-            <div className="p-6">
-              {/* Single Loan Display */}
-              <div className="space-y-4">
-                <div className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-md font-semibold text-gray-900">Loan Details</h4>
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                      Active
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Loan Number</p>
-                      <p className="text-lg font-semibold text-gray-900">{customer.loanNumber}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Loan Amount</p>
-                      <p className="text-lg font-semibold text-green-600">₹{customer.loanAmount?.toLocaleString()}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">EMI Amount</p>
-                      <p className="text-lg font-semibold text-blue-600">₹{customer.emiAmount}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Loan Type</p>
-                      <p className="text-lg font-semibold text-gray-900">{customer.loanType}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Loan Date</p>
-                      <p className="text-lg font-semibold text-gray-900">
-                        {customer.loanDate ? new Date(customer.loanDate).toLocaleDateString() : 'Not specified'}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Loan Duration</p>
-                      <p className="text-lg font-semibold text-gray-900">
-                        {customer.loanDays ? `${customer.loanDays} days` : 'Not specified'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Additional loans can be added here in similar structure */}
-                {customer.additionalLoans && customer.additionalLoans.map((loan: any, index: number) => (
-                  <div key={index} className="border border-gray-200 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-md font-semibold text-gray-900">Loan {index + 2}</h4>
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                        Additional
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">Loan Number</p>
-                        <p className="text-lg font-semibold text-gray-900">{loan.loanNumber}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">Loan Amount</p>
-                        <p className="text-lg font-semibold text-green-600">₹{loan.loanAmount?.toLocaleString()}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">EMI Amount</p>
-                        <p className="text-lg font-semibold text-blue-600">₹{loan.emiAmount}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'transaction-history' && (
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-900">Transaction History</h3>
-          </div>
-          <div className="p-6">
-            {customer.transactions && customer.transactions.length > 0 ? (
-              <div className="space-y-4">
-                {customer.transactions.map((transaction: any, index: number) => (
-                  <div key={index} className="border border-gray-200 rounded-lg p-4">
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">EMI Payment</p>
-                        <p className="text-lg font-semibold text-green-600">₹{transaction.amount}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-medium text-gray-600">Date</p>
-                        <p className="text-lg font-semibold text-gray-900">
-                          {new Date(transaction.date).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-                    {transaction.notes && (
-                      <p className="text-sm text-gray-500 mt-2">{transaction.notes}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <div className="text-gray-400 text-4xl mb-4">📝</div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No transactions found</h3>
-                <p className="text-gray-600">Transaction history will appear here when EMI payments are made.</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'fi-documents' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Shop FI Document */}
-            <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-              <div className="px-6 py-4 border-b border-gray-200 bg-green-50">
-                <h3 className="text-lg font-semibold text-gray-900">Shop FI Document</h3>
-              </div>
-              <div className="p-6">
-                <div className="text-center">
-                  <div className="text-green-400 text-6xl mb-4">🏪</div>
-                  <p className="text-gray-600 mb-4">Shop Field Investigation Document</p>
-                  <div className="flex justify-center space-x-3">
-                    <button 
-                      onClick={() => handleDownload(customer.fiDocuments?.shop, 'Shop_FI')}
-                      className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
-                    >
-                      Download
-                    </button>
-                    <button 
-                      onClick={() => handleShareWhatsApp(customer.fiDocuments?.shop, 'Shop FI Document')}
-                      className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors flex items-center space-x-2"
-                    >
-                      <span>WhatsApp</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Home FI Document */}
-            <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-              <div className="px-6 py-4 border-b border-gray-200 bg-blue-50">
-                <h3 className="text-lg font-semibold text-gray-900">Home FI Document</h3>
-              </div>
-              <div className="p-6">
-                <div className="text-center">
-                  <div className="text-blue-400 text-6xl mb-4">🏠</div>
-                  <p className="text-gray-600 mb-4">Home Field Investigation Document</p>
-                  <div className="flex justify-center space-x-3">
-                    <button 
-                      onClick={() => handleDownload(customer.fiDocuments?.home, 'Home_FI')}
-                      className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-                    >
-                      Download
-                    </button>
-                    <button 
-                      onClick={() => handleShareWhatsApp(customer.fiDocuments?.home, 'Home FI Document')}
-                      className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors flex items-center space-x-2"
-                    >
-                      <span>WhatsApp</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Document Status */}
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-              <h3 className="text-lg font-semibold text-gray-900">Document Status</h3>
-            </div>
-            <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
-                  <span className="text-gray-700">Shop FI Document</span>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    customer.fiDocuments?.shop ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                  }`}>
-                    {customer.fiDocuments?.shop ? 'Uploaded' : 'Not Uploaded'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
-                  <span className="text-gray-700">Home FI Document</span>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    customer.fiDocuments?.home ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                  }`}>
-                    {customer.fiDocuments?.home ? 'Uploaded' : 'Not Uploaded'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Enhanced Pending Requests Component with Filters
-function PendingRequestsView({ 
-  requests, 
-  onApprove, 
-  onReject, 
-  onBack
-}: { 
-  requests: any[]; 
-  onApprove: (request: any) => void;
-  onReject: (request: any) => void;
-  onBack: () => void;
-}) {
-  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [selectedRequest, setSelectedRequest] = useState<any>(null);
-  const [filters, filterDispatch({type: 'SET_CUSTOMER_FILTERS', payload: newFilters})] = useState({
-    requestType: '',
-    status: '',
-    operator: '',
-    sortBy: 'newest'
-  });
-
-  const handleViewEdit = (request: any) => {
-    setSelectedRequest(request);
-    setIsViewModalOpen(true);
-  };
-
-  const handleCloseModal = () => {
-    setIsViewModalOpen(false);
-    setSelectedRequest(null);
-  };
-
-  const handleApproveFromModal = () => {
-    if (selectedRequest) {
-      onApprove(selectedRequest);
-      handleCloseModal();
-    }
-  };
-
-  const handleRejectFromModal = () => {
-    if (selectedRequest) {
-      onReject(selectedRequest);
-      handleCloseModal();
-    }
-  };
-
-  // Filter and sort requests
-  const filteredAndSortedRequests = requests
-    .filter(request => {
-      const matchesType = !filters.requestType || request.type === filters.requestType;
-      const matchesStatus = !filters.status || request.status === filters.status;
-      const matchesOperator = !filters.operator || request.createdBy === filters.operator;
-      return matchesType && matchesStatus && matchesOperator;
-    })
-    .sort((a, b) => {
-      if (filters.sortBy === 'newest') {
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      } else {
-        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      }
-    });
-
-  // Get unique values for filters
-  const requestTypes = [...new Set(requests.map(r => r.type))];
-  const operators = [...new Set(requests.map(r => r.createdBy).filter(Boolean))];
-
-  const handleFilterChange = (key: string, value: string) => {
-    filterDispatch({type: 'SET_CUSTOMER_FILTERS', payload: newFilters})(prev => ({ ...prev, [key]: value }));
-  };
-
-  const clearFilters = () => {
-    filterDispatch({type: 'SET_CUSTOMER_FILTERS', payload: newFilters})({
-      requestType: '',
-      status: '',
-      operator: '',
-      sortBy: 'newest'
-    });
-  };
-
-  // Helper function to format field names
-  const formatFieldName = (field: string) => {
-    return field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-  };
-
-  // Helper function to display field value
-  const renderFieldValue = (label: string, value: any) => {
-    if (value === null || value === undefined || value === '') {
-      return 'N/A';
-    }
-    
-    // Format currency fields
-    if (label.toLowerCase().includes('amount')) {
-      return `₹${Number(value).toLocaleString()}`;
-    }
-    
-    // Format dates
-    if (label.toLowerCase().includes('date') && !isNaN(Date.parse(value))) {
-      return new Date(value).toLocaleDateString();
-    }
-    
-    return String(value);
-  };
-
-  // Get all customer details for display - FIXED VERSION
-  const getCustomerDetails = (request: any) => {
-    console.log('🔍 Full Request data:', request);
-    
-    // For NEW customer requests, data is in request.requestedData
-    if (request.type === 'New Customer' && request.requestedData) {
-      console.log('📊 Requested Data found:', request.requestedData);
-      return request.requestedData;
-    }
-    
-    // For EDIT requests, show both original and changed data
-    if (request.type === 'EDIT' && request.changes) {
-      return {
-        ...request.originalData,
-        ...request.changes
-      };
-    }
-    
-    // Fallback: try to extract from any possible location
-    const extractedData = {
-      ...request.requestedData,
-      ...request.data,
-      ...request
-    };
-    
-    console.log('🔄 Extracted data:', extractedData);
-    return extractedData;
-  };
-
-  // Render detailed customer information - FIXED VERSION
-  const renderCustomerDetails = (request: any) => {
-    const customerData = getCustomerDetails(request);
-    
-    console.log('📊 Final customer data for display:', customerData);
-    
-    // Field mappings based on the actual data structure from data-entry
-    const customerFields = [
-      { 
-        label: 'Customer Name', 
-        value: customerData.name || customerData.customerName || request.customerName
-      },
-      { 
-        label: 'Phone Number', 
-        value: customerData.phone || customerData.customerPhone || request.customerPhone
-      },
-      { 
-        label: 'Business Name', 
-        value: customerData.businessName || request.businessName
-      },
-      { 
-        label: 'Area', 
-        value: customerData.area || request.area
-      },
-      { 
-        label: 'Address', 
-        value: customerData.address || request.address
-      },
-      { 
-        label: 'Login ID', 
-        value: customerData.loginId || 'Will be generated after approval'
-      },
-    ];
-
-    const loanFields = [
-      { 
-        label: 'Loan Number', 
-        value: customerData.loanNumber || request.loanNumber
-      },
-      { 
-        label: 'Loan Amount', 
-        value: customerData.loanAmount || request.loanAmount
-      },
-      { 
-        label: 'EMI Amount', 
-        value: customerData.emiAmount || request.emiAmount
-      },
-      { 
-        label: 'Loan Type', 
-        value: customerData.loanType || request.loanType
-      },
-      { 
-        label: 'Loan Date', 
-        value: customerData.loanDate || 'Not specified'
-      },
-      { 
-        label: 'Loan Duration', 
-        value: customerData.loanDays ? `${customerData.loanDays} days` : 'Not specified'
-      },
-    ];
-
-    // File upload information
-    const fileFields = [
-      {
-        label: 'Profile Picture',
-        value: customerData.profilePicture ? 'Uploaded' : 'Not uploaded'
-      },
-      {
-        label: 'FI Document - Shop',
-        value: customerData.fiDocuments?.shop ? 'Uploaded' : 'Not uploaded'
-      },
-      {
-        label: 'FI Document - Home', 
-        value: customerData.fiDocuments?.home ? 'Uploaded' : 'Not uploaded'
-      }
-    ];
-
-    // For EDIT requests, show comparison view
-    if (request.type === 'EDIT' && request.changes) {
-      return (
-        <div className="space-y-6">
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <h3 className="text-lg font-semibold text-yellow-800 mb-2">Edit Request - Changes Summary</h3>
-            <div className="grid grid-cols-1 gap-4">
-              {Object.entries(request.changes).map(([field, newValue]: [string, any]) => (
-                <div key={field} className="p-3 bg-white rounded-lg border border-yellow-200">
-                  <div className="flex justify-between items-start mb-2">
-                    <span className="font-medium text-gray-700">{formatFieldName(field)}</span>
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                      Changed
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <p className="text-xs text-gray-500 mb-1">Original Value</p>
-                      <div className="p-2 bg-red-50 border border-red-200 rounded text-red-700">
-                        {renderFieldValue(field, request.originalData?.[field])}
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 mb-1">Requested Change</p>
-                      <div className="p-2 bg-green-50 border border-green-200 rounded text-green-700 font-semibold">
-                        {renderFieldValue(field, newValue)}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="space-y-6">
-        {/* Customer Information */}
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-          <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-            <h3 className="text-lg font-semibold text-gray-900">Customer Information</h3>
-          </div>
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {customerFields.map((field, index) => (
-                <div key={index} className="space-y-1">
-                  <p className="text-sm font-medium text-gray-600">{field.label}</p>
-                  <p className="text-lg font-semibold text-gray-900">
-                    {renderFieldValue(field.label, field.value)}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Loan Details */}
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-          <div className="px-6 py-4 border-b border-gray-200 bg-blue-50">
-            <h3 className="text-lg font-semibold text-gray-900">Loan Details</h3>
-          </div>
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {loanFields.map((field, index) => (
-                <div key={index} className="space-y-1">
-                  <p className="text-sm font-medium text-gray-600">{field.label}</p>
-                  <p className={`text-lg font-semibold ${
-                    field.label.includes('Amount') ? 'text-green-600' : 'text-gray-900'
-                  }`}>
-                    {renderFieldValue(field.label, field.value)}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* File Uploads */}
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-          <div className="px-6 py-4 border-b border-gray-200 bg-purple-50">
-            <h3 className="text-lg font-semibold text-gray-900">Document Uploads</h3>
-          </div>
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {fileFields.map((field, index) => (
-                <div key={index} className="space-y-1">
-                  <p className="text-sm font-medium text-gray-600">{field.label}</p>
-                  <p className={`text-lg font-semibold ${
-                    field.value === 'Uploaded' ? 'text-green-600' : 'text-orange-600'
-                  }`}>
-                    {field.value}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Additional Information */}
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-          <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-            <h3 className="text-lg font-semibold text-gray-900">Request Information</h3>
-          </div>
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-gray-600">Request ID</p>
-                <p className="text-lg font-semibold text-gray-900 font-mono text-sm">{request._id}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-gray-600">Created Date</p>
-                <p className="text-lg font-semibold text-gray-900">
-                  {request.createdAt ? new Date(request.createdAt).toLocaleString() : 'N/A'}
-                </p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-gray-600">Created By</p>
-                <p className="text-lg font-semibold text-gray-900">{request.createdBy || 'Data Entry Operator'}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-gray-600">Priority</p>
-                <p className="text-lg font-semibold text-gray-900">{request.priority || 'Medium'}</p>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     );
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* Header with Back Button */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <button 
-            onClick={onBack}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <span className="text-gray-600">← Back</span>
-          </button>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Pending Requests</h1>
-            <p className="text-gray-600">Approve or reject customer requests</p>
-          </div>
-        </div>
-        <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
-          {filteredAndSortedRequests.length} Pending
-        </span>
-      </div>
-
-      {/* Filters Section */}
-      <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-        <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-            {/* Request Type Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Request Type
-              </label>
-              <select
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                value={filters.requestType}
-                onChange={(e) => handleFilterChange('requestType', e.target.value)}
-              >
-                <option value="">All Types</option>
-                <option value="New Customer">New Customer</option>
-                <option value="EDIT">Edit Request</option>
-              </select>
-            </div>
-
-            {/* Status Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Status
-              </label>
-              <select
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                value={filters.status}
-                onChange={(e) => handleFilterChange('status', e.target.value)}
-              >
-                <option value="">All Status</option>
-                <option value="pending">Pending</option>
-                <option value="reviewed">Reviewed</option>
-              </select>
-            </div>
-
-            {/* Operator Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Operator
-              </label>
-              <select
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                value={filters.operator}
-                onChange={(e) => handleFilterChange('operator', e.target.value)}
-              >
-                <option value="">All Operators</option>
-                {operators.map(operator => (
-                  <option key={operator} value={operator}>{operator}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Sort By Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Sort By Date
-              </label>
-              <select
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                value={filters.sortBy}
-                onChange={(e) => handleFilterChange('sortBy', e.target.value)}
-              >
-                <option value="newest">Newest First</option>
-                <option value="oldest">Oldest First</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Active Filters Display */}
-          {(filters.requestType || filters.status || filters.operator || filters.sortBy !== 'newest') && (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm text-gray-600">Active filters:</span>
-                {filters.requestType && (
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
-                    Type: {filters.requestType}
-                    <button 
-                      onClick={() => handleFilterChange('requestType', '')}
-                      className="ml-1 text-blue-600 hover:text-blue-800"
-                    >
-                      ×
-                    </button>
-                  </span>
-                )}
-                {filters.status && (
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
-                    Status: {filters.status}
-                    <button 
-                      onClick={() => handleFilterChange('status', '')}
-                      className="ml-1 text-purple-600 hover:text-purple-800"
-                    >
-                      ×
-                    </button>
-                  </span>
-                )}
-                {filters.operator && (
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
-                    Operator: {filters.operator}
-                    <button 
-                      onClick={() => handleFilterChange('operator', '')}
-                      className="ml-1 text-green-600 hover:text-green-800"
-                    >
-                      ×
-                    </button>
-                  </span>
-                )}
-                {filters.sortBy !== 'newest' && (
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-orange-100 text-orange-800">
-                    Sort: {filters.sortBy === 'oldest' ? 'Oldest First' : 'Newest First'}
-                    <button 
-                      onClick={() => handleFilterChange('sortBy', 'newest')}
-                      className="ml-1 text-orange-600 hover:text-orange-800"
-                    >
-                      ×
-                    </button>
-                  </span>
-                )}
+  })
+) : (
+  <div className="text-center py-8 bg-white border border-gray-200 rounded-lg">
+    <div className="text-gray-400 text-4xl mb-4">💰</div>
+    <p className="text-gray-600 text-lg">No loans found</p>
+    <p className="text-sm text-gray-500 mt-2">This customer doesn't have any loans yet.</p>
+    <button 
+      onClick={() => setShowAddLoanModal(true)}
+      className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+    >
+      + Add First Loan
+    </button>
+  </div>
+)}
+                </div>
               </div>
-              <button
-                onClick={clearFilters}
-                className="text-sm text-red-600 hover:text-red-800"
-              >
-                Clear all
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
 
-      {/* Requests List */}
-      <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-        <div className="p-6">
-          <div className="space-y-4">
-            {filteredAndSortedRequests.map((request) => (
-              <div key={request._id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-4">
-                    <div className="flex-shrink-0">
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                        request.type === 'EDIT' ? 'bg-purple-100' : 'bg-blue-100'
-                      }`}>
-                        <span className={`font-semibold text-sm ${
-                          request.type === 'EDIT' ? 'text-purple-600' : 'text-blue-600'
-                        }`}>
-                          {request.customerName?.split(' ').map((n: string) => n[0]).join('') || 'NC'}
-                        </span>
-                      </div>
+              {/* Summary Section */}
+              {displayLoans.length > 0 && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <h4 className="text-lg font-semibold text-green-900 mb-3">Loan Summary</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <span className="text-green-700 font-medium">Total Loans:</span>
+                      <p className="text-green-900 font-semibold">{displayLoans.length}</p>
                     </div>
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <h4 className="text-sm font-semibold text-gray-900">
-                          {request.customerName || 'Unknown Customer'}
-                        </h4>
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          request.type === 'EDIT' 
-                            ? 'bg-purple-100 text-purple-800' 
-                            : 'bg-blue-100 text-blue-800'
-                        }`}>
-                          {request.type === 'EDIT' ? 'EDIT Request' : 'New Customer'}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          #{request.customerNumber || 'N/A'}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {request.type === 'EDIT' ? 'Customer Update' : 'New Registration'} • 
-                        Created: {new Date(request.createdAt).toLocaleDateString()} •
-                        By: {request.createdBy || 'Unknown Operator'}
+                    <div>
+                      <span className="text-green-700 font-medium">Active Loans:</span>
+                      <p className="text-green-900 font-semibold">
+                        {displayLoans.filter(loan => loan.status === 'active').length}
                       </p>
-                      
-                      {/* Quick summary */}
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
-                          Phone: {request.customerPhone || request.requestedData?.phone || 'N/A'}
-                        </span>
-                        <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
-                          Loan: ₹{((request.loanAmount || request.requestedData?.loanAmount || 0)).toLocaleString()}
-                        </span>
-                        <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
-                          EMI: ₹{((request.emiAmount || request.requestedData?.emiAmount || 0)).toLocaleString()}
-                        </span>
-                        <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
-                          {request.loanType || request.requestedData?.loanType || 'N/A'}
-                        </span>
-                      </div>
+                    </div>
+                    <div>
+                      <span className="text-green-700 font-medium">Total Given:</span>
+                      <p className="text-green-900 font-semibold">
+                        ₹{displayLoans.reduce((sum, loan) => sum + (loan.amount || 0), 0).toLocaleString()}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-green-700 font-medium">Total Collected:</span>
+                      <p className="text-green-900 font-semibold">
+                        ₹{displayLoans.reduce((sum, loan) => sum + (loan.totalPaidAmount || 0), 0).toLocaleString()}
+                      </p>
                     </div>
                   </div>
                 </div>
-
-                <div className="flex items-center space-x-2">
-                  {/* View Button */}
-                  <button 
-                    onClick={() => handleViewEdit(request)}
-                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                      request.type === 'EDIT' 
-                        ? 'bg-purple-600 text-white hover:bg-purple-700' 
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
-                    }`}
-                  >
-                    View Details
-                  </button>
-                  
-                  <button 
-                    onClick={() => onApprove(request)}
-                    className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors text-sm font-medium"
-                  >
-                    Approve
-                  </button>
-                  <button 
-                    onClick={() => onReject(request)}
-                    className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition-colors text-sm font-medium"
-                  >
-                    Reject
-                  </button>
-                </div>
-              </div>
-            ))}
-            
-            {filteredAndSortedRequests.length === 0 && (
-              <div className="text-center py-8">
-                <div className="text-gray-400 text-4xl mb-4">✅</div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No pending requests</h3>
-                <p className="text-gray-600">All requests have been processed.</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* MODAL */}
-      {isViewModalOpen && selectedRequest && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-900">
-                  {selectedRequest.type === 'EDIT' ? 'Edit Request Details' : 'New Customer Request'}
-                </h2>
-                <button 
-                  onClick={handleCloseModal} 
-                  className="text-gray-500 hover:text-gray-700 text-2xl"
-                >
-                  ✕
-                </button>
-              </div>
-
-              {/* Request Type Badge */}
-              <div className="mb-6">
-                <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                  selectedRequest.type === 'EDIT' 
-                    ? 'bg-purple-100 text-purple-800' 
-                    : 'bg-blue-100 text-blue-800'
-                }`}>
-                  {selectedRequest.type === 'EDIT' ? 'EDIT REQUEST' : 'NEW CUSTOMER REQUEST'}
-                </span>
-              </div>
-              
-              {/* Customer Details */}
-              {renderCustomerDetails(selectedRequest)}
-
-              {/* Action Buttons */}
-              <div className="flex justify-end space-x-3 mt-6 pt-6 border-t border-gray-200">
-                <button 
-                  onClick={handleRejectFromModal}
-                  className="bg-red-600 text-white px-6 py-2 rounded-md hover:bg-red-700 transition-colors font-medium"
-                >
-                  Reject Request
-                </button>
-                <button 
-                  onClick={handleApproveFromModal}
-                  className="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700 transition-colors font-medium"
-                >
-                  Approve Request
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export default function DashboardPage() {
-  const router = useRouter();
-  const [selectedCustomer, setSelectedCustomer] = useState<any>(null)
-  const [activeTab, setActiveTab] = useState('dashboard')
-  const [searchTerm, setSearchTerm] = useState('')
-  const [customers, setCustomers] = useState<any[]>([])
-  const [pendingRequests, setPendingRequests] = useState<any[]>([])
-  const [dashboardStats, setDashboardStats] = useState({
-  totalLoans: 0,
-  totalAmount: 0,
-  totalCustomers: 0,
-  totalTeamMembers: 0, // ADD THIS LINE
-  pendingRequests: 0
-})
-  
-  // Filter states
-  const [showFilters, setShowFilters] = useState(false);
-  const [filters, filterDispatch({type: 'SET_CUSTOMER_FILTERS', payload: newFilters})] = useState({
-  customerNumber: '',
-  loanType: '',
-  status: '',
-  officeCategory: '',
-  category: '' // Add category filter
-});
-
-  // Sort state
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-
-  const [loading, setLoading] = useState(true)
-  const [showLoanDetails, setShowLoanDetails] = useState(false)
-
-  // Enhanced filtered and sorted customers calculation
-  const filteredAndSortedCustomers = customers
-    .filter(customer => {
-      const matchesSearch = searchTerm === '' || 
-        customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        customer.customerNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        customer.phone.includes(searchTerm);
-
-      const matchesCustomerNumber = filters.customerNumber === '' || 
-        (customer.customerNumber && customer.customerNumber.toLowerCase().includes(filters.customerNumber.toLowerCase()));
-      
-      const matchesLoanType = filters.loanType === '' || 
-        customer.loanType === filters.loanType;
-      
-      const matchesStatus = filters.status === '' || 
-        customer.status === filters.status;
-
-      const matchesOfficeCategory = filters.officeCategory === '' || 
-        customer.officeCategory === filters.officeCategory;
-
-      const matchesCategory = filters.category === '' || 
-        customer.category === filters.category;
-
-      return matchesSearch && matchesCustomerNumber && matchesLoanType && matchesStatus && matchesOfficeCategory && matchesCategory;
-    })
-    .sort((a, b) => {
-      if (sortOrder === 'asc') {
-        return a.customerNumber.localeCompare(b.customerNumber);
-      } else {
-        return b.customerNumber.localeCompare(a.customerNumber);
-      }
-    });
-
-  // Fetch real data
-  const fetchDashboardData = async () => {
-    try {
-      const response = await fetch('/api/admin/dashboard/stats')
-      if (response.ok) {
-        const data = await response.json()
-        if (data.success) {
-          setDashboardStats(data.data)
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error)
-    }
-  }
-
-  const fetchCustomers = async () => {
-    try {
-      const response = await fetch('/api/admin/customers')
-      if (response.ok) {
-        const data = await response.json()
-        if (data.success) {
-          setCustomers(data.data || [])
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching customers:', error)
-      setCustomers([])
-    }
-  }
-
- const fetchPendingRequests = async () => {
-  try {
-    console.log('🟡 Super Admin - Fetching pending requests...');
-    
-    const response = await fetch('/api/admin/requests');
-    
-    if (!response.ok) {
-      console.log('❌ Admin requests failed, trying data-entry endpoint...');
-      const fallbackResponse = await fetch('/api/data-entry/requests');
-      
-      if (!fallbackResponse.ok) {
-        throw new Error(`HTTP error! status: ${fallbackResponse.status}`);
-      }
-      
-      const fallbackData = await fallbackResponse.json();
-      console.log('🔵 Data-entry requests response STRUCTURE:', fallbackData);
-      
-      // Log the first request to see its structure
-      if (fallbackData.success && Array.isArray(fallbackData.data?.requests)) {
-        console.log('📊 First request object:', JSON.stringify(fallbackData.data.requests[0], null, 2));
-        setPendingRequests(fallbackData.data.requests);
-      } else {
-        setPendingRequests([]);
-      }
-      return;
-    }
-
-    const data = await response.json();
-    console.log('🔵 Admin requests response STRUCTURE:', data);
-    
-    // Log the first request to see its structure
-    if (data.success) {
-      let requestsArray = [];
-      
-      if (Array.isArray(data.data)) {
-        requestsArray = data.data;
-      } else if (Array.isArray(data.data?.requests)) {
-        requestsArray = data.data.requests;
-      } else if (Array.isArray(data.requests)) {
-        requestsArray = data.requests;
-      }
-      
-      if (requestsArray.length > 0) {
-        console.log('📊 First request object:', JSON.stringify(requestsArray[0], null, 2));
-      }
-      
-      setPendingRequests(requestsArray);
-    }
-    
-  } catch (error) {
-    console.error('❌ Error fetching requests:', error);
-    setPendingRequests([]);
-  }
-};
-
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true)
-      await Promise.all([
-        fetchDashboardData(),
-        fetchCustomers(),
-        fetchPendingRequests()
-      ])
-      setLoading(false)
-    }
-    loadData()
-  }, [activeTab])
-
-  // Handle request approval - FIXED VERSION
-  const handleApproveRequest = async (request: any) => {
-    try {
-      console.log('🟡 Approving request:', request._id);
-      console.log('📊 Request type:', request.type);
-      
-      // For both NEW and EDIT requests, just call the approve endpoint
-      // The backend will handle customer creation/activation automatically
-      console.log('📨 Sending approval request to backend...');
-      
-      const approveResponse = await fetch('/api/admin/approve-request', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          requestId: request._id,
-          action: 'approve'
-        }),
-      });
-
-      const approveData = await approveResponse.json();
-      console.log('🔵 Approve request response:', approveData);
-      
-      if (approveResponse.ok && approveData.success) {
-        alert('Request approved successfully!');
-        await Promise.all([
-          fetchDashboardData(),
-          fetchCustomers(),
-          fetchPendingRequests()
-        ]);
-      } else {
-        alert(`Error approving request: ${approveData.error || 'Unknown error'}`);
-        console.log('❌ Approval failed details:', approveData);
-      }
-    } catch (error: any) {
-      console.error('❌ Error approving request:', error);
-      alert('Error approving request: ' + (error.message || 'Check console for details'));
-    }
-  };
-
-  // Handle request rejection - FIXED VERSION
-  const handleRejectRequest = async (request: any) => {
-    try {
-      console.log('🟡 Rejecting request:', request._id);
-      
-      const response = await fetch('/api/admin/approve-request', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          requestId: request._id,
-          action: 'reject',
-          reason: 'Rejected by admin'
-        }),
-      });
-
-      const data = await response.json();
-      console.log('🔵 Reject response:', data);
-
-      if (response.ok && data.success) {
-        alert('Request rejected successfully!');
-        // Refresh data
-        await Promise.all([
-          fetchDashboardData(),
-          fetchPendingRequests()
-        ]);
-      } else {
-        alert(`Error rejecting request: ${data.error || data.message || 'Unknown error'}`);
-      }
-    } catch (error: any) {
-      console.error('❌ Error rejecting request:', error);
-      alert('Error rejecting request: ' + (error.message || 'Check console for details'));
-    }
-  };
-
-  // Handle customer deletion
-  const handleDeleteCustomer = async (customerId: string) => {
-    if (!confirm('Are you sure you want to delete this customer? This action cannot be undone.')) {
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/admin/customers', {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ customerId }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        alert(data.message || 'Customer deleted successfully!');
-        
-        // Refresh data
-        fetchCustomers();
-        fetchDashboardData();
-        
-        // Go back to customers list
-        setSelectedCustomer(null);
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to delete customer');
-      }
-    } catch (error: any) {
-      alert('Error: ' + error.message);
-    }
-  };
-
-  // Handler functions
-  const handleViewDetails = (customer: any) => {
-    setSelectedCustomer(customer)
-  }
-
-  const handleBackToDashboard = () => {
-    setSelectedCustomer(null)
-  }
-
-  const handleLogout = () => {
-    router.push('/auth');
-  }
-
-  // Toggle sort order
-  const toggleSortOrder = () => {
-    setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-  };
-
-  // Enhanced Search and Filters function with Sort Button
-  const renderSearchAndFilters = () => {
-  const handleFilterChange = (key: keyof typeof filters, value: string) => {
-    filterDispatch({type: 'SET_CUSTOMER_FILTERS', payload: newFilters})(prev => ({ ...prev, [key]: value }));
-  };
-
-  const clearFilters = () => {
-    filterDispatch({type: 'SET_CUSTOMER_FILTERS', payload: newFilters})({
-      customerNumber: '',
-      loanType: '',
-      status: '',
-      officeCategory: '',
-      category: ''
-    });
-    setSearchTerm('');
-    setSortOrder('asc');
-  };
-
-  const loanTypes = [...new Set(customers.map(customer => customer.loanType).filter(Boolean))];
-  const officeCategories = [...new Set(customers.map(customer => customer.officeCategory).filter(Boolean))];
-  const customerCategories = [...new Set(customers.map(customer => customer.category).filter(Boolean))];
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="flex-1">
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search by customer name or customer number..."
-              className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <span className="text-gray-400">🔍</span>
-            </div>
-          </div>
-        </div>
-        
-        <div className="flex gap-2">
-          {/* Sort Button */}
-          <button
-            onClick={toggleSortOrder}
-            className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            <span>Sort</span>
-            <span className={`transform ${sortOrder === 'asc' ? '' : 'rotate-180'}`}>
-              ↓
-            </span>
-          </button>
-          
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            <span>Filters</span>
-            <span className={`transform transition-transform ${showFilters ? 'rotate-180' : ''}`}>
-              ▼
-            </span>
-          </button>
-          
-          {(filters.customerNumber || filters.loanType || filters.status || filters.officeCategory || filters.category || searchTerm || sortOrder !== 'asc') && (
-            <button
-              onClick={clearFilters}
-              className="px-4 py-2 text-red-600 border border-red-300 rounded-lg hover:bg-red-50 transition-colors"
-            >
-              Clear
-            </button>
-          )}
-        </div>
-      </div>
-
-      {showFilters && (
-        <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-            {/* Customer Number Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Customer Number
-              </label>
-              <input
-                type="text"
-                placeholder="Enter customer number..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                value={filters.customerNumber}
-                onChange={(e) => handleFilterChange('customerNumber', e.target.value)}
-              />
-            </div>
-
-            {/* Loan Type Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Loan Type
-              </label>
-              <select
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                value={filters.loanType}
-                onChange={(e) => handleFilterChange('loanType', e.target.value)}
-              >
-                <option value="">All Loan Types</option>
-                {loanTypes.map(type => (
-                  <option key={type} value={type}>{type}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Status Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Status
-              </label>
-              <select
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                value={filters.status}
-                onChange={(e) => handleFilterChange('status', e.target.value)}
-              >
-                <option value="">All Status</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-                <option value="pending">Pending</option>
-              </select>
-            </div>
-
-            {/* Office Category Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Office Category
-              </label>
-              <select
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                value={filters.officeCategory}
-                onChange={(e) => handleFilterChange('officeCategory', e.target.value)}
-              >
-                <option value="">All Offices</option>
-                {officeCategories.map(office => (
-                  <option key={office} value={office}>{office}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Category Filter - NEW */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Category
-              </label>
-              <select
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                value={filters.category}
-                onChange={(e) => handleFilterChange('category', e.target.value)}
-              >
-                <option value="">All Categories</option>
-                <option value="A">Category A</option>
-                <option value="B">Category B</option>
-                <option value="C">Category C</option>
-                {customerCategories.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Active Filters Display */}
-          {(filters.customerNumber || filters.loanType || filters.status || filters.officeCategory || filters.category || sortOrder !== 'asc') && (
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm text-gray-600">Active filters:</span>
-                {filters.customerNumber && (
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
-                    Customer No: {filters.customerNumber}
-                    <button 
-                      onClick={() => handleFilterChange('customerNumber', '')}
-                      className="ml-1 text-blue-600 hover:text-blue-800"
-                    >
-                      ×
-                    </button>
-                  </span>
-                )}
-                {filters.loanType && (
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
-                    Type: {filters.loanType}
-                    <button 
-                      onClick={() => handleFilterChange('loanType', '')}
-                      className="ml-1 text-green-600 hover:text-green-800"
-                    >
-                      ×
-                    </button>
-                  </span>
-                )}
-                {filters.status && (
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
-                    Status: {filters.status}
-                    <button 
-                      onClick={() => handleFilterChange('status', '')}
-                      className="ml-1 text-purple-600 hover:text-purple-800"
-                    >
-                      ×
-                    </button>
-                  </span>
-                )}
-                {filters.officeCategory && (
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-orange-100 text-orange-800">
-                    Office: {filters.officeCategory}
-                    <button 
-                      onClick={() => handleFilterChange('officeCategory', '')}
-                      className="ml-1 text-orange-600 hover:text-orange-800"
-                    >
-                      ×
-                    </button>
-                  </span>
-                )}
-                {filters.category && (
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-indigo-100 text-indigo-800">
-                    Category: {filters.category}
-                    <button 
-                      onClick={() => handleFilterChange('category', '')}
-                      className="ml-1 text-indigo-600 hover:text-indigo-800"
-                    >
-                      ×
-                    </button>
-                  </span>
-                )}
-                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800">
-                  Sort: {sortOrder === 'asc' ? 'A-Z' : 'Z-A'}
-                  <button 
-                    onClick={() => setSortOrder('asc')}
-                    className="ml-1 text-gray-600 hover:text-gray-800"
-                  >
-                    ×
-                  </button>
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="flex justify-between items-center">
-        <span className="text-sm text-gray-600">
-          Showing {filteredAndSortedCustomers.length} of {customers.length} customers
-          {sortOrder === 'asc' ? ' (A-Z)' : ' (Z-A)'}
-        </span>
-        
-        {(filteredAndSortedCustomers.length < customers.length || sortOrder !== 'asc') && (
-          <button
-            onClick={clearFilters}
-            className="text-sm text-blue-600 hover:text-blue-800"
-          >
-            Clear all filters
-          </button>
-        )}
-      </div>
-    </div>
-  );
-};
-
-  // Navigation Tabs - Mobile Scrollable
-  const renderNavigation = () => (
-    <div className="bg-white shadow-sm border-b border-gray-200">
-      <div className="max-w-7xl mx-auto">
-        {/* Mobile Menu - Horizontal Scroll */}
-        <div className="sm:hidden">
-          <div className="relative">
-            <div className="overflow-x-auto scrollbar-hide">
-              <nav className="flex space-x-4 px-4 py-3 min-w-max">
-                {[
-                  { id: 'dashboard', label: 'Dashboard' },
-                  { id: 'customers', label: 'Customers' },
-                  { id: 'requests', label: 'Requests' },
-                  { id: 'reports', label: 'Reports' },
-                  { id: 'team', label: 'Team' },
-                  { id: 'collection', label: 'Collection' }
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`py-2 px-4 rounded-lg font-medium text-sm whitespace-nowrap transition-colors ${
-                      activeTab === tab.id
-                        ? 'bg-blue-50 text-blue-600 border border-blue-200 shadow-sm'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 border border-transparent'
-                    }`}
-                  >
-                    <span className="flex items-center">
-                      {tab.label}
-                      {tab.id === 'requests' && pendingRequests.length > 0 && (
-                        <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          {pendingRequests.length}
-                        </span>
-                      )}
-                    </span>
-                  </button>
-                ))}
-              </nav>
-            </div>
-            
-            {/* Gradient fade effect for scroll indication */}
-            <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white to-transparent pointer-events-none"></div>
-          </div>
-        </div>
-
-        {/* Desktop Navigation */}
-        <nav className="hidden sm:flex space-x-8 px-4 sm:px-6 lg:px-8">
-          {[
-            { id: 'dashboard', label: 'Dashboard' },
-            { id: 'customers', label: 'Customers' },
-            { id: 'requests', label: 'Requests' },
-            { id: 'reports', label: 'Reports' },
-            { id: 'team', label: 'Team' },
-            { id: 'collection', label: 'Collection' }
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
-                activeTab === tab.id
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              {tab.label}
-              {tab.id === 'requests' && pendingRequests.length > 0 && (
-                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                  {pendingRequests.length}
-                </span>
               )}
-            </button>
-          ))}
-        </nav>
-      </div>
-    </div>
-  )
 
-  // Dashboard Section
-  // Dashboard Section - UPDATED
-const renderDashboard = () => (
-  <div className="space-y-6">
-    {/* Welcome Banner */}
-    <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg p-6 text-white">
-      <h1 className="text-2xl font-bold mb-2">Welcome to Super Admin Dashboard</h1>
-      <p className="opacity-90">Manage your loan business efficiently and effectively</p>
-    </div>
-
-    {/* Stats Grid - UPDATED ORDER AND ADDED TEAM MEMBER CARD */}
-    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-      {/* Total Active Customers Card - FIRST POSITION */}
-      <div 
-        onClick={() => setActiveTab('customers')}
-        className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-      >
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Total Active Customers</p>
-            <p className="text-3xl font-bold text-gray-900 mt-2">{dashboardStats.totalCustomers?.toLocaleString() || '0'}</p>
-            <p className="text-xs text-gray-500 mt-1">Currently active customers</p>
-          </div>
-          <div className="bg-blue-50 p-3 rounded-lg">
-            <span className="text-blue-600 text-xl font-semibold">👥</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Total Loan Amount Card - SECOND POSITION */}
-      <div 
-        onClick={() => setShowLoanDetails(true)}
-        className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-      >
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Total Loan Amount</p>
-            <p className="text-3xl font-bold text-gray-900 mt-2">₹{(dashboardStats.totalAmount / 100000).toFixed(1)}L</p>
-            <p className="text-xs text-gray-500 mt-1">Active loans amount</p>
-          </div>
-          <div className="bg-green-50 p-3 rounded-lg">
-            <span className="text-green-600 text-xl font-semibold">💰</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Total Team Member Card - THIRD POSITION */}
-      <div 
-        onClick={() => setActiveTab('team')}
-        className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-      >
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Total Team Members</p>
-            <p className="text-3xl font-bold text-gray-900 mt-2">{dashboardStats.totalTeamMembers || '0'}</p>
-            <p className="text-xs text-gray-500 mt-1">Active team members</p>
-          </div>
-          <div className="bg-purple-50 p-3 rounded-lg">
-            <span className="text-purple-600 text-xl font-semibold">👨‍💼</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Pending Requests Card - FOURTH POSITION */}
-      <div 
-        onClick={() => setActiveTab('requests')}
-        className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-      >
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Pending Requests</p>
-            <p className="text-3xl font-bold text-orange-600 mt-2">{dashboardStats.pendingRequests}</p>
-            <p className="text-xs text-gray-500 mt-1">Awaiting approval</p>
-          </div>
-          <div className="bg-orange-50 p-3 rounded-lg">
-            <span className="text-orange-600 text-xl font-semibold">📋</span>
-          </div>
+              <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                <button 
+                  onClick={() => setShowCustomerDetails(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  Close
+                </button>
+                <button 
+                  onClick={() => {
+                    handleEditCustomer(customerDetails);
+                    setShowCustomerDetails(false);
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  Edit Profile
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <div className="text-gray-400 text-4xl mb-4">⏳</div>
+              <p className="text-gray-600">Loading customer details...</p>
+            </div>
+          )}
         </div>
       </div>
     </div>
-
-    {/* Quick Actions */}
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      <button 
-        onClick={() => setActiveTab('customers')}
-        className="p-4 bg-blue-50 rounded-lg text-center hover:bg-blue-100 transition-colors border border-blue-200"
-      >
-        <div className="text-blue-600 text-lg mb-2">👥</div>
-        <span className="text-sm font-medium text-blue-900">Manage Customers</span>
-      </button>
-      
-      <button 
-        onClick={() => setActiveTab('requests')}
-        className="p-4 bg-orange-50 rounded-lg text-center hover:bg-orange-100 transition-colors border border-orange-200"
-      >
-        <div className="text-orange-600 text-lg mb-2">📋</div>
-        <span className="text-sm font-medium text-orange-900">Pending Requests</span>
-        {pendingRequests.length > 0 && (
-          <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-            {pendingRequests.length}
-          </span>
-        )}
-      </button>
-      
-      <button 
-        onClick={() => setActiveTab('reports')}
-        className="p-4 bg-purple-50 rounded-lg text-center hover:bg-purple-100 transition-colors border border-purple-200"
-      >
-        <div className="text-purple-600 text-lg mb-2">📊</div>
-        <span className="text-sm font-medium text-purple-900">View Reports</span>
-      </button>
-      
-      <button 
-        onClick={() => setActiveTab('team')}
-        className="p-4 bg-green-50 rounded-lg text-center hover:bg-green-100 transition-colors border border-green-200"
-      >
-        <div className="text-green-600 text-lg mb-2">👨‍💼</div>
-        <span className="text-sm font-medium text-green-900">Team Management</span>
-      </button>
-    </div>
-
-    {/* Recent Activities */}
-    <RecentActivities />
-
-    {/* Loan Details Modal */}
-    {showLoanDetails && (
-      <LoanDetailsModal 
-        stats={dashboardStats}
-        onClose={() => setShowLoanDetails(false)}
-      />
-    )}
-  </div>
-)
-
-  // Customers Section with Enhanced Filters and Sort
-  const renderCustomers = () => (
-  <div className="space-y-6">
-    <div className="flex items-center justify-between">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Customer Management</h1>
-        <p className="text-gray-600">Manage all customer accounts and loan details</p>
-      </div>
-      <span className="text-sm text-gray-600">
-        {customers.length} customers • Sorted {sortOrder === 'asc' ? 'A-Z' : 'Z-A'}
-      </span>
-    </div>
-
-    {/* Enhanced Search and Filters with Sort */}
-    {renderSearchAndFilters()}
-
-    <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Customer Number</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Business</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Office</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Category</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {filteredAndSortedCustomers.map((customer) => (
-              <tr key={customer._id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 w-1/6">{customer.customerNumber}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 w-1/6">{customer.name}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/6">{customer.businessName}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/6">
-                  {customer.officeCategory || 'N/A'}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/6">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    customer.category === 'A' ? 'bg-green-100 text-green-800' :
-                    customer.category === 'B' ? 'bg-yellow-100 text-yellow-800' :
-                    customer.category === 'C' ? 'bg-blue-100 text-blue-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
-                    {customer.category || 'Not specified'}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium w-1/6">
-                  <button 
-                    onClick={() => handleViewDetails(customer)}
-                    className="bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 text-sm"
-                  >
-                    View Details
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {filteredAndSortedCustomers.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
-                  No customers found
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-)
-
-  // Main render function with consistent header and navigation
-  const renderMainContent = () => {
-    if (selectedCustomer) {
-      return (
-        <CustomerDetailsView 
-          customer={selectedCustomer} 
-          onBack={handleBackToDashboard}
-          onDelete={handleDeleteCustomer}
-        />
-      )
-    }
-
-    switch (activeTab) {
-      case 'dashboard':
-        return renderDashboard();
-      case 'customers':
-        return renderCustomers();
-      case 'requests':
-        return (
-          <PendingRequestsView 
-            requests={pendingRequests}
-            onApprove={handleApproveRequest}
-            onReject={handleRejectRequest}
-            onBack={() => setActiveTab('dashboard')}
-          />
-        );
-      case 'reports':
-        return <EnhancedReportsView onBack={() => setActiveTab('dashboard')} />;
-      case 'team':
-        return <TeamManagementView onBack={() => setActiveTab('dashboard')} />;
-      case 'collection':
-        return <CollectionView onBack={() => setActiveTab('dashboard')} />;
-      default:
-        return renderDashboard();
-    }
-  };
+  );
+};
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* HEADER - Always visible */}
       <header className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
-              <h1 className="text-2xl font-bold text-gray-900">Loan Management System</h1>
+              <h1 className="text-2xl font-bold text-gray-900">Data Entry Dashboard</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-gray-700">Welcome, Super Admin</span>
+              <span className="text-gray-700">Welcome, Data Entry Operator</span>
               <button
                 onClick={handleLogout}
                 className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700"
@@ -3799,13 +9571,51 @@ const renderDashboard = () => (
         </div>
       </header>
 
-      {/* NAVIGATION - Always visible */}
-      {renderNavigation()}
+      <div className="bg-white shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <nav className="flex space-x-8">
+  {[
+    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'customers', label: 'Customers' },
+    { id: 'emi', label: 'EMI' },
+    { id: 'collection', label: 'Collection' },
+    { id: 'requests', label: 'Requests' }
+  ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === tab.id
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </div>
 
-      {/* MAIN CONTENT */}
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        {renderMainContent()}
-      </main>
+  {activeTab === 'dashboard' && renderDashboard()}
+  {activeTab === 'customers' && renderCustomers()}
+  {activeTab === 'emi' && renderEMI()}
+  {activeTab === 'collection' && renderCollection()}
+  {activeTab === 'requests' && renderRequests()}
+</main>
+
+      {showAddCustomer && renderAddCustomerForm()}
+      {showUpdateEMI && renderUpdateEMIForm()}
+      {showCustomerDetails && renderCustomerDetails()}
+      {showEditCustomer && renderEditCustomer()}
+      {showEditLoan && renderEditLoanModal()}
+      {showRenewLoan && renderRenewLoanModal()}
+      {showAddLoanModal && renderAddLoanModal()}
+      {showEMICalendar && renderEMICalendar()}
+      {showDatePaymentHistory && renderDatePaymentHistory()}
+      {showEditPaymentModal && renderEditPaymentModal()}
+      {showDeleteConfirmationModal && renderDeleteConfirmationModal()}
     </div>
-  )
+  );
 }
