@@ -775,7 +775,7 @@ filteredPaymentHistory.forEach(payment => {
     const fromDate = new Date(payment.advanceFromDate);
     const toDate = new Date(payment.advanceToDate);
     
-    let currentDate = new Date(fromDate);
+    const currentDate = new Date(fromDate);
     while (currentDate <= toDate) {
       if (currentDate.getMonth() === monthIndex && currentDate.getFullYear() === year) {
         const advanceDateStr = currentDate.toISOString().split('T')[0];
@@ -8618,9 +8618,6 @@ const renderCollection = () => {
                   </div>
                 )}
 
-
-
-// In renderUpdateEMIForm(), replace the displayLoans section with this:
 
 {selectedCustomer && (
   <div className="mt-6">
