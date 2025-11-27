@@ -496,6 +496,8 @@ const [showEMIFilters, setShowEMIFilters] = useState(false);
 const [emiStatusFilter, setEmiStatusFilter] = useState<string>('all');
 const [customerSortOrder, setCustomerSortOrder] = useState<'asc' | 'desc'>('asc');
 const [selectedCustomerForEMI, setSelectedCustomerForEMI] = useState<Customer | null>(null);
+const [loadingCustomerLoans, setLoadingCustomerLoans] = useState<{[key: string]: boolean}>({});
+const [customerLoansCache, setCustomerLoansCache] = useState<{[key: string]: Loan[]}>({});
   const [calendarFilter, setCalendarFilter] = useState<{
     emiStatus: 'all' | 'paid' | 'due' | 'overdue' | 'partial' | 'upcoming';
     loanFilter: 'all' | string;
@@ -579,6 +581,8 @@ const calculatePaymentBehavior = (loan: Loan) => {
   };
 
   // Helper function to calculate EMI count based on dates and loan type
+// Replace the calculateEmiCount function with this:
+
 const calculateEmiCount = (fromDate: string, toDate: string, loanType?: string): string => {
   if (!fromDate || !toDate) return '1';
   
@@ -587,28 +591,43 @@ const calculateEmiCount = (fromDate: string, toDate: string, loanType?: string):
   
   if (start > end) return '1';
   
-  const diffTime = Math.abs(end.getTime() - start.getTime());
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  let emiCount = 1;
   
   switch(loanType) {
     case 'Daily':
-      return Math.max(diffDays + 1, 1).toString();
+      // For daily loans, count each day in the range
+      const diffDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      emiCount = Math.max(diffDays, 1);
+      break;
     case 'Weekly':
-      return Math.max(Math.ceil((diffDays + 1) / 7), 1).toString();
+      // For weekly loans, count weeks in the range
+      const diffWeeks = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 7)) + 1;
+      emiCount = Math.max(diffWeeks, 1);
+      break;
     case 'Monthly':
-      // Approximate month calculation
-      const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
-      return Math.max(months + 1, 1).toString();
+      // For monthly loans, count months in the range
+      const diffMonths = (end.getFullYear() - start.getFullYear()) * 12 + 
+                        (end.getMonth() - start.getMonth()) + 1;
+      emiCount = Math.max(diffMonths, 1);
+      break;
     default:
-      return Math.max(diffDays + 1, 1).toString();
+      // Default to daily calculation
+      const defaultDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      emiCount = Math.max(defaultDiff, 1);
   }
+  
+  return emiCount.toString();
 };
 
-// Helper function to calculate total amount with proper type handling
+// Replace the calculateTotalAmount function with this:
+
 const calculateTotalAmount = (emiAmount: string | number, emiCount: string | number): string => {
   const amount = typeof emiAmount === 'string' ? parseFloat(emiAmount) || 0 : emiAmount;
   const count = typeof emiCount === 'string' ? parseInt(emiCount) || 1 : emiCount;
-  return (amount * count).toFixed(2);
+  
+  // Round to 2 decimal places to avoid floating point precision issues
+  const total = amount * count;
+  return (Math.round(total * 100) / 100).toString(); // Convert to string
 };
 
 // ========== CUSTOMER NUMBER VALIDATION FUNCTIONS ==========
@@ -678,6 +697,7 @@ const calculateNextEmiDate = (currentDate: string, loanType: string): string => 
   
   return date.toISOString().split('T')[0];
 };
+const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 // Fix the calendar generation logic in generateCalendar function
 // Fix the calendar generation logic in generateCalendar function
@@ -689,9 +709,11 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
   const firstDay = new Date(year, monthIndex, 1);
   const lastDay = new Date(year, monthIndex + 1, 0);
   
+  // Filter out renewed loans and apply loan filter
+  const activeLoans = loans.filter(loan => !loan.isRenewed && loan.status === 'active');
   const filteredLoans = loanFilter === 'all' 
-    ? loans 
-    : loans.filter(loan => loan._id === loanFilter || loan.loanNumber === loanFilter);
+    ? activeLoans 
+    : activeLoans.filter(loan => loan._id === loanFilter || loan.loanNumber === loanFilter);
   
   const filteredPaymentHistory = loanFilter === 'all'
     ? paymentHistory
@@ -701,7 +723,8 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
 
   console.log('📅 Calendar Debug:', {
     month: month.toISOString(),
-    loansCount: filteredLoans.length,
+    activeLoansCount: activeLoans.length,
+    filteredLoansCount: filteredLoans.length,
     paymentHistoryCount: filteredPaymentHistory.length,
     loanFilter
   });
@@ -713,80 +736,176 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
     loanNumbers: string[] 
   } } = {};
   
-  filteredPaymentHistory.forEach(payment => {
-    const paymentDate = new Date(payment.paymentDate);
-    // Fix: Use proper date comparison without time component
-    paymentDate.setHours(0, 0, 0, 0);
-    
-    if (paymentDate.getMonth() === monthIndex && paymentDate.getFullYear() === year) {
-      const dateStr = paymentDate.toISOString().split('T')[0];
-      
-      if (!paymentMap[dateStr]) {
-        paymentMap[dateStr] = { 
-          payments: [], 
-          totalAmount: 0, 
-          loanNumbers: [] 
-        };
-      }
-      
-      paymentMap[dateStr].payments.push(payment);
-      
-      // FIX: For advance payments, use the actual payment amount, not divided amount
-      if (payment.paymentType === 'advance' && payment.advanceEmiCount && payment.advanceEmiCount > 1) {
-        // For advance payments, show the total amount on the payment date
-        paymentMap[dateStr].totalAmount += payment.amount;
-      } else {
-        // For single payments, use the normal amount
-        paymentMap[dateStr].totalAmount += payment.amount;
-      }
-      
-      if (payment.loanNumber && !paymentMap[dateStr].loanNumbers.includes(payment.loanNumber)) {
-        paymentMap[dateStr].loanNumbers.push(payment.loanNumber);
-      }
-    }
+  // In the generateCalendar function, update the paymentMap creation section:
 
-    // FIX: Handle advance payments - mark all dates in the advance period as paid
-if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.advanceToDate) {
-  const fromDate = new Date(payment.advanceFromDate);
-  const toDate = new Date(payment.advanceToDate);
+filteredPaymentHistory.forEach(payment => {
+  const paymentDate = new Date(payment.paymentDate);
+  paymentDate.setHours(0, 0, 0, 0);
   
-  const currentDate = new Date(fromDate); // Use const since we modify the same object
-  while (currentDate <= toDate) {
-    if (currentDate.getMonth() === monthIndex && currentDate.getFullYear() === year) {
-      const advanceDateStr = currentDate.toISOString().split('T')[0];
-      
-      if (!paymentMap[advanceDateStr]) {
-        paymentMap[advanceDateStr] = { 
-          payments: [], 
-          totalAmount: 0, 
-          loanNumbers: [] 
-        };
-      }
-      
-      // Only add the payment record once to avoid duplicates
-      if (!paymentMap[advanceDateStr].payments.some(p => p._id === payment._id)) {
-        paymentMap[advanceDateStr].payments.push(payment);
-      }
-      
-      // For each day in advance period, show the individual EMI amount, not divided total
-      const individualEmiAmount = payment.advanceEmiCount && payment.advanceEmiCount > 0 
-        ? payment.amount / payment.advanceEmiCount 
-        : payment.amount;
-      
-      paymentMap[advanceDateStr].totalAmount += individualEmiAmount;
-      
-      if (payment.loanNumber && !paymentMap[advanceDateStr].loanNumbers.includes(payment.loanNumber)) {
-        paymentMap[advanceDateStr].loanNumbers.push(payment.loanNumber);
-      }
+  if (paymentDate.getMonth() === monthIndex && paymentDate.getFullYear() === year) {
+    const dateStr = paymentDate.toISOString().split('T')[0];
+    
+    if (!paymentMap[dateStr]) {
+      paymentMap[dateStr] = { 
+        payments: [], 
+        totalAmount: 0, 
+        loanNumbers: [] 
+      };
     }
     
-    currentDate.setDate(currentDate.getDate() + 1); // Modify the existing object
+    paymentMap[dateStr].payments.push(payment);
     
-    // Break if we've processed too many days (safety check)
-    if (currentDate > toDate) break;
+    // FIXED: For advance payments, show the individual EMI amount
+    if (payment.paymentType === 'advance' && payment.isAdvancePayment) {
+      // Show the actual amount paid for this specific date
+      paymentMap[dateStr].totalAmount += payment.amount;
+    } else {
+      // For single payments, use the normal amount
+      paymentMap[dateStr].totalAmount += payment.amount;
+    }
+    
+    if (payment.loanNumber && !paymentMap[dateStr].loanNumbers.includes(payment.loanNumber)) {
+      paymentMap[dateStr].loanNumbers.push(payment.loanNumber);
+    }
   }
-}
-  });
+
+  // Handle advance payments - mark all dates in the advance period
+  if (payment.paymentType === 'advance' && payment.isAdvancePayment && 
+      payment.advanceFromDate && payment.advanceToDate) {
+    const fromDate = new Date(payment.advanceFromDate);
+    const toDate = new Date(payment.advanceToDate);
+    
+    let currentDate = new Date(fromDate);
+    while (currentDate <= toDate) {
+      if (currentDate.getMonth() === monthIndex && currentDate.getFullYear() === year) {
+        const advanceDateStr = currentDate.toISOString().split('T')[0];
+        
+        if (!paymentMap[advanceDateStr]) {
+          paymentMap[advanceDateStr] = { 
+            payments: [], 
+            totalAmount: 0, 
+            loanNumbers: [] 
+          };
+        }
+        
+        // Only add the payment record once to avoid duplicates
+        if (!paymentMap[advanceDateStr].payments.some(p => p._id === payment._id)) {
+          paymentMap[advanceDateStr].payments.push(payment);
+        }
+        
+        // For advance payments, show the individual EMI amount for each date
+        paymentMap[advanceDateStr].totalAmount += payment.amount;
+        
+        if (payment.loanNumber && !paymentMap[advanceDateStr].loanNumbers.includes(payment.loanNumber)) {
+          paymentMap[advanceDateStr].loanNumbers.push(payment.loanNumber);
+        }
+      }
+      
+      // Move to next date based on loan type
+      if (payment.loanId) {
+        // This would require fetching the loan, but we'll use daily increment as fallback
+        currentDate.setDate(currentDate.getDate() + 1);
+      } else {
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+      
+      if (currentDate > toDate) break;
+    }
+  }
+});
+
+  // Generate EMI schedule for ALL loans for the current month
+  const emiScheduleMap: { [key: string]: { 
+    amount: number; 
+    loanNumbers: string[];
+    isDue: boolean;
+  } } = {};
+
+  // Only generate EMI schedule when viewing specific loan (not "All Loans")
+  if (loanFilter !== 'all') {
+    filteredLoans.forEach(loan => {
+      if (loan.emiPaidCount >= loan.totalEmiCount) return;
+
+      const startDate = new Date(loan.emiStartDate || loan.dateApplied);
+      startDate.setHours(0, 0, 0, 0);
+      const loanType = loan.loanType;
+
+      console.log(`🔍 Generating EMI schedule for ${loan.loanNumber} from ${startDate.toISOString()}`);
+
+      // Calculate end date based on loan type and duration
+      const endDate = new Date(startDate);
+      const totalPeriods = loan.totalEmiCount || loan.loanDays || 30;
+      
+      switch(loanType) {
+        case 'Daily':
+          endDate.setDate(endDate.getDate() + totalPeriods - 1);
+          break;
+        case 'Weekly':
+          endDate.setDate(endDate.getDate() + (totalPeriods * 7) - 1);
+          break;
+        case 'Monthly':
+          endDate.setMonth(endDate.getMonth() + totalPeriods - 1);
+          break;
+        default:
+          endDate.setDate(endDate.getDate() + totalPeriods - 1);
+      }
+
+      console.log(`📅 Loan ${loan.loanNumber} schedule: ${startDate.toISOString()} to ${endDate.toISOString()}, ${totalPeriods} periods`);
+
+      // Generate all EMI dates for this loan
+      const currentEmiDate = new Date(startDate);
+      let emiCount = 0;
+      
+      while (currentEmiDate <= endDate && emiCount < totalPeriods) {
+        const emiDateStr = currentEmiDate.toISOString().split('T')[0];
+        const emiYear = currentEmiDate.getFullYear();
+        const emiMonth = currentEmiDate.getMonth();
+        
+        // Only process if it's in the current calendar month
+        if (emiYear === year && emiMonth === monthIndex) {
+          if (!emiScheduleMap[emiDateStr]) {
+            emiScheduleMap[emiDateStr] = { 
+              amount: 0, 
+              loanNumbers: [],
+              isDue: false
+            };
+          }
+          
+          emiScheduleMap[emiDateStr].amount += loan.emiAmount;
+          if (!emiScheduleMap[emiDateStr].loanNumbers.includes(loan.loanNumber)) {
+            emiScheduleMap[emiDateStr].loanNumbers.push(loan.loanNumber);
+          }
+          
+          // Check if this EMI is due (no payment exists)
+          const hasPayment = paymentMap[emiDateStr] && 
+            paymentMap[emiDateStr].payments.some(p => 
+              p.loanNumber === loan.loanNumber || p.loanId === loan._id
+            );
+          
+          if (!hasPayment) {
+            emiScheduleMap[emiDateStr].isDue = true;
+          }
+        }
+        
+        // Move to next EMI date
+        emiCount++;
+        switch(loanType) {
+          case 'Daily':
+            currentEmiDate.setDate(currentEmiDate.getDate() + 1);
+            break;
+          case 'Weekly':
+            currentEmiDate.setDate(currentEmiDate.getDate() + 7);
+            break;
+          case 'Monthly':
+            currentEmiDate.setMonth(currentEmiDate.getMonth() + 1);
+            break;
+          default:
+            currentEmiDate.setDate(currentEmiDate.getDate() + 1);
+        }
+        currentEmiDate.setHours(0, 0, 0, 0);
+      }
+    });
+  }
 
   // Generate calendar grid for previous month days
   const startingDayOfWeek = firstDay.getDay();
@@ -800,10 +919,10 @@ if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.adva
     });
   }
   
-  // Generate days for current month - FIXED DATE HANDLING
+  // Generate days for current month
   for (let day = 1; day <= lastDay.getDate(); day++) {
     const date = new Date(year, monthIndex, day);
-    date.setHours(0, 0, 0, 0); // Normalize time component
+    date.setHours(0, 0, 0, 0);
     
     const isToday = date.toDateString() === new Date().toDateString();
     const dateStr = date.toISOString().split('T')[0];
@@ -822,82 +941,33 @@ if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.adva
       loanNumbers.push(...paymentInfo.loanNumbers);
       datePayments.push(...paymentInfo.payments);
     } 
-    // PRIORITY 2: Check if there are due EMIs (only if no payments exist)
-    else {
-      let hasDueEMI = false;
-      let totalDueAmount = 0;
-      const dueLoanNumbers: string[] = [];
-
-      filteredLoans.forEach(loan => {
-        if (loan.emiPaidCount >= loan.totalEmiCount) return;
-
-        const startDate = new Date(loan.emiStartDate || loan.dateApplied);
-        startDate.setHours(0, 0, 0, 0); // Normalize start date
-        const loanType = loan.loanType;
-
-        console.log(`🔍 Checking loan ${loan.loanNumber} from ${startDate.toISOString()}`);
-
-// Generate EMI schedule for this loan - FIXED LOGIC
-const currentDate = new Date(startDate); // Use const since we modify the same object
-
-for (let i = 0; i < loan.totalEmiCount; i++) {
-  const emiDate = new Date(currentDate);
-  emiDate.setHours(0, 0, 0, 0);
-  const emiDateStr = emiDate.toISOString().split('T')[0];
-  
-  // Check if this EMI date matches the current calendar date
-  if (emiDateStr === dateStr) {
-    console.log(`📅 Due EMI found for ${dateStr}: Loan ${loan.loanNumber}, EMI ${i + 1}`);
-    hasDueEMI = true;
-    totalDueAmount += loan.emiAmount;
-    dueLoanNumbers.push(loan.loanNumber);
-    break;
-  }
-
-  // Calculate next EMI date by modifying the currentDate object
-  switch(loanType) {
-    case 'Daily':
-      currentDate.setDate(currentDate.getDate() + 1);
-      break;
-    case 'Weekly':
-      currentDate.setDate(currentDate.getDate() + 7);
-      break;
-    case 'Monthly':
-      currentDate.setMonth(currentDate.getMonth() + 1);
-      break;
-    default:
-      currentDate.setDate(currentDate.getDate() + 1);
-  }
-  currentDate.setHours(0, 0, 0, 0);
-
-  // Stop if we've gone beyond the current month
-  if (currentDate.getMonth() > monthIndex || currentDate.getFullYear() > year) {
-    break;
-  }
-}
-      });
-
-      if (hasDueEMI) {
-        emiAmount = totalDueAmount;
-        loanNumbers.push(...dueLoanNumbers);
+    // PRIORITY 2: Check EMI schedule for due/upcoming EMIs (only for specific loan view)
+    else if (loanFilter !== 'all') {
+      const scheduleInfo = emiScheduleMap[dateStr];
+      if (scheduleInfo && scheduleInfo.amount > 0) {
+        emiAmount = scheduleInfo.amount;
+        loanNumbers.push(...scheduleInfo.loanNumbers);
         
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const calendarDate = new Date(date);
         calendarDate.setHours(0, 0, 0, 0);
         
-        if (calendarDate < today) {
-          emiStatus = 'overdue';
-          console.log(`⚠️ Overdue EMI for ${dateStr}`);
-        } else if (calendarDate.getTime() === today.getTime()) {
-          emiStatus = 'due';
-          console.log(`📅 Due EMI for ${dateStr}`);
+        if (scheduleInfo.isDue) {
+          if (calendarDate < today) {
+            emiStatus = 'overdue';
+            console.log(`⚠️ Overdue EMI for ${dateStr}`);
+          } else if (calendarDate.getTime() === today.getTime()) {
+            emiStatus = 'due';
+            console.log(`📅 Due EMI for ${dateStr}`);
+          } else {
+            emiStatus = 'upcoming';
+            console.log(`🔔 Upcoming EMI for ${dateStr}`);
+          }
         } else {
-          emiStatus = 'upcoming';
-          console.log(`🔔 Upcoming EMI for ${dateStr}`);
+          // If not due but in schedule, it means it's paid
+          emiStatus = 'paid';
         }
-      } else {
-        console.log(`➖ No EMI activity for ${dateStr}`);
       }
     }
 
@@ -905,7 +975,7 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
       date,
       isCurrentMonth: true,
       isToday,
-      emiStatus,
+      emiStatus: loanFilter === 'all' ? 'none' : emiStatus, // No colors for "All Loans"
       emiAmount,
       loanNumbers,
       paymentHistory: datePayments
@@ -923,6 +993,9 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
       emiStatus: 'none'
     });
   }
+  
+  console.log(`📊 Generated ${days.length} days for ${monthNames[monthIndex]} ${year}`);
+  console.log(`📈 EMI Schedule entries:`, Object.keys(emiScheduleMap).length);
   
   return days;
 };
@@ -956,48 +1029,53 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
   };
 
   const handleViewEMICalendar = async (customer: Customer) => {
-    setIsLoading(true);
-    try {
-      const response = await fetch(`/api/data-entry/customers/${customer._id}`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          const customerDetails = data.data;
-          const displayLoans = getAllCustomerLoans(customer, customerDetails);
-          
-          setCalendarData({
-            customerId: customer._id,
-            customerName: customer.name,
-            loans: displayLoans,
-            paymentHistory: displayLoans.flatMap(loan => loan.emiHistory || [])
-          });
+  setIsLoading(true);
+  try {
+    const response = await fetch(`/api/data-entry/customers/${customer._id}`);
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success) {
+        const customerDetails = data.data;
+        const allLoans = getAllCustomerLoans(customer, customerDetails);
+        
+        // Filter out renewed loans
+        const activeLoans = allLoans.filter(loan => !loan.isRenewed && loan.status === 'active');
+        
+        setCalendarData({
+          customerId: customer._id,
+          customerName: customer.name,
+          loans: activeLoans, // Use filtered loans
+          paymentHistory: activeLoans.flatMap(loan => loan.emiHistory || [])
+        });
 
-          setCalendarFilter({
-            emiStatus: 'all',
-            loanFilter: 'all'
-          });
-          
-          setShowEMICalendar(true);
-        }
+        setCalendarFilter({
+          emiStatus: 'all',
+          loanFilter: 'all'
+        });
+        
+        setShowEMICalendar(true);
       }
-    } catch (error) {
-      console.error('Error loading calendar data:', error);
-      const displayLoans = getAllCustomerLoans(customer, null);
-      setCalendarData({
-        customerId: customer._id,
-        customerName: customer.name,
-        loans: displayLoans,
-        paymentHistory: []
-      });
-      setCalendarFilter({
-        emiStatus: 'all',
-        loanFilter: 'all'
-      });
-      setShowEMICalendar(true);
-    } finally {
-      setIsLoading(false);
     }
-  };
+  } catch (error) {
+    console.error('Error loading calendar data:', error);
+    const allLoans = getAllCustomerLoans(customer, null);
+    const activeLoans = allLoans.filter(loan => !loan.isRenewed && loan.status === 'active');
+    
+    setCalendarData({
+      customerId: customer._id,
+      customerName: customer.name,
+      loans: activeLoans,
+      paymentHistory: []
+    });
+    setCalendarFilter({
+      emiStatus: 'all',
+      loanFilter: 'all'
+    });
+    setShowEMICalendar(true);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const handleCalendarDateClick = (day: CalendarDay) => {
   if (day.paymentHistory && day.paymentHistory.length > 0) {
@@ -1133,7 +1211,8 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
           isRenewed: loan.isRenewed,
           renewedLoanNumber: loan.renewedLoanNumber,
           renewedDate: loan.renewedDate,
-          originalLoanNumber: loan.originalLoanNumber
+          originalLoanNumber: loan.originalLoanNumber,
+          status: loan.status // Make sure we check the status
         });
 
         // Check if EMIs have been paid using ALL indicators
@@ -1175,6 +1254,12 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
           console.log(`🆕 Loan ${loan.loanNumber}: NO EMIs paid, using emiStartDate:`, nextEmiDate);
         }
         
+        // Determine loan status - mark renewed loans as inactive
+        let loanStatus = loan.status || 'active';
+        if (loan.isRenewed || loan.status === 'renewed') {
+          loanStatus = 'renewed';
+        }
+        
         const enhancedLoan: Loan = {
           ...loan,
           _id: cleanLoanId,
@@ -1186,7 +1271,7 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
           totalPaidAmount: loan.totalPaidAmount || 0,
           remainingAmount: loan.remainingAmount || loan.amount,
           emiHistory: loan.emiHistory || [],
-          status: loan.status || 'active',
+          status: loanStatus, // Use the determined status
           emiStartDate: loan.emiStartDate || loan.dateApplied,
           // Add renewal tracking properties
           isRenewed: loan.isRenewed || false,
@@ -1260,6 +1345,13 @@ for (let i = 0; i < loan.totalEmiCount; i++) {
   return sortedLoans;
 };
 
+const getActiveLoans = (loans: Loan[]): Loan[] => {
+  return loans.filter(loan => {
+    const isRenewed = loan.isRenewed || loan.status === 'renewed';
+    const isCompleted = loan.status === 'completed';
+    return !isRenewed && !isCompleted && loan.status === 'active';
+  });
+};
 // Add this proper EMI date calculation function
 const calculateNextEmiDateProperly = (lastDate: Date, loanType: string): string => {
   const nextDate = new Date(lastDate);
@@ -3056,13 +3148,15 @@ const refreshCustomerData = async (customerId: string) => {
   return null;
 };
 
-  const handleSearchCustomer = (customer: Customer) => {
+  const handleSearchCustomer = async (customer: Customer) => {
   console.log('🔍 Customer selected for EMI:', customer);
   
   // FIX: Clean the customer ID
   const cleanCustomerId = customer._id?.replace?.(/_default$/, '') || customer._id;
   
   setSelectedCustomer(customer);
+  setLoadingCustomerLoans(prev => ({ ...prev, [cleanCustomerId]: true }));
+  
   setEmiUpdate(prev => ({
     ...prev,
     customerId: cleanCustomerId || '',
@@ -3072,6 +3166,41 @@ const refreshCustomerData = async (customerId: string) => {
   }));
   
   setSearchQuery('');
+  
+  // FIX: Always fetch customer details to get complete loan information
+  try {
+    console.log('🔄 Fetching customer details for EMI:', customer.name);
+    const response = await fetch(`/api/data-entry/customers/${cleanCustomerId}`);
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success) {
+        const customerDetails = data.data;
+        
+        // Update the customer details state
+        setCustomerDetails(customerDetails);
+        
+        // Cache the loans for this customer
+        const displayLoans = getAllCustomerLoans(customer, customerDetails);
+        setCustomerLoansCache(prev => ({
+          ...prev,
+          [cleanCustomerId]: displayLoans
+        }));
+        
+        console.log('✅ Customer details and loans loaded for EMI:', displayLoans.length);
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error fetching customer details for EMI:', error);
+    // Use fallback loans if API fails
+    const fallbackLoans = getAllCustomerLoans(customer, null);
+    setCustomerLoansCache(prev => ({
+      ...prev,
+      [cleanCustomerId]: fallbackLoans
+    }));
+  } finally {
+    setLoadingCustomerLoans(prev => ({ ...prev, [cleanCustomerId]: false }));
+  }
 };
 
   const handlePayNow = (loan: Loan) => {
@@ -3174,40 +3303,42 @@ const refreshCustomerData = async (customerId: string) => {
           </div>
 
           <div className="flex justify-between items-center mb-4">
-            <div className="flex space-x-2">
-              <button
-                onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
-                className="p-2 border rounded-md hover:bg-gray-50"
-              >
-                ← Previous
-              </button>
-              <h4 className="text-lg font-semibold px-4">
-                {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
-              </h4>
-              <button
-                onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}
-                className="p-2 border rounded-md hover:bg-gray-50"
-              >
-                Next →
-              </button>
-            </div>
+  <div className="flex space-x-2">
+    <button
+      onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
+      className="p-2 border rounded-md hover:bg-gray-50"
+    >
+      ← Previous
+    </button>
+    <h4 className="text-lg font-semibold px-4">
+      {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+    </h4>
+    <button
+      onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}
+      className="p-2 border rounded-md hover:bg-gray-50"
+    >
+      Next →
+    </button>
+  </div>
 
-            <select
-              value={calendarFilter.loanFilter}
-              onChange={(e) => setCalendarFilter(prev => ({
-                ...prev,
-                loanFilter: e.target.value
-              }))}
-              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-            >
-              <option value="all">All Loans</option>
-              {calendarData.loans.map((loan) => (
-                <option key={loan._id} value={loan._id}>
-                  {loan.loanNumber} - {loan.customerNumber}
-                </option>
-              ))}
-            </select>
-          </div>
+  <select
+    value={calendarFilter.loanFilter}
+    onChange={(e) => setCalendarFilter(prev => ({
+      ...prev,
+      loanFilter: e.target.value
+    }))}
+    className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+  >
+    <option value="all">All Loans</option>
+    {calendarData.loans
+      .filter(loan => !loan.isRenewed && loan.status === 'active') // Hide renewed loans
+      .map((loan) => (
+        <option key={loan._id} value={loan._id}>
+          {loan.loanNumber} - {loan.customerNumber}
+        </option>
+      ))}
+  </select>
+</div>
 
           <div className="flex items-center space-x-2">
             <label className="text-sm font-medium text-gray-700">EMI Status:</label>
@@ -3260,98 +3391,110 @@ const refreshCustomerData = async (customerId: string) => {
           </div>
 
           <div className="grid grid-cols-7 gap-1">
-            {filteredDays.map((day, index) => (
-              <div
-                key={index}
-                onClick={() => handleCalendarDateClick(day)}
-                className={`min-h-28 p-2 border rounded-md cursor-pointer transition-all hover:shadow-md ${
-                  getStatusColor(day.emiStatus)
-                } ${!day.isCurrentMonth ? 'opacity-40' : ''} ${
-                  day.isToday ? 'ring-2 ring-blue-500' : ''
-                }`}
-              >
-                <div className="flex justify-between items-start">
-                  <span className={`text-sm font-medium ${
-                    day.isToday ? 'text-blue-600' : ''
-                  }`}>
-                    {day.date.getDate()}
-                  </span>
-                  {day.emiStatus && day.emiStatus !== 'none' && (
-                    <span className="text-xs">{getStatusIcon(day.emiStatus)}</span>
-                  )}
-                </div>
-                
-                {(day.emiAmount && day.emiAmount > 0) && (
-                  <div className="mt-1">
-                    <div className={`text-xs font-semibold ${
-                      day.emiStatus === 'paid' ? 'text-green-700' : 'text-gray-700'
-                    }`}>
-                      ₹{day.emiAmount}
-                    </div>
-                    {day.loanNumbers && day.loanNumbers.length > 0 && (
-                      <div className="text-xs text-gray-600 mt-1">
-                        {day.loanNumbers.slice(0, 2).join(', ')}
-                        {day.loanNumbers.length > 2 && ` +${day.loanNumbers.length - 2}`}
-                      </div>
-                    )}
-                  </div>
-                )}
+  {filteredDays.map((day, index) => (
+    <div
+      key={index}
+      onClick={() => handleCalendarDateClick(day)}
+      className={`min-h-28 p-2 border rounded-md cursor-pointer transition-all hover:shadow-md ${
+        // For "All Loans" filter, show neutral background, otherwise show status colors
+        calendarFilter.loanFilter === 'all' 
+          ? 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+          : getStatusColor(day.emiStatus)
+      } ${!day.isCurrentMonth ? 'opacity-40' : ''} ${
+        day.isToday ? 'ring-2 ring-blue-500' : ''
+      }`}
+    >
+      <div className="flex justify-between items-start">
+        <span className={`text-sm font-medium ${
+          day.isToday ? 'text-blue-600' : ''
+        }`}>
+          {day.date.getDate()}
+        </span>
+        {/* Only show status icons when viewing specific loan */}
+        {calendarFilter.loanFilter !== 'all' && day.emiStatus && day.emiStatus !== 'none' && (
+          <span className="text-xs">{getStatusIcon(day.emiStatus)}</span>
+        )}
+      </div>
+      
+      {/* Show payment amount if there are payments */}
+      {(day.emiAmount && day.emiAmount > 0) && (
+        <div className="mt-1">
+          <div className={`text-xs font-semibold ${
+            calendarFilter.loanFilter === 'all' ? 'text-gray-700' : 
+            day.emiStatus === 'paid' ? 'text-green-700' : 'text-gray-700'
+          }`}>
+            ₹{day.emiAmount}
+          </div>
+          {day.loanNumbers && day.loanNumbers.length > 0 && (
+            <div className="text-xs text-gray-600 mt-1">
+              {calendarFilter.loanFilter === 'all' ? (
+                <>
+                  {day.loanNumbers.slice(0, 2).join(', ')}
+                  {day.loanNumbers.length > 2 && ` +${day.loanNumbers.length - 2}`}
+                </>
+              ) : (
+                day.loanNumbers.slice(0, 2).join(', ')
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
-                {day.paymentHistory && day.paymentHistory.length > 0 && (
-                  <div className="mt-1">
-                    <div className="text-xs text-green-600 font-semibold">
-                      ✅ {day.paymentHistory.length} payment(s)
-                    </div>
-                    
-                    {/* Edit/Delete buttons for paid dates - HOVER VERSION */}
-                    {day.emiStatus === 'paid' && day.paymentHistory.length > 0 && (
-                      <div className="mt-2 opacity-0 hover:opacity-100 transition-opacity duration-200">
-                        <div className="flex flex-col gap-1">
-                          {/* REMOVED "Manage Payments" button - keeping only Edit/Delete */}
-                          {day.paymentHistory.slice(0, 2).map((payment, paymentIndex) => (
-                            <div key={payment._id || paymentIndex} className="flex gap-1">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleEditPayment(payment, day.date);
-                                }}
-                                className="flex-1 bg-blue-500 text-white text-xs px-1 py-0.5 rounded hover:bg-blue-600 transition-colors"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeletePayment(payment, day.date);
-                                }}
-                                className="flex-1 bg-red-500 text-white text-xs px-1 py-0.5 rounded hover:bg-red-600 transition-colors"
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          ))}
-                          
-                          {/* Show "More" if there are more than 2 payments */}
-                          {day.paymentHistory.length > 2 && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedCalendarDate(day.date);
-                                setShowDatePaymentHistory(true);
-                              }}
-                              className="text-xs text-blue-600 hover:text-blue-800 underline"
-                            >
-                              +{day.paymentHistory.length - 2} more
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )}
+      {/* Show payment history and edit/delete buttons */}
+      {day.paymentHistory && day.paymentHistory.length > 0 && (
+        <div className="mt-1">
+          <div className="text-xs text-green-600 font-semibold">
+            ✅ {day.paymentHistory.length} payment(s)
+          </div>
+          
+          {/* Edit/Delete buttons for paid dates - HOVER VERSION */}
+          {calendarFilter.loanFilter !== 'all' && day.emiStatus === 'paid' && day.paymentHistory.length > 0 && (
+            <div className="mt-2 opacity-0 hover:opacity-100 transition-opacity duration-200">
+              <div className="flex flex-col gap-1">
+                {day.paymentHistory.slice(0, 2).map((payment, paymentIndex) => (
+                  <div key={payment._id || paymentIndex} className="flex gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEditPayment(payment, day.date);
+                      }}
+                      className="flex-1 bg-blue-500 text-white text-xs px-1 py-0.5 rounded hover:bg-blue-600 transition-colors"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeletePayment(payment, day.date);
+                      }}
+                      className="flex-1 bg-red-500 text-white text-xs px-1 py-0.5 rounded hover:bg-red-600 transition-colors"
+                    >
+                      Delete
+                    </button>
                   </div>
+                ))}
+                
+                {/* Show "More" if there are more than 2 payments */}
+                {day.paymentHistory.length > 2 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedCalendarDate(day.date);
+                      setShowDatePaymentHistory(true);
+                    }}
+                    className="text-xs text-blue-600 hover:text-blue-800 underline"
+                  >
+                    +{day.paymentHistory.length - 2} more
+                  </button>
                 )}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  ))}
+</div>
 
           <div className="mt-6 p-4 bg-gray-50 rounded-lg">
             <h5 className="font-semibold mb-3">Payment Behavior Summary</h5>
@@ -7186,54 +7329,60 @@ const renderDeleteConfirmationModal = () => {
                                     Loan Details - {customer.name} - {customer.customerNumber}
                                   </h5>
                                   <div className="space-y-3">
-                                    {customerLoans.map((loan, index) => {
-                                      const paymentInfo = getLoanPaymentStatus(loan);
-                                      const completion = calculateEMICompletion(loan);
-                                      
-                                      return (
-                                        <div key={loan._id} className="flex justify-between items-center p-4 border border-gray-200 rounded-md bg-gray-50 hover:bg-white transition-colors">
-                                          <div className="flex-1">
-                                            <div className="flex items-center gap-6 mb-2">
-                                              <span className="font-medium text-gray-900 text-lg">
-                                                {loan.loanNumber}
-                                              </span>
-                                              <span className="text-sm text-gray-700 font-semibold">
-                                                EMI: ₹{loan.emiAmount}
-                                              </span>
-                                              <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getPaymentStatusColor(paymentInfo.status)}`}>
-                                                {paymentInfo.status}
-                                              </span>
-                                            </div>
-                                            <div className="text-sm text-gray-600 grid grid-cols-1 md:grid-cols-2 gap-2">
-                                              <div>
-                                                <span className="font-medium">Next EMI Date: </span>
-                                                {formatDateToDDMMYYYY(loan.nextEmiDate)}
-                                              </div>
-                                              <div>
-                                                <span className="font-medium">Paid: </span>
-                                                {loan.emiPaidCount || 0} / {loan.totalEmiCount || loan.loanDays || 30} EMIs
-                                              </div>
-                                            </div>
-                                            {paymentInfo.amount > 0 && paymentInfo.status !== 'Unpaid' && (
-                                              <div className="text-xs text-green-600 mt-1">
-                                                Today's Payment: ₹{paymentInfo.amount} on {formatDateToDDMMYYYY(paymentInfo.date)}
-                                              </div>
-                                            )}
-                                          </div>
-                                          <button 
-                                            onClick={() => {
-                                              setSelectedCustomerForEMI(customer);
-                                              setSelectedCustomer(customer);
-                                              setSelectedLoanForPayment(loan);
-                                              setShowUpdateEMI(true);
-                                            }}
-                                            className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 text-sm transition-colors"
-                                          >
-                                            Pay EMI
-                                          </button>
-                                        </div>
-                                      );
-                                    })}
+                                    // In the renderEMI function, find the section that displays loan details and update it:
+
+{customerLoans.map((loan, index) => {
+  const paymentInfo = getLoanPaymentStatus(loan);
+  const completion = calculateEMICompletion(loan);
+  const isRenewed = loan.isRenewed || loan.status === 'renewed';
+  
+  // Skip renewed loans in EMI management
+  if (isRenewed) return null;
+  
+  return (
+    <div key={loan._id} className="flex justify-between items-center p-4 border border-gray-200 rounded-md bg-gray-50 hover:bg-white transition-colors">
+      <div className="flex-1">
+        <div className="flex items-center gap-6 mb-2">
+          <span className="font-medium text-gray-900 text-lg">
+            {loan.loanNumber}
+          </span>
+          <span className="text-sm text-gray-700 font-semibold">
+            EMI: ₹{loan.emiAmount}
+          </span>
+          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getPaymentStatusColor(paymentInfo.status)}`}>
+            {paymentInfo.status}
+          </span>
+        </div>
+        <div className="text-sm text-gray-600 grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div>
+            <span className="font-medium">Next EMI Date: </span>
+            {formatDateToDDMMYYYY(loan.nextEmiDate)}
+          </div>
+          <div>
+            <span className="font-medium">Paid: </span>
+            {loan.emiPaidCount || 0} / {loan.totalEmiCount || loan.loanDays || 30} EMIs
+          </div>
+        </div>
+        {paymentInfo.amount > 0 && paymentInfo.status !== 'Unpaid' && (
+          <div className="text-xs text-green-600 mt-1">
+            Today's Payment: ₹{paymentInfo.amount} on {formatDateToDDMMYYYY(paymentInfo.date)}
+          </div>
+        )}
+      </div>
+      <button 
+        onClick={() => {
+          setSelectedCustomerForEMI(customer);
+          setSelectedCustomer(customer);
+          setSelectedLoanForPayment(loan);
+          setShowUpdateEMI(true);
+        }}
+        className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 text-sm transition-colors"
+      >
+        Pay EMI
+      </button>
+    </div>
+  );
+})}
                                     
                                     {customerLoans.length === 0 && (
                                       <div className="text-center py-4 text-gray-500">
@@ -8295,6 +8444,7 @@ const renderCollection = () => {
                     officeCategory: ''
                   });
                   setShowFilters(false);
+                  setCustomerDetails(null);
                 }}
                 className="text-gray-500 hover:text-gray-700"
               >
@@ -8468,122 +8618,199 @@ const renderCollection = () => {
                   </div>
                 )}
 
-                {selectedCustomer && (
-                  <div className="mt-6">
-                    <h4 className="text-lg font-semibold mb-4">Customer Loans</h4>
-                    <div className="space-y-4">
-                      {displayLoans.map((loan, index) => {
-                        const completion = calculateEMICompletion(loan);
-                        const behavior = calculatePaymentBehavior(loan);
-                        const totalLoanAmount = calculateTotalLoanAmount(loan);
-                        
-                        return (
-                          <div key={loan._id} className="border border-gray-200 rounded-lg p-4 bg-white">
-                            {/* Loan Header */}
-                            <div className="flex justify-between items-start mb-3">
-                              <div>
-                                <div className="flex items-center gap-4">
-                                  <h5 className="font-medium text-gray-900 text-lg">
-                                    {loan.loanNumber}
-                                  </h5>
-                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                    {loan.loanType} Loan
-                                  </span>
-                                </div>
-                                <p className="text-sm text-gray-500 mt-1">
-                                  Loan Date: {formatDateToDDMMYYYY(loan.dateApplied)}
-                                </p>
-                              </div>
-                              {/* Behavior Score Section */}
-                              <div className="text-right">
-                                <div className="text-xs font-medium text-gray-500">Behavior Score</div>
-                                <div className={`text-lg font-semibold ${
-                                  behavior.punctualityScore >= 90 ? 'text-green-600' :
-                                  behavior.punctualityScore >= 75 ? 'text-blue-600' :
-                                  behavior.punctualityScore >= 60 ? 'text-yellow-600' : 'text-red-600'
-                                }`}>
-                                  {behavior.punctualityScore.toFixed(0)}%
-                                </div>
-                              </div>
-                            </div>
-                            
-                            {/* Completion Progress */}
-                            <div className="mb-4">
-                              <div className="flex justify-between text-sm mb-1">
-                                <span>Completion: {completion.completionPercentage.toFixed(1)}%</span>
-                                <span>{completion.remainingEmis} EMIs remaining</span>
-                              </div>
-                              <div className="w-full bg-gray-200 rounded-full h-2">
-                                <div 
-                                  className="bg-green-600 h-2 rounded-full transition-all duration-300" 
-                                  style={{width: `${Math.min(completion.completionPercentage, 100)}%`}}
-                                ></div>
-                              </div>
-                              <div className="flex justify-between text-xs text-gray-500 mt-1">
-                                <span>Paid: ₹{completion.totalPaid}</span>
-                                <span>Remaining: ₹{completion.remainingAmount} of ₹{completion.totalLoanAmount || calculateTotalLoanAmount(loan)}</span>
-                              </div>
-                            </div>
 
-                            {/* Loan Details Grid */}
-                            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-                              <div>
-                                <label className="block text-xs font-medium text-gray-500">
-                                  Amount
-                                </label>
-                                <p className="text-gray-900">
-                                  ₹{loan.amount?.toLocaleString()}
-                                </p>
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-500">
-                                  EMI Amount
-                                </label>
-                                <p className="text-gray-900">
-                                  ₹{loan.emiAmount}
-                                </p>
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-500">
-                                  {loan.loanType === 'Daily' ? 'No. of Days' : 
-                                  loan.loanType === 'Weekly' ? 'No. of Weeks' : 'No. of Months'}
-                                </label>
-                                <p className="text-gray-900">
-                                  {loan.loanDays}
-                                </p>
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-500">
-                                  Total Loan Amount
-                                </label>
-                                <p className="text-gray-900 font-semibold">
-                                  ₹{totalLoanAmount.toLocaleString()}
-                                </p>
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-500">
-                                  Next EMI Date
-                                </label>
-                                <p className="text-gray-900">
-                                  {formatDateToDDMMYYYY(loan.nextEmiDate)}
-                                </p>
-                              </div>
-                            </div>
-                            
-                            <div className="mt-4 flex justify-end">
-                              <button 
-                                onClick={() => handlePayNow(loan)}
-                                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
-                              >
-                                Pay Now
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
+
+// In renderUpdateEMIForm(), replace the displayLoans section with this:
+
+{selectedCustomer && (
+  <div className="mt-6">
+    <h4 className="text-lg font-semibold mb-4">Customer Loans</h4>
+    
+    {loadingCustomerLoans[selectedCustomer._id?.replace?.(/_default$/, '') || selectedCustomer._id] ? (
+      <div className="text-center py-8">
+        <div className="animate-spin text-2xl mb-2">⏳</div>
+        <p className="text-gray-600">Loading loan details...</p>
+      </div>
+    ) : (
+      <div className="space-y-4">
+        {/* FIX: Use customerDetails if available, otherwise use cached loans */}
+        {(customerDetails ? getAllCustomerLoans(selectedCustomer, customerDetails) : 
+          customerLoansCache[selectedCustomer._id?.replace?.(/_default$/, '') || selectedCustomer._id] || 
+          getAllCustomerLoans(selectedCustomer, null)
+        ).map((loan, index) => {
+          // ... rest of your loan rendering code remains the same
+          const completion = calculateEMICompletion(loan);
+          const behavior = calculatePaymentBehavior(loan);
+          const totalLoanAmount = calculateTotalLoanAmount(loan);
+          const isRenewed = loan.isRenewed || loan.status === 'renewed';
+          const isActive = !isRenewed && loan.status === 'active';
+          
+          return (
+            <div 
+              key={loan._id} 
+              className={`border border-gray-200 rounded-lg p-4 ${
+                isRenewed 
+                  ? 'bg-red-50 border-l-4 border-l-red-500' 
+                  : 'bg-white'
+              }`}
+            >
+              {/* Your existing loan rendering JSX */}
+              <div className="flex justify-between items-start mb-3">
+                <div>
+                  <div className="flex items-center gap-4">
+                    <h5 className={`font-medium text-lg ${
+                      isRenewed ? 'text-gray-500' : 'text-gray-900'
+                    }`}>
+                      {loan.loanNumber}
+                      {loan.originalLoanNumber && (
+                        <span className="text-sm text-gray-500 ml-2">
+                          (Renewed from {loan.originalLoanNumber})
+                        </span>
+                      )}
+                    </h5>
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      isRenewed 
+                        ? 'bg-red-100 text-red-800' 
+                        : loan.loanType === 'Daily' 
+                          ? 'bg-blue-100 text-blue-800'
+                          : loan.loanType === 'Weekly'
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-purple-100 text-purple-800'
+                    }`}>
+                      {loan.loanType} Loan
+                    </span>
+                    {isRenewed && (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                        🔄 Renewed
+                      </span>
+                    )}
+                    {!isRenewed && loan.status === 'active' && (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        Active
+                      </span>
+                    )}
+                  </div>
+                  <p className={`text-sm mt-1 ${
+                    isRenewed ? 'text-gray-400' : 'text-gray-500'
+                  }`}>
+                    Loan Date: {formatDateToDDMMYYYY(loan.dateApplied)}
+                    {loan.renewedDate && (
+                      <span className="ml-2">
+                        • Renewed: {formatDateToDDMMYYYY(loan.renewedDate)}
+                      </span>
+                    )}
+                  </p>
+                </div>
+                {!isRenewed && (
+                  <div className="text-right">
+                    <div className="text-xs font-medium text-gray-500">Behavior Score</div>
+                    <div className={`text-lg font-semibold ${
+                      behavior.punctualityScore >= 90 ? 'text-green-600' :
+                      behavior.punctualityScore >= 75 ? 'text-blue-600' :
+                      behavior.punctualityScore >= 60 ? 'text-yellow-600' : 'text-red-600'
+                    }`}>
+                      {behavior.punctualityScore.toFixed(0)}%
                     </div>
                   </div>
                 )}
+              </div>
+              
+              {/* Completion Progress - Only show for active loans */}
+              {!isRenewed && (
+                <div className="mb-4">
+                  <div className="flex justify-between text-sm mb-1">
+                    <span>Completion: {completion.completionPercentage.toFixed(1)}%</span>
+                    <span>{completion.remainingEmis} EMIs remaining</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div 
+                      className="bg-green-600 h-2 rounded-full transition-all duration-300" 
+                      style={{width: `${Math.min(completion.completionPercentage, 100)}%`}}
+                    ></div>
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>Paid: ₹{completion.totalPaid}</span>
+                    <span>Remaining: ₹{completion.remainingAmount} of ₹{completion.totalLoanAmount || calculateTotalLoanAmount(loan)}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Loan Details Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500">
+                    Amount
+                  </label>
+                  <p className={`${isRenewed ? 'text-gray-400' : 'text-gray-900'}`}>
+                    ₹{loan.amount?.toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500">
+                    EMI Amount
+                  </label>
+                  <p className={`${isRenewed ? 'text-gray-400' : 'text-gray-900'}`}>
+                    ₹{loan.emiAmount}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500">
+                    {loan.loanType === 'Daily' ? 'No. of Days' : 
+                    loan.loanType === 'Weekly' ? 'No. of Weeks' : 'No. of Months'}
+                  </label>
+                  <p className={`${isRenewed ? 'text-gray-400' : 'text-gray-900'}`}>
+                    {loan.loanDays}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500">
+                    Total Loan Amount
+                  </label>
+                  <p className={`font-semibold ${isRenewed ? 'text-gray-400' : 'text-gray-900'}`}>
+                    ₹{totalLoanAmount.toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500">
+                    Next EMI Date
+                  </label>
+                  <p className={`${isRenewed ? 'text-gray-400' : 'text-gray-900'}`}>
+                    {isRenewed ? 'N/A' : formatDateToDDMMYYYY(loan.nextEmiDate)}
+                  </p>
+                </div>
+              </div>
+              
+              <div className="mt-4 flex justify-end">
+                {isRenewed ? (
+                  <div className="text-sm text-red-600 font-medium">
+                    ❌ This loan has been renewed and cannot accept payments
+                  </div>
+                ) : (
+                  <button 
+                    onClick={() => handlePayNow(loan)}
+                    className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
+                  >
+                    Pay Now
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        
+        {/* FIX: Check the actual array length from the correct source */}
+        {(customerDetails ? getAllCustomerLoans(selectedCustomer, customerDetails) : 
+          customerLoansCache[selectedCustomer._id?.replace?.(/_default$/, '') || selectedCustomer._id] || 
+          getAllCustomerLoans(selectedCustomer, null)
+        ).length === 0 && (
+          <div className="text-center py-4 text-gray-500">
+            No active loans found for this customer
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+)}
 
                 {!selectedCustomer && (
                   <div className="mt-4 p-3 bg-blue-50 rounded-md border border-blue-200">

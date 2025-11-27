@@ -76,7 +76,8 @@ const checkForDuplicatePayments = async (cleanedCustomerId, finalLoanId, finalLo
     });
 
     return existingPayment;
-  } else if (paymentType === 'advance') {
+  } else 
+    if (paymentType === 'advance') {
     // Advance payment duplicate check - check all dates in the advance period
     const advanceFrom = new Date(advanceFromDate);
     const advanceTo = new Date(advanceToDate);
@@ -326,74 +327,126 @@ export async function POST(request) {
     let payments = [];
     const paymentDateObj = new Date(paymentDate);
 
-    if (paymentType === 'advance') {
-      // For advance payments, create multiple payment records
-      const advanceFrom = new Date(advanceFromDate);
-      const advanceTo = new Date(advanceToDate);
-      const emiCount = parseInt(advanceEmiCount) || 1;
-      const singleEmiAmount = parseFloat(amount) / emiCount;
-      
-      // Create payment for each date in the advance period
-      let currentDate = new Date(advanceFrom);
-      const paymentsCreated = [];
-      
-      for (let i = 0; i < emiCount; i++) {
-        const paymentData = {
-          customerId: cleanedCustomerId,
-          customerName,
-          paymentDate: new Date(currentDate),
-          amount: singleEmiAmount,
-          status: 'Advance',
-          collectedBy,
-          paymentMethod,
-          transactionId: transactionId || null,
-          notes: `Advance EMI ${i + 1}/${emiCount} for period ${new Date(advanceFrom).toLocaleDateString()} to ${new Date(advanceTo).toLocaleDateString()}${notes ? ` - ${notes}` : ''}`,
-          isVerified: false,
-          paymentType: 'advance',
-          isAdvancePayment: true,
-          advanceFromDate: new Date(advanceFrom),
-          advanceToDate: new Date(advanceTo),
-          advanceEmiCount: emiCount,
-          advanceTotalAmount: parseFloat(amount)
-        };
+    // In the POST method, replace the advance payment creation section with this:
 
-        // Only add loan data if we have it
-        if (finalLoanId) {
-          paymentData.loanId = finalLoanId;
-        }
-        if (finalLoanNumber && finalLoanNumber !== 'N/A') {
-          paymentData.loanNumber = finalLoanNumber;
-        }
+if (paymentType === 'advance') {
+  // For advance payments, create multiple payment records
+  const advanceFrom = new Date(advanceFromDate);
+  const advanceTo = new Date(advanceToDate);
+  
+  // FIXED: Calculate EMI count based on loan type and date range
+  let emiCount = 1;
+  let currentDate = new Date(advanceFrom);
+  
+  // Calculate actual EMI count based on loan type
+  if (loan) {
+    switch(loan.loanType) {
+      case 'Daily':
+        // For daily loans, count each day in the range
+        const dailyDiff = Math.ceil((advanceTo - advanceFrom) / (1000 * 60 * 60 * 24)) + 1;
+        emiCount = Math.max(dailyDiff, 1);
+        break;
+      case 'Weekly':
+        // For weekly loans, count weeks in the range
+        const weeklyDiff = Math.ceil((advanceTo - advanceFrom) / (1000 * 60 * 60 * 24 * 7)) + 1;
+        emiCount = Math.max(weeklyDiff, 1);
+        break;
+      case 'Monthly':
+        // For monthly loans, count months in the range
+        const monthDiff = (advanceTo.getFullYear() - advanceFrom.getFullYear()) * 12 + 
+                         (advanceTo.getMonth() - advanceFrom.getMonth()) + 1;
+        emiCount = Math.max(monthDiff, 1);
+        break;
+      default:
+        emiCount = parseInt(advanceEmiCount) || 1;
+    }
+  } else {
+    // Fallback: Use provided EMI count or calculate based on days
+    emiCount = parseInt(advanceEmiCount) || Math.ceil((advanceTo - advanceFrom) / (1000 * 60 * 60 * 24)) + 1;
+  }
+  
+  console.log('📅 Advance Payment Calculation:', {
+    from: advanceFrom.toISOString(),
+    to: advanceTo.toISOString(),
+    loanType: loan?.loanType,
+    calculatedEmiCount: emiCount,
+    providedEmiCount: advanceEmiCount
+  });
 
-        const payment = new EMIPayment(paymentData);
-        await payment.save();
-        payments.push(payment);
-        paymentsCreated.push(payment._id);
-        
-        // Move to next date based on loan type
-        switch(loan?.loanType) {
-          case 'Daily':
-            currentDate.setDate(currentDate.getDate() + 1);
-            break;
-          case 'Weekly':
-            currentDate.setDate(currentDate.getDate() + 7);
-            break;
-          case 'Monthly':
-            currentDate.setMonth(currentDate.getMonth() + 1);
-            break;
-          default:
-            currentDate.setDate(currentDate.getDate() + 1);
-        }
-        
-        // Stop if we've exceeded the advance to date
-        if (currentDate > new Date(advanceTo)) {
+  const singleEmiAmount = parseFloat(amount) / emiCount;
+  
+  // Create payment for each EMI date
+  let paymentsCreated = [];
+  
+  // Reset currentDate for payment creation
+  currentDate = new Date(advanceFrom);
+  
+  for (let i = 0; i < emiCount; i++) {
+    const paymentData = {
+      customerId: cleanedCustomerId,
+      customerName,
+      paymentDate: new Date(currentDate),
+      amount: singleEmiAmount,
+      status: 'Advance',
+      collectedBy,
+      paymentMethod,
+      transactionId: transactionId || null,
+      notes: `Advance EMI ${i + 1}/${emiCount} for period ${new Date(advanceFrom).toLocaleDateString()} to ${new Date(advanceTo).toLocaleDateString()}${notes ? ` - ${notes}` : ''}`,
+      isVerified: false,
+      paymentType: 'advance',
+      isAdvancePayment: true,
+      advanceFromDate: new Date(advanceFrom),
+      advanceToDate: new Date(advanceTo),
+      advanceEmiCount: emiCount,
+      advanceTotalAmount: parseFloat(amount)
+    };
+
+    // Only add loan data if we have it
+    if (finalLoanId) {
+      paymentData.loanId = finalLoanId;
+    }
+    if (finalLoanNumber && finalLoanNumber !== 'N/A') {
+      paymentData.loanNumber = finalLoanNumber;
+    }
+
+    const payment = new EMIPayment(paymentData);
+    await payment.save();
+    payments.push(payment);
+    paymentsCreated.push({
+      date: currentDate.toISOString().split('T')[0],
+      amount: singleEmiAmount
+    });
+    
+    // Move to next EMI date based on loan type
+    if (loan) {
+      switch(loan.loanType) {
+        case 'Daily':
+          currentDate.setDate(currentDate.getDate() + 1);
           break;
-        }
+        case 'Weekly':
+          currentDate.setDate(currentDate.getDate() + 7);
+          break;
+        case 'Monthly':
+          currentDate.setMonth(currentDate.getMonth() + 1);
+          break;
+        default:
+          currentDate.setDate(currentDate.getDate() + 1);
       }
-      
-      console.log(`✅ Created ${payments.length} advance payment records:`, paymentsCreated);
-      
     } else {
+      // Fallback: daily increment
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    // Stop if we've exceeded the advance to date
+    if (currentDate > new Date(advanceTo)) {
+      break;
+    }
+  }
+  
+  console.log(`✅ Created ${payments.length} advance payment records:`, paymentsCreated);
+}
+    
+    else {
       // Single payment (existing logic)
       const paymentData = {
         customerId: cleanedCustomerId,

@@ -2280,7 +2280,7 @@ function PendingRequestsView({
 }) {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
-  const [filters, setFilters] = useState({
+  const [filters, filterDispatch({type: 'SET_CUSTOMER_FILTERS', payload: newFilters})] = useState({
     requestType: '',
     status: '',
     operator: '',
@@ -2332,11 +2332,11 @@ function PendingRequestsView({
   const operators = [...new Set(requests.map(r => r.createdBy).filter(Boolean))];
 
   const handleFilterChange = (key: string, value: string) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
+    filterDispatch({type: 'SET_CUSTOMER_FILTERS', payload: newFilters})(prev => ({ ...prev, [key]: value }));
   };
 
   const clearFilters = () => {
-    setFilters({
+    filterDispatch({type: 'SET_CUSTOMER_FILTERS', payload: newFilters})({
       requestType: '',
       status: '',
       operator: '',
@@ -2928,7 +2928,7 @@ export default function DashboardPage() {
   
   // Filter states
   const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState({
+  const [filters, filterDispatch({type: 'SET_CUSTOMER_FILTERS', payload: newFilters})] = useState({
   customerNumber: '',
   loanType: '',
   status: '',
@@ -3205,11 +3205,11 @@ export default function DashboardPage() {
   // Enhanced Search and Filters function with Sort Button
   const renderSearchAndFilters = () => {
   const handleFilterChange = (key: keyof typeof filters, value: string) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
+    filterDispatch({type: 'SET_CUSTOMER_FILTERS', payload: newFilters})(prev => ({ ...prev, [key]: value }));
   };
 
   const clearFilters = () => {
-    setFilters({
+    filterDispatch({type: 'SET_CUSTOMER_FILTERS', payload: newFilters})({
       customerNumber: '',
       loanType: '',
       status: '',
