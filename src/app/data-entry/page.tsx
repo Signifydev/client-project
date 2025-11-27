@@ -787,7 +787,7 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
       const fromDate = new Date(payment.advanceFromDate);
       const toDate = new Date(payment.advanceToDate);
       
-      let currentDate = new Date(fromDate);
+      const currentDate = new Date(fromDate);
       while (currentDate <= toDate) {
         if (currentDate.getMonth() === monthIndex && currentDate.getFullYear() === year) {
           const advanceDateStr = currentDate.toISOString().split('T')[0];
