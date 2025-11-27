@@ -12,33 +12,29 @@ export default function LoginPage() {
   const router = useRouter();
 
   const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
+  e.preventDefault();
+  setIsLoading(true);
 
-    // Simulate login - we'll replace this with actual API call later
-    console.log('Login attempt:', { username, password, role });
-    
-    // Redirect based on role
-    setTimeout(() => {
-      setIsLoading(false);
-      switch (role) {
-        case 'super_admin':
-          router.push('/admin');
-          break;
-        case 'data_entry':
-          router.push('/data-entry');
-          break;
-        case 'collection_team':
-          router.push('/team');
-          break;
-        case 'customer':
-          router.push('/customer');
-          break;
-        default:
-          router.push('/customer');
-      }
-    }, 1000);
-  };
+  // Immediate redirect - no artificial delay
+  setIsLoading(false);
+  
+  switch (role) {
+    case 'super_admin':
+      router.push('/admin');
+      break;
+    case 'data_entry':
+      router.push('/data-entry');
+      break;
+    case 'collection_team':
+      router.push('/team');
+      break;
+    case 'customer':
+      router.push('/customer');
+      break;
+    default:
+      router.push('/customer');
+  }
+};
 
   return (
     <div className="min-h-screen flex">
