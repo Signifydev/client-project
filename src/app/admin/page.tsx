@@ -1098,6 +1098,7 @@ function TeamManagementView({ onBack }: { onBack: () => void }) {
 }
 
 // Recovery Team Member Modal Component - UPDATED WIDTH
+// Recovery Team Member Modal Component - UPDATED
 function RecoveryTeamModal({ member, onSave, onClose }: { 
   member: any; 
   onSave: (data: any) => void;
@@ -1107,13 +1108,18 @@ function RecoveryTeamModal({ member, onSave, onClose }: {
     name: member?.name || '',
     phone: member?.phone || '',
     whatsappNumber: member?.whatsappNumber || '',
-    email: member?.email || '',
     address: member?.address || '',
-    username: member?.username || '',
+    loginId: member?.loginId || '',
     password: member?.password || '',
     confirmPassword: '',
     status: member?.status || 'active'
   });
+
+  const generateRandomId = () => {
+    const prefix = 'RT';
+    const randomNum = Math.floor(1000 + Math.random() * 9000);
+    return `${prefix}${randomNum}`;
+  };
 
   const generateRandomPassword = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
@@ -1124,10 +1130,12 @@ function RecoveryTeamModal({ member, onSave, onClose }: {
     return password;
   };
 
-  const handleGeneratePassword = () => {
+  const handleGenerateCredentials = () => {
+    const newLoginId = generateRandomId();
     const newPassword = generateRandomPassword();
     setFormData({
       ...formData,
+      loginId: newLoginId,
       password: newPassword,
       confirmPassword: newPassword
     });
@@ -1136,13 +1144,18 @@ function RecoveryTeamModal({ member, onSave, onClose }: {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!formData.loginId) {
+      alert('Please generate Login ID!');
+      return;
+    }
+
     if (!member && formData.password !== formData.confirmPassword) {
       alert('Passwords do not match!');
       return;
     }
 
     if (!member && !formData.password) {
-      alert('Please generate or enter a password!');
+      alert('Please generate credentials!');
       return;
     }
 
@@ -1152,7 +1165,7 @@ function RecoveryTeamModal({ member, onSave, onClose }: {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto"> {/* UPDATED WIDTH */}
+      <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900">
@@ -1184,22 +1197,6 @@ function RecoveryTeamModal({ member, onSave, onClose }: {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Username *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.username}
-                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg"
-                  placeholder="Choose a unique username"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Phone Number *
                 </label>
                 <input
@@ -1211,7 +1208,9 @@ function RecoveryTeamModal({ member, onSave, onClose }: {
                   placeholder="Phone number"
                 />
               </div>
+            </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   WhatsApp Number
@@ -1224,19 +1223,20 @@ function RecoveryTeamModal({ member, onSave, onClose }: {
                   placeholder="WhatsApp number"
                 />
               </div>
-            </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email Address
-              </label>
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg"
-                placeholder="Email address"
-              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Status
+                </label>
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg"
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
             </div>
 
             <div>
@@ -1252,79 +1252,94 @@ function RecoveryTeamModal({ member, onSave, onClose }: {
               />
             </div>
 
-            {/* Password Section */}
-            {!member && (
-              <div className="border-t border-gray-200 pt-6">
-                <div className="flex items-center justify-between mb-4">
-                  <label className="block text-lg font-medium text-gray-700">
-                    Login Password *
-                  </label>
+            {/* Login Credentials Section */}
+            <div className="border-t border-gray-200 pt-6">
+              <div className="flex items-center justify-between mb-4">
+                <label className="block text-lg font-medium text-gray-700">
+                  Login Credentials *
+                </label>
+                {!member && (
                   <button
                     type="button"
-                    onClick={handleGeneratePassword}
+                    onClick={handleGenerateCredentials}
                     className="bg-red-100 text-red-700 px-4 py-2 rounded-lg hover:bg-red-200 font-medium"
                   >
-                    Generate Password
+                    Generate Credentials
                   </button>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Password
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg"
-                      placeholder="Click generate or enter password"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Confirm Password
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.confirmPassword}
-                      onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg"
-                      placeholder="Confirm password"
-                    />
-                  </div>
-                </div>
-
-                {formData.password && (
-                  <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <p className="text-sm text-yellow-800 font-medium">
-                      <strong>Important:</strong> Save this password securely. It will be shown only once.
-                    </p>
-                    <p className="text-sm text-yellow-700 mt-2">
-                      Generated Password: <span className="font-mono bg-yellow-100 px-2 py-1 rounded">{formData.password}</span>
-                    </p>
-                  </div>
                 )}
               </div>
-            )}
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Status
-                </label>
-                <select
-                  value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg"
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Login ID
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.loginId}
+                    onChange={(e) => setFormData({ ...formData, loginId: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg bg-gray-50"
+                    placeholder="Click generate or enter Login ID"
+                    readOnly={!!member}
+                  />
+                  <p className="text-sm text-gray-500 mt-1">
+                    System-generated Login ID for recovery team
+                  </p>
+                </div>
+                
+                {!member && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Password
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg"
+                        placeholder="Click generate or enter password"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Confirm Password
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.confirmPassword}
+                        onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg"
+                        placeholder="Confirm password"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
+
+              {formData.loginId && formData.password && !member && (
+                <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <p className="text-sm text-yellow-800 font-medium">
+                    <strong>Important:</strong> Save these credentials securely. They will be shown only once.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                    <div>
+                      <p className="text-sm text-yellow-700">
+                        Login ID: <span className="font-mono bg-yellow-100 px-2 py-1 rounded">{formData.loginId}</span>
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-yellow-700">
+                        Password: <span className="font-mono bg-yellow-100 px-2 py-1 rounded">{formData.password}</span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
             
             <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200">
@@ -1349,7 +1364,7 @@ function RecoveryTeamModal({ member, onSave, onClose }: {
   );
 }
 
-// Data Entry Operator Modal Component - UPDATED WIDTH
+// Data Entry Operator Modal Component - UPDATED
 function DataEntryOperatorModal({ member, onSave, onClose }: { 
   member: any; 
   onSave: (data: any) => void;
@@ -1359,14 +1374,19 @@ function DataEntryOperatorModal({ member, onSave, onClose }: {
     name: member?.name || '',
     phone: member?.phone || '',
     whatsappNumber: member?.whatsappNumber || '',
-    email: member?.email || '',
     address: member?.address || '',
     officeCategory: member?.officeCategory || 'Office 1',
-    username: member?.username || '',
+    loginId: member?.loginId || '',
     password: member?.password || '',
     confirmPassword: '',
     status: member?.status || 'active'
   });
+
+  const generateRandomId = () => {
+    const prefix = 'DE';
+    const randomNum = Math.floor(1000 + Math.random() * 9000);
+    return `${prefix}${randomNum}`;
+  };
 
   const generateRandomPassword = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
@@ -1377,10 +1397,12 @@ function DataEntryOperatorModal({ member, onSave, onClose }: {
     return password;
   };
 
-  const handleGeneratePassword = () => {
+  const handleGenerateCredentials = () => {
+    const newLoginId = generateRandomId();
     const newPassword = generateRandomPassword();
     setFormData({
       ...formData,
+      loginId: newLoginId,
       password: newPassword,
       confirmPassword: newPassword
     });
@@ -1389,13 +1411,18 @@ function DataEntryOperatorModal({ member, onSave, onClose }: {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!formData.loginId) {
+      alert('Please generate Login ID!');
+      return;
+    }
+
     if (!member && formData.password !== formData.confirmPassword) {
       alert('Passwords do not match!');
       return;
     }
 
     if (!member && !formData.password) {
-      alert('Please generate or enter a password!');
+      alert('Please generate credentials!');
       return;
     }
 
@@ -1405,7 +1432,7 @@ function DataEntryOperatorModal({ member, onSave, onClose }: {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto"> {/* UPDATED WIDTH */}
+      <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900">
@@ -1437,22 +1464,6 @@ function DataEntryOperatorModal({ member, onSave, onClose }: {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Username *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.username}
-                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                  placeholder="Choose a unique username"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Phone Number *
                 </label>
                 <input
@@ -1464,7 +1475,9 @@ function DataEntryOperatorModal({ member, onSave, onClose }: {
                   placeholder="Phone number"
                 />
               </div>
+            </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   WhatsApp Number
@@ -1477,19 +1490,24 @@ function DataEntryOperatorModal({ member, onSave, onClose }: {
                   placeholder="WhatsApp number"
                 />
               </div>
-            </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email Address
-              </label>
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                placeholder="Email address"
-              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Office Category *
+                </label>
+                <select
+                  required
+                  value={formData.officeCategory}
+                  onChange={(e) => setFormData({ ...formData, officeCategory: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
+                >
+                  <option value="Office 1">Office 1</option>
+                  <option value="Office 2">Office 2</option>
+                </select>
+                <p className="text-sm text-gray-500 mt-2">
+                  This determines which customers the operator can access
+                </p>
+              </div>
             </div>
 
             <div>
@@ -1505,100 +1523,109 @@ function DataEntryOperatorModal({ member, onSave, onClose }: {
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Office Category *
-                </label>
-                <select
-                  required
-                  value={formData.officeCategory}
-                  onChange={(e) => setFormData({ ...formData, officeCategory: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                >
-                  <option value="Office 1">Office 1</option>
-                  <option value="Office 2">Office 2</option>
-                  <option value="Office 3">Office 3</option>
-                  <option value="Head Office">Head Office</option>
-                </select>
-                <p className="text-sm text-gray-500 mt-2">
-                  This determines which customers the operator can access
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Status
-                </label>
-                <select
-                  value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Status
+              </label>
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
             </div>
 
-            {/* Password Section */}
-            {!member && (
-              <div className="border-t border-gray-200 pt-6">
-                <div className="flex items-center justify-between mb-4">
-                  <label className="block text-lg font-medium text-gray-700">
-                    Login Password *
-                  </label>
+            {/* Login Credentials Section */}
+            <div className="border-t border-gray-200 pt-6">
+              <div className="flex items-center justify-between mb-4">
+                <label className="block text-lg font-medium text-gray-700">
+                  Login Credentials *
+                </label>
+                {!member && (
                   <button
                     type="button"
-                    onClick={handleGeneratePassword}
+                    onClick={handleGenerateCredentials}
                     className="bg-blue-100 text-blue-700 px-4 py-2 rounded-lg hover:bg-blue-200 font-medium"
                   >
-                    Generate Password
+                    Generate Credentials
                   </button>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Password
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                      placeholder="Click generate or enter password"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Confirm Password
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.confirmPassword}
-                      onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                      placeholder="Confirm password"
-                    />
-                  </div>
-                </div>
-
-                {formData.password && (
-                  <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <p className="text-sm text-yellow-800 font-medium">
-                      <strong>Important:</strong> Save this password securely. It will be shown only once.
-                    </p>
-                    <p className="text-sm text-yellow-700 mt-2">
-                      Generated Password: <span className="font-mono bg-yellow-100 px-2 py-1 rounded">{formData.password}</span>
-                    </p>
-                  </div>
                 )}
               </div>
-            )}
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Login ID
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.loginId}
+                    onChange={(e) => setFormData({ ...formData, loginId: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg bg-gray-50"
+                    placeholder="Click generate or enter Login ID"
+                    readOnly={!!member}
+                  />
+                  <p className="text-sm text-gray-500 mt-1">
+                    System-generated Login ID for data entry
+                  </p>
+                </div>
+                
+                {!member && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Password
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
+                        placeholder="Click generate or enter password"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Confirm Password
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.confirmPassword}
+                        onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
+                        placeholder="Confirm password"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {formData.loginId && formData.password && !member && (
+                <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <p className="text-sm text-yellow-800 font-medium">
+                    <strong>Important:</strong> Save these credentials securely. They will be shown only once.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                    <div>
+                      <p className="text-sm text-yellow-700">
+                        Login ID: <span className="font-mono bg-yellow-100 px-2 py-1 rounded">{formData.loginId}</span>
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-yellow-700">
+                        Password: <span className="font-mono bg-yellow-100 px-2 py-1 rounded">{formData.password}</span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
             
             <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200">
               <button

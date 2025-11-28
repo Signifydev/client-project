@@ -4,37 +4,102 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
-  const [username, setUsername] = useState('');
+  const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState('customer');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
   const router = useRouter();
 
   const handleLogin = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setIsLoading(true);
+    e.preventDefault();
+    setIsLoading(true);
+    setError('');
 
-  // Immediate redirect - no artificial delay
-  setIsLoading(false);
-  
-  switch (role) {
-    case 'super_admin':
-      router.push('/admin');
-      break;
-    case 'data_entry':
-      router.push('/data-entry');
-      break;
-    case 'collection_team':
-      router.push('/team');
-      break;
-    case 'customer':
-      router.push('/customer');
-      break;
-    default:
-      router.push('/customer');
-  }
-};
+    try {
+      // For customer role, use the existing flow
+      if (role === 'customer') {
+        router.push('/customer');
+        return;
+      }
+
+      // For super_admin, use existing flow (you might want to add authentication later)
+      if (role === 'super_admin') {
+        // You can add super admin authentication here later
+        router.push('/admin');
+        return;
+      }
+
+      // For team members (Recovery Team and Data Entry), authenticate via API
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          loginId,
+          password,
+          role: role === 'data_entry' ? 'Data Entry Operator' : 'Recovery Team'
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        // Store user data in localStorage
+        localStorage.setItem('currentUser', JSON.stringify(data.data));
+        localStorage.setItem('userRole', data.data.role);
+        localStorage.setItem('officeCategory', data.data.officeCategory || '');
+        
+        // Redirect based on role
+        switch (data.data.role) {
+          case 'Recovery Team':
+            router.push('/team');
+            break;
+          case 'Data Entry Operator':
+            router.push('/data-entry');
+            break;
+          default:
+            router.push('/customer');
+        }
+      } else {
+        setError(data.error || 'Invalid Login ID or Password');
+      }
+    } catch (error) {
+      setError('Network error. Please try again.');
+      console.error('Login error:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Update placeholder based on role
+  const getLoginIdPlaceholder = () => {
+    switch (role) {
+      case 'collection_team':
+        return 'Enter your RT login ID (e.g., RT1234)';
+      case 'data_entry':
+        return 'Enter your DE login ID (e.g., DE1234)';
+      case 'super_admin':
+        return 'Enter super admin username';
+      default:
+        return 'Enter your username';
+    }
+  };
+
+  const getRoleLabel = (roleValue: string) => {
+    switch (roleValue) {
+      case 'collection_team':
+        return 'Recovery Team';
+      case 'data_entry':
+        return 'Data Entry Operator';
+      case 'super_admin':
+        return 'Super Admin';
+      default:
+        return 'Customer';
+    }
+  };
 
   return (
     <div className="min-h-screen flex">
@@ -59,32 +124,36 @@ export default function LoginPage() {
               </label>
               <select
                 value={role}
-                onChange={(e) => setRole(e.target.value)}
+                onChange={(e) => {
+                  setRole(e.target.value);
+                  setError('');
+                  setLoginId('');
+                  setPassword('');
+                }}
                 className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
               >
                 <option value="customer">Customer</option>
-                <option value="collection_team">Collection Team</option>
+                <option value="collection_team">Recovery Team</option>
                 <option value="data_entry">Data Entry Operator</option>
                 <option value="super_admin">Super Admin</option>
               </select>
             </div>
 
-            {/* Username Field */}
+            {/* Login ID Field */}
             <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700">
-                Username
+              <label htmlFor="loginId" className="block text-sm font-medium text-gray-700">
+                {role === 'super_admin' ? 'Username' : 'Login ID'}
               </label>
               <div className="mt-1">
                 <input
-                  id="username"
-                  name="username"
+                  id="loginId"
+                  name="loginId"
                   type="text"
-                  autoComplete="username"
                   required
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  value={loginId}
+                  onChange={(e) => setLoginId(e.target.value)}
                   className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  placeholder="Enter your username"
+                  placeholder={getLoginIdPlaceholder()}
                 />
               </div>
             </div>
@@ -118,6 +187,13 @@ export default function LoginPage() {
                 </button>
               </div>
             </div>
+
+            {/* Error Message */}
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-md p-3">
+                <p className="text-sm text-red-600">{error}</p>
+              </div>
+            )}
 
             {/* Remember Me & Forgot Password */}
             <div className="flex items-center justify-between">
@@ -164,7 +240,10 @@ export default function LoginPage() {
             {/* Demo Info */}
             <div className="text-center">
               <p className="text-xs text-gray-500">
-                Demo: Select your role and use any credentials
+                {role === 'customer' || role === 'super_admin' 
+                  ? 'Demo: Select your role and use any credentials' 
+                  : 'Use your system-generated Login ID and Password'
+                }
               </p>
             </div>
           </form>

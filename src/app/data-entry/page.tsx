@@ -427,8 +427,31 @@ export default function DataEntryDashboard() {
     totalCollection: 0
   });
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [pendingRequests, setPendingRequests] = useState<Request[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+const [pendingRequests, setPendingRequests] = useState<Request[]>([]);
+const [isLoading, setIsLoading] = useState(false);
+
+// Add this line - current user office state
+const [currentUserOffice, setCurrentUserOffice] = useState<string>('');
+
+// Get current user's office category for filtering
+useEffect(() => {
+  // Get user info from localStorage or your auth system
+  const userData = localStorage.getItem('currentUser');
+  if (userData) {
+    try {
+      const currentUser = JSON.parse(userData);
+      setCurrentUserOffice(currentUser.officeCategory || '');
+      console.log('🔐 Current user office:', currentUser.officeCategory);
+    } catch (error) {
+      console.error('Error parsing user data:', error);
+      setCurrentUserOffice('');
+    }
+  } else {
+    console.warn('No user data found in localStorage');
+    setCurrentUserOffice('');
+  }
+}, []);
+
 
   const [currentStep, setCurrentStep] = useState(1);
   const [step1Data, setStep1Data] = useState<NewCustomerStep1>({
@@ -1167,6 +1190,13 @@ const isDateInEMISchedule = (date: Date, startDate: Date, loanType: string): boo
 
   const getAllCustomerLoans = (customer: Customer, customerDetails: CustomerDetails | null): Loan[] => {
   const loans: Loan[] = [];
+
+  console.log('🔄 getAllCustomerLoans DEBUG:', {
+    customerId: customer._id,
+    customerName: customer.name,
+    hasCustomerDetails: !!customerDetails,
+    customerDetailsLoans: customerDetails?.loans?.length || 0
+  });
   
   console.log('🔄 getAllCustomerLoans called with:', {
     customer: {
@@ -1285,39 +1315,40 @@ const isDateInEMISchedule = (date: Date, startDate: Date, loanType: string): boo
     });
   }
   
-  // Fallback loan creation
-  if (loans.length === 0 && customer.loanAmount && !customerDetails) {
-    const cleanCustomerId = customer._id?.replace?.(/_default$/, '') || customer._id;
-    
-    const fallbackLoan: Loan = {
-      _id: `fallback_${cleanCustomerId}`,
-      customerId: cleanCustomerId,
-      customerName: customer.name,
-      customerNumber: customer.customerNumber || `CN${cleanCustomerId}`,
-      loanNumber: 'L1',
-      amount: customer.loanAmount || 0,
-      emiAmount: customer.emiAmount || 0,
-      loanType: customer.loanType || 'Daily',
-      dateApplied: customer.createdAt || new Date().toISOString(),
-      emiStartDate: customer.createdAt || new Date().toISOString(),
-      loanDays: 30,
-      totalEmiCount: 30,
-      emiPaidCount: 0,
-      lastEmiDate: customer.createdAt || new Date().toISOString(),
-      nextEmiDate: customer.createdAt || new Date().toISOString(),
-      totalPaidAmount: 0,
-      remainingAmount: customer.loanAmount || 0,
-      emiHistory: [],
-      status: customer.status || 'active',
-      isFallback: true,
-      // Add renewal tracking properties for fallback loan
-      isRenewed: false,
-      renewedLoanNumber: '',
-      renewedDate: '',
-      originalLoanNumber: ''
-    };
-    loans.push(fallbackLoan);
-  }
+  // Fallback loan creation - if no loans found in customerDetails, create from customer data
+if (loans.length === 0 && (customer.loanAmount || customer.emiAmount) && !customerDetails) {
+  console.log('🔄 Creating fallback loan from customer data');
+  const cleanCustomerId = customer._id?.replace?.(/_default$/, '') || customer._id;
+  
+  const fallbackLoan: Loan = {
+    _id: `fallback_${cleanCustomerId}`,
+    customerId: cleanCustomerId,
+    customerName: customer.name,
+    customerNumber: customer.customerNumber || `CN${cleanCustomerId}`,
+    loanNumber: 'L1',
+    amount: customer.loanAmount || 0,
+    emiAmount: customer.emiAmount || 0,
+    loanType: customer.loanType || 'Daily',
+    dateApplied: customer.createdAt || new Date().toISOString(),
+    emiStartDate: customer.createdAt || new Date().toISOString(),
+    loanDays: 30,
+    totalEmiCount: 30,
+    emiPaidCount: 0,
+    lastEmiDate: customer.createdAt || new Date().toISOString(),
+    nextEmiDate: customer.createdAt || new Date().toISOString(),
+    totalPaidAmount: 0,
+    remainingAmount: customer.loanAmount || 0,
+    emiHistory: [],
+    status: customer.status || 'active',
+    isFallback: true,
+    isRenewed: false,
+    renewedLoanNumber: '',
+    renewedDate: '',
+    originalLoanNumber: ''
+  };
+  loans.push(fallbackLoan);
+  console.log('✅ Created fallback loan:', fallbackLoan);
+}
   
   // Sort loans by loan number (L1, L2, L3, etc.) in ascending order
   const sortedLoans = loans.sort((a, b) => {
@@ -1631,57 +1662,78 @@ const calculateLastEmiDate = (loan: any): string => {
   };
 
   const fetchCustomers = async () => {
-    try {
-      console.log('Fetching customers...');
-      const response = await fetch('/api/data-entry/customers');
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Customers API response:', data);
-        if (data.success) {
-          setCustomers(data.data || []);
-          console.log('Customers loaded:', data.data?.length || 0);
-        }
-      } else {
-        console.error('Failed to fetch customers');
-      }
-    } catch (error) {
-      console.error('Error fetching customers:', error);
-      setCustomers([]);
+  try {
+    console.log('Fetching customers...');
+    
+    // Build URL with office category filter if available
+    let url = '/api/data-entry/customers';
+    if (currentUserOffice) {
+      url += `?officeCategory=${encodeURIComponent(currentUserOffice)}`;
     }
-  };
+    
+    console.log('Fetching from URL:', url);
+    const response = await fetch(url);
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log('Customers API response:', data);
+      if (data.success) {
+        setCustomers(data.data || []);
+        console.log('Customers loaded:', data.data?.length || 0);
+        
+        // Log office filtering info
+        if (currentUserOffice) {
+          console.log(`📊 Filtered to show only ${currentUserOffice} customers`);
+        }
+      }
+    } else {
+      console.error('Failed to fetch customers');
+    }
+  } catch (error) {
+    console.error('Error fetching customers:', error);
+    setCustomers([]);
+  }
+};
 
   const fetchPendingRequests = async () => {
-    try {
-      console.log('🟡 Fetching pending requests...');
-      const response = await fetch('/api/data-entry/requests');
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      console.log('🔵 Requests API Response:', data);
-      
-      if (data.success && data.data && Array.isArray(data.data.requests)) {
-        console.log(`✅ Setting ${data.data.requests.length} requests`);
-        setPendingRequests(data.data.requests);
-      } else {
-        console.warn('⚠️ No requests array found in response, setting empty array');
-        setPendingRequests([]);
-      }
-      
-    } catch (error) {
-      console.error('❌ Error fetching requests:', error);
+  try {
+    console.log('🟡 Fetching pending requests...');
+    
+    // Get current operator ID from localStorage
+    const userData = localStorage.getItem('currentUser');
+    const currentOperator = userData ? JSON.parse(userData).username || 'data_entry_operator_1' : 'data_entry_operator_1';
+    
+    console.log('👤 Current operator:', currentOperator);
+    
+    const response = await fetch(`/api/data-entry/requests?createdBy=${currentOperator}`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log('🔵 Requests API Response:', data);
+    
+    if (data.success && data.data && Array.isArray(data.data.requests)) {
+      console.log(`✅ Setting ${data.data.requests.length} requests for operator: ${currentOperator}`);
+      setPendingRequests(data.data.requests);
+    } else {
+      console.warn('⚠️ No requests array found in response, setting empty array');
       setPendingRequests([]);
     }
-  };
+    
+  } catch (error) {
+    console.error('❌ Error fetching requests:', error);
+    setPendingRequests([]);
+  }
+};
 
   useEffect(() => {
     fetchDashboardData();
     if (activeTab === 'customers') fetchCustomers();
     if (activeTab === 'requests') fetchPendingRequests();
     if (activeTab === 'collection') fetchCollectionData(collectionDate);
-  }, [activeTab]);
+  }, [activeTab, currentUserOffice]);
 
   useEffect(() => {
     if (showUpdateEMI) {
@@ -7035,20 +7087,121 @@ const renderDeleteConfirmationModal = () => {
     }
   };
 
-  const handleCustomerSelectForEMI = (customer: Customer) => {
-    setSelectedCustomerForEMI(customer);
-    setSelectedCustomer(customer);
-    setShowUpdateEMI(true);
-  };
-
-  const handleViewCustomerLoans = (customer: Customer) => {
-    // Toggle - if same customer is clicked again, close it
-    if (selectedCustomerForEMI?._id === customer._id) {
-      setSelectedCustomerForEMI(null);
-    } else {
-      setSelectedCustomerForEMI(customer);
+  const handleCustomerSelectForEMI = async (customer: Customer) => {
+  console.log('🔍 Customer selected for EMI:', customer);
+  
+  // FIX: Clean the customer ID
+  const cleanCustomerId = customer._id?.replace?.(/_default$/, '') || customer._id;
+  
+  setSelectedCustomerForEMI(customer);
+  setSelectedCustomer(customer);
+  setLoadingCustomerLoans(prev => ({ ...prev, [cleanCustomerId]: true }));
+  
+  // Set basic EMI update data
+  setEmiUpdate(prev => ({
+    ...prev,
+    customerId: cleanCustomerId || '',
+    customerName: customer.name,
+    customerNumber: customer.customerNumber,
+    paymentDate: new Date().toISOString().split('T')[0]
+  }));
+  
+  // FIX: Always fetch customer details to get complete loan information
+  try {
+    console.log('🔄 Fetching customer details for EMI:', customer.name);
+    const response = await fetch(`/api/data-entry/customers/${cleanCustomerId}`);
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success) {
+        const customerDetails = data.data;
+        
+        // Update the customer details state
+        setCustomerDetails(customerDetails);
+        
+        // Cache the loans for this customer
+        const displayLoans = getAllCustomerLoans(customer, customerDetails);
+        setCustomerLoansCache(prev => ({
+          ...prev,
+          [cleanCustomerId]: displayLoans
+        }));
+        
+        console.log('✅ Customer details and loans loaded for EMI:', displayLoans.length);
+      }
     }
-  };
+  } catch (error) {
+    console.error('❌ Error fetching customer details for EMI:', error);
+    // Use fallback loans if API fails
+    const fallbackLoans = getAllCustomerLoans(customer, null);
+    setCustomerLoansCache(prev => ({
+      ...prev,
+      [cleanCustomerId]: fallbackLoans
+    }));
+  } finally {
+    setLoadingCustomerLoans(prev => ({ ...prev, [cleanCustomerId]: false }));
+  }
+  
+  setShowUpdateEMI(true);
+};
+
+  const handleViewCustomerLoans = async (customer: Customer) => {
+  // Toggle - if same customer is clicked again, close it
+  if (selectedCustomerForEMI?._id === customer._id) {
+    setSelectedCustomerForEMI(null);
+  } else {
+    const cleanCustomerId = customer._id?.replace?.(/_default$/, '') || customer._id;
+    setSelectedCustomerForEMI(customer);
+    setLoadingCustomerLoans(prev => ({ ...prev, [cleanCustomerId]: true }));
+    
+    console.log('🔄 Loading loans for customer:', customer.name, cleanCustomerId);
+    
+    try {
+      // Fetch customer details to get complete loan information
+      const response = await fetch(`/api/data-entry/customers/${cleanCustomerId}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          const customerDetails = data.data;
+          console.log('✅ Customer details loaded:', customerDetails);
+          
+          const displayLoans = getAllCustomerLoans(customer, customerDetails);
+          console.log('📊 Loans found:', displayLoans.length, displayLoans);
+          
+          setCustomerLoansCache(prev => ({
+            ...prev,
+            [cleanCustomerId]: displayLoans
+          }));
+        } else {
+          console.error('❌ API returned success:false', data.error);
+          // Use fallback loans
+          const fallbackLoans = getAllCustomerLoans(customer, null);
+          setCustomerLoansCache(prev => ({
+            ...prev,
+            [cleanCustomerId]: fallbackLoans
+          }));
+        }
+      } else {
+        console.error('❌ Failed to fetch customer details');
+        // Use fallback loans
+        const fallbackLoans = getAllCustomerLoans(customer, null);
+        setCustomerLoansCache(prev => ({
+          ...prev,
+          [cleanCustomerId]: fallbackLoans
+        }));
+      }
+    } catch (error) {
+      console.error('❌ Error fetching customer loans:', error);
+      // Use fallback loans
+      const fallbackLoans = getAllCustomerLoans(customer, null);
+      setCustomerLoansCache(prev => ({
+        ...prev,
+        [cleanCustomerId]: fallbackLoans
+      }));
+    } finally {
+      setLoadingCustomerLoans(prev => ({ ...prev, [cleanCustomerId]: false }));
+    }
+  }
+};
 
   // Get payment status for a specific loan with real data
   const getLoanPaymentStatus = (loan: Loan) => {
@@ -7319,78 +7472,130 @@ const renderDeleteConfirmationModal = () => {
                           
                           {/* Expanded Loan Details with smooth transition */}
                           {isSelected && (
-                            <tr className="bg-blue-50">
-                              <td colSpan={6} className="px-6 py-4">
-                                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm transition-all duration-300 ease-in-out">
-                                  <h5 className="font-semibold text-gray-900 mb-3 text-lg">
-                                    Loan Details - {customer.name} - {customer.customerNumber}
-                                  </h5>
-                                  <div className="space-y-3">
-                                    
-
-{customerLoans.map((loan, index) => {
-  const paymentInfo = getLoanPaymentStatus(loan);
-  const completion = calculateEMICompletion(loan);
-  const isRenewed = loan.isRenewed || loan.status === 'renewed';
-  
-  // Skip renewed loans in EMI management
-  if (isRenewed) return null;
-  
-  return (
-    <div key={loan._id} className="flex justify-between items-center p-4 border border-gray-200 rounded-md bg-gray-50 hover:bg-white transition-colors">
-      <div className="flex-1">
-        <div className="flex items-center gap-6 mb-2">
-          <span className="font-medium text-gray-900 text-lg">
-            {loan.loanNumber}
-          </span>
-          <span className="text-sm text-gray-700 font-semibold">
-            EMI: ₹{loan.emiAmount}
-          </span>
-          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getPaymentStatusColor(paymentInfo.status)}`}>
-            {paymentInfo.status}
-          </span>
-        </div>
-        <div className="text-sm text-gray-600 grid grid-cols-1 md:grid-cols-2 gap-2">
-          <div>
-            <span className="font-medium">Next EMI Date: </span>
-            {formatDateToDDMMYYYY(loan.nextEmiDate)}
+  <tr className="bg-blue-50">
+    <td colSpan={6} className="px-6 py-4">
+      <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm transition-all duration-300 ease-in-out">
+        <h5 className="font-semibold text-gray-900 mb-3 text-lg">
+          Loan Details - {customer.name} - {customer.customerNumber}
+        </h5>
+        
+        {loadingCustomerLoans[customer._id?.replace?.(/_default$/, '') || customer._id] ? (
+          <div className="text-center py-4">
+            <div className="animate-spin text-2xl mb-2">⏳</div>
+            <p className="text-gray-600">Loading loan details...</p>
           </div>
-          <div>
-            <span className="font-medium">Paid: </span>
-            {loan.emiPaidCount || 0} / {loan.totalEmiCount || loan.loanDays || 30} EMIs
-          </div>
-        </div>
-        {paymentInfo.amount > 0 && paymentInfo.status !== 'Unpaid' && (
-          <div className="text-xs text-green-600 mt-1">
-            Today's Payment: ₹{paymentInfo.amount} on {formatDateToDDMMYYYY(paymentInfo.date)}
+        ) : (
+          <div className="space-y-3">
+            {/* Get loans from cache or fallback */}
+            {(customerLoansCache[customer._id?.replace?.(/_default$/, '') || customer._id] || 
+              getAllCustomerLoans(customer, null)).map((loan, index) => {
+              const paymentInfo = getLoanPaymentStatus(loan);
+              const completion = calculateEMICompletion(loan);
+              const isRenewed = loan.isRenewed || loan.status === 'renewed';
+              
+              // Skip renewed loans in EMI management
+              if (isRenewed) return null;
+              
+              return (
+                <div key={loan._id} className="flex justify-between items-center p-4 border border-gray-200 rounded-md bg-gray-50 hover:bg-white transition-colors">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-4 mb-2 flex-wrap">
+                      <span className="font-medium text-gray-900 text-lg">
+                        {loan.loanNumber || `Loan ${index + 1}`}
+                      </span>
+                      <span className="text-sm text-gray-700 font-semibold">
+                        EMI: ₹{loan.emiAmount || 0}
+                      </span>
+                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                        paymentInfo.status === 'Paid' ? 'bg-green-100 text-green-800' :
+                        paymentInfo.status === 'Partial' ? 'bg-yellow-100 text-yellow-800' :
+                        paymentInfo.status === 'Advance' ? 'bg-blue-100 text-blue-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {paymentInfo.status}
+                      </span>
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        loan.loanType === 'Daily' ? 'bg-blue-100 text-blue-800' :
+                        loan.loanType === 'Weekly' ? 'bg-green-100 text-green-800' :
+                        'bg-purple-100 text-purple-800'
+                      }`}>
+                        {loan.loanType}
+                      </span>
+                    </div>
+                    
+                    <div className="text-sm text-gray-600 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
+                      <div>
+                        <span className="font-medium">Loan Amount: </span>
+                        ₹{loan.amount?.toLocaleString() || '0'}
+                      </div>
+                      <div>
+                        <span className="font-medium">Total EMIs: </span>
+                        {loan.totalEmiCount || loan.loanDays || 30}
+                      </div>
+                      <div>
+                        <span className="font-medium">Paid EMIs: </span>
+                        {loan.emiPaidCount || 0}
+                      </div>
+                      <div>
+                        <span className="font-medium">Next EMI: </span>
+                        {loan.nextEmiDate ? formatDateToDDMMYYYY(loan.nextEmiDate) : 'N/A'}
+                      </div>
+                    </div>
+                    
+                    {/* Progress bar */}
+                    <div className="mt-2">
+                      <div className="flex justify-between text-xs mb-1">
+                        <span>Completion: {completion.completionPercentage.toFixed(1)}%</span>
+                        <span>{completion.remainingEmis} EMIs remaining</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                          className="bg-green-600 h-2 rounded-full transition-all duration-300" 
+                          style={{width: `${Math.min(completion.completionPercentage, 100)}%`}}
+                        ></div>
+                      </div>
+                    </div>
+                    
+                    {paymentInfo.amount > 0 && paymentInfo.status !== 'Unpaid' && (
+                      <div className="text-xs text-green-600 mt-1">
+                        Today's Payment: ₹{paymentInfo.amount} on {formatDateToDDMMYYYY(paymentInfo.date)}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedCustomerForEMI(customer);
+                      setSelectedCustomer(customer);
+                      setSelectedLoanForPayment(loan);
+                      setShowUpdateEMI(true);
+                    }}
+                    className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 text-sm transition-colors whitespace-nowrap ml-4"
+                  >
+                    Pay EMI
+                  </button>
+                </div>
+              );
+            })}
+            
+            {/* Show message if no loans found */}
+            {(customerLoansCache[customer._id?.replace?.(/_default$/, '') || customer._id] || 
+              getAllCustomerLoans(customer, null)).length === 0 && (
+              <div className="text-center py-6 bg-yellow-50 border border-yellow-200 rounded-md">
+                <div className="text-yellow-500 text-3xl mb-2">💰</div>
+                <p className="text-yellow-800 font-medium">No active loans found</p>
+                <p className="text-yellow-600 text-sm mt-1">
+                  This customer doesn't have any active loans for EMI collection
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>
-      <button 
-        onClick={() => {
-          setSelectedCustomerForEMI(customer);
-          setSelectedCustomer(customer);
-          setSelectedLoanForPayment(loan);
-          setShowUpdateEMI(true);
-        }}
-        className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 text-sm transition-colors"
-      >
-        Pay EMI
-      </button>
-    </div>
-  );
-})}
-                                    
-                                    {customerLoans.length === 0 && (
-                                      <div className="text-center py-4 text-gray-500">
-                                        No loans found for this customer
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
+    </td>
+  </tr>
+)}
                         </>
                       );
                     })}

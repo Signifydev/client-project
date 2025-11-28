@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
 
 export async function GET() {
   try {
@@ -32,8 +33,31 @@ export async function POST(request) {
     await connectDB();
     const db = mongoose.connection.db;
     
+    // Check if loginId already exists
+    const existingMember = await db.collection('team_members').findOne({ 
+      loginId: body.loginId 
+    });
+    
+    if (existingMember) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Login ID already exists' 
+      }, { status: 400 });
+    }
+    
+    // Hash password
+    const hashedPassword = await bcrypt.hash(body.password, 12);
+    
     const newMember = {
-      ...body,
+      name: body.name,
+      phone: body.phone,
+      whatsappNumber: body.whatsappNumber || '',
+      address: body.address || '',
+      loginId: body.loginId,
+      password: hashedPassword,
+      role: body.role,
+      officeCategory: body.role === 'Data Entry Operator' ? (body.officeCategory || '') : '',
+      status: body.status || 'active',
       createdAt: new Date(),
       joinDate: new Date()
     };
@@ -42,12 +66,79 @@ export async function POST(request) {
     
     console.log('Insert result:', result); // Debug log
     
+    // Return member without password for security
+    const { password, ...memberWithoutPassword } = newMember;
+    
     return NextResponse.json({ 
       success: true, 
-      data: { ...newMember, _id: result.insertedId }
+      data: { ...memberWithoutPassword, _id: result.insertedId }
     }, { status: 201 });
   } catch (error) {
     console.error('POST Team Member Error:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: error.message 
+    }, { status: 500 });
+  }
+}
+
+export async function PUT(request) {
+  try {
+    const body = await request.json();
+    console.log('Updating team member:', body); // Debug log
+    
+    await connectDB();
+    const db = mongoose.connection.db;
+    
+    const updateData = {
+      name: body.name,
+      phone: body.phone,
+      whatsappNumber: body.whatsappNumber || '',
+      address: body.address || '',
+      loginId: body.loginId,
+      role: body.role,
+      officeCategory: body.role === 'Data Entry Operator' ? (body.officeCategory || '') : '',
+      status: body.status || 'active',
+      updatedAt: new Date()
+    };
+    
+    // If password is provided, hash it
+    if (body.password) {
+      updateData.password = await bcrypt.hash(body.password, 12);
+    }
+    
+    let result;
+    
+    // Try different ID formats since _id might be string or ObjectId
+    if (mongoose.Types.ObjectId.isValid(body.memberId)) {
+      result = await db.collection('team_members').updateOne(
+        { _id: new mongoose.Types.ObjectId(body.memberId) },
+        { $set: updateData }
+      );
+    } else {
+      result = await db.collection('team_members').updateOne(
+        { _id: body.memberId },
+        { $set: updateData }
+      );
+    }
+    
+    console.log('Update result:', result); // Debug log
+    
+    if (result.matchedCount === 0) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Team member not found' 
+      }, { status: 404 });
+    }
+    
+    return NextResponse.json({ 
+      success: true,
+      message: 'Team member updated successfully',
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount
+    });
+  } catch (error) {
+    console.error('PUT Team Member Error:', error);
     return NextResponse.json({ 
       success: false, 
       error: error.message 
