@@ -721,7 +721,24 @@ const calculateNextEmiDate = (currentDate: string, loanType: string): string => 
   return date.toISOString().split('T')[0];
 };
 const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+// === PASTE FIX 2 CODE HERE ===
+// IST-aware date comparison
+const isSameDateIST = (date1: Date, date2: Date): boolean => {
+  // Convert both dates to IST for comparison
+  const istDate1 = new Date(date1.getTime() + (5 * 60 + 30) * 60 * 1000);
+  const istDate2 = new Date(date2.getTime() + (5 * 60 + 30) * 60 * 1000);
+  
+  return istDate1.getFullYear() === istDate2.getFullYear() &&
+         istDate1.getMonth() === istDate2.getMonth() &&
+         istDate1.getDate() === istDate2.getDate();
+};
 
+// IST-aware today check
+const getTodayIST = (): Date => {
+  const now = new Date();
+  return new Date(now.getTime() + (5 * 60 + 30) * 60 * 1000);
+};
+// === END FIX 2 CODE ===
 // Fix the calendar generation logic in generateCalendar function
 // Fix the calendar generation logic in generateCalendar function
 const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory[], loanFilter: string = 'all'): CalendarDay[] => {
@@ -729,6 +746,8 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
   const year = month.getFullYear();
   const monthIndex = month.getMonth();
   
+  // Convert month to IST for accurate calendar generation
+  const monthIST = new Date(month.getTime() + (5 * 60 + 30) * 60 * 1000);
   const firstDay = new Date(year, monthIndex, 1);
   const lastDay = new Date(year, monthIndex + 1, 0);
   
@@ -738,18 +757,16 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
     ? activeLoans 
     : activeLoans.filter(loan => loan._id === loanFilter || loan.loanNumber === loanFilter);
 
-  console.log('📅 Calendar Debug:', {
-    month: month.toISOString(),
+  console.log('📅 Calendar Debug (IST):', {
+    month: month.toString(),
+    monthIST: monthIST.toString(),
     activeLoansCount: activeLoans.length,
-    filteredLoansCount: filteredLoans.length,
-    loanFilter,
-    filteredLoanNumbers: filteredLoans.map(l => l.loanNumber)
+    filteredLoansCount: filteredLoans.length
   });
 
-  // FIXED: Create a map to track processed payments to avoid duplicates
+  // Create a map to track processed payments to avoid duplicates
   const processedPaymentIds = new Set();
   
-  // SIMPLIFIED APPROACH: Process each date and check payment status for filtered loans
   const startingDayOfWeek = firstDay.getDay();
   
   // Generate previous month days
@@ -763,13 +780,16 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
     });
   }
   
-  // Generate current month days with PROPER DATE HANDLING
+  // Generate current month days with IST TIMEZONE HANDLING
   for (let day = 1; day <= lastDay.getDate(); day++) {
     const date = new Date(year, monthIndex, day);
-    date.setHours(0, 0, 0, 0);
     
-    const isToday = date.toDateString() === new Date().toDateString();
-    const dateStr = date.toISOString().split('T')[0];
+    // Convert date to IST for accurate comparison
+    const dateIST = new Date(date.getTime() + (5 * 60 + 30) * 60 * 1000);
+    const todayIST = getTodayIST();
+    
+    const isToday = isSameDateIST(date, todayIST);
+    const dateStr = dateIST.toISOString().split('T')[0];
     
     let emiStatus: CalendarDay['emiStatus'] = 'none';
     let emiAmount = 0;
@@ -782,15 +802,12 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
       
       // Check if there's a payment for this loan on this date
       const loanPayments = paymentHistory.filter(payment => {
-        // FIXED: Proper date comparison without timezone issues
+        // FIX: Use IST date for comparison
         const paymentDate = new Date(payment.paymentDate);
-        paymentDate.setHours(0, 0, 0, 0); // Normalize time to avoid timezone issues
+        const paymentDateIST = new Date(paymentDate.getTime() + (5 * 60 + 30) * 60 * 1000);
         
-        const currentDate = new Date(date);
-        currentDate.setHours(0, 0, 0, 0);
-        
-        // Compare dates directly
-        const datesMatch = paymentDate.getTime() === currentDate.getTime();
+        // Compare dates in IST
+        const datesMatch = isSameDateIST(paymentDateIST, dateIST);
         
         if (!datesMatch) return false;
         
@@ -801,10 +818,10 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
         if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.advanceToDate) {
           const advanceFrom = new Date(payment.advanceFromDate);
           const advanceTo = new Date(payment.advanceToDate);
-          advanceFrom.setHours(0, 0, 0, 0);
-          advanceTo.setHours(0, 0, 0, 0);
+          const advanceFromIST = new Date(advanceFrom.getTime() + (5 * 60 + 30) * 60 * 1000);
+          const advanceToIST = new Date(advanceTo.getTime() + (5 * 60 + 30) * 60 * 1000);
           
-          return paymentBelongsToLoan && currentDate >= advanceFrom && currentDate <= advanceTo;
+          return paymentBelongsToLoan && dateIST >= advanceFromIST && dateIST <= advanceToIST;
         }
         
         return paymentBelongsToLoan;
@@ -812,21 +829,18 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
 
       // Filter out duplicate payments
       const uniqueLoanPayments = loanPayments.filter(payment => {
-        if (!payment._id) return true; // If no ID, include it
-        if (processedPaymentIds.has(payment._id)) return false; // Skip if already processed
-        processedPaymentIds.add(payment._id); // Mark as processed
+        if (!payment._id) return true;
+        if (processedPaymentIds.has(payment._id)) return false;
+        processedPaymentIds.add(payment._id);
         return true;
       });
 
       // If there are payments for this loan on this date, mark as paid
       if (uniqueLoanPayments.length > 0) {
-        console.log(`✅ Payment found for ${loan.loanNumber} on ${dateStr}:`, {
-          payments: uniqueLoanPayments.map(p => ({ 
-            id: p._id, 
-            amount: p.amount, 
-            type: p.paymentType,
-            paymentDate: p.paymentDate 
-          }))
+        console.log(`✅ Payment found for ${loan.loanNumber} on ${dateStr} (IST):`, {
+          paymentDate: uniqueLoanPayments[0].paymentDate,
+          calendarDate: dateStr,
+          amounts: uniqueLoanPayments.map(p => p.amount)
         });
         
         emiStatus = 'paid';
@@ -840,9 +854,9 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
       } 
       // If no payments, check if this date should have an EMI
       else {
-        // Check if this date falls within the loan's EMI schedule
+        // Check if this date falls within the loan's EMI schedule (using IST)
         const loanStartDate = new Date(loan.emiStartDate || loan.dateApplied);
-        loanStartDate.setHours(0, 0, 0, 0);
+        const loanStartDateIST = new Date(loanStartDate.getTime() + (5 * 60 + 30) * 60 * 1000);
         
         const loanEndDate = new Date(loanStartDate);
         const totalPeriods = loan.totalEmiCount || loan.loanDays || 30;
@@ -862,11 +876,11 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
             loanEndDate.setDate(loanEndDate.getDate() + totalPeriods - 1);
         }
 
-        loanEndDate.setHours(0, 0, 0, 0);
+        const loanEndDateIST = new Date(loanEndDate.getTime() + (5 * 60 + 30) * 60 * 1000);
 
-        // Check if current date is within loan period and is an EMI date
-        const isWithinLoanPeriod = date >= loanStartDate && date <= loanEndDate;
-        const isEmiDate = isWithinLoanPeriod && isDateInEMISchedule(date, loanStartDate, loan.loanType);
+        // Check if current date is within loan period and is an EMI date (using IST)
+        const isWithinLoanPeriod = dateIST >= loanStartDateIST && dateIST <= loanEndDateIST;
+        const isEmiDate = isWithinLoanPeriod && isDateInEMISchedule(dateIST, loanStartDateIST, loan.loanType);
 
         if (isEmiDate) {
           emiAmount += loanEmiAmount;
@@ -877,19 +891,16 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
 
           // Only set status if not already paid (from other loans)
           if (emiStatus !== 'paid') {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            
-            if (date < today) {
+            if (dateIST < todayIST) {
               emiStatus = 'overdue';
-            } else if (date.getTime() === today.getTime()) {
+            } else if (isSameDateIST(dateIST, todayIST)) {
               emiStatus = 'due';
             } else {
               emiStatus = 'upcoming';
             }
           }
           
-          console.log(`📅 EMI due for ${loan.loanNumber} on ${dateStr}: ₹${loanEmiAmount}`);
+          console.log(`📅 EMI due for ${loan.loanNumber} on ${dateStr} (IST): ₹${loanEmiAmount}`);
         }
       }
     });
@@ -917,12 +928,13 @@ const generateCalendar = (month: Date, loans: Loan[], paymentHistory: EMIHistory
     });
   }
 
-  console.log(`📊 Final calendar generated:`, {
+  console.log(`📊 Final calendar generated (IST):`, {
     totalDays: days.length,
     daysWithPayments: days.filter(d => d.emiStatus === 'paid').length,
-    daysWithDue: days.filter(d => d.emiStatus === 'due').length,
-    daysWithOverdue: days.filter(d => d.emiStatus === 'overdue').length,
-    processedPaymentCount: processedPaymentIds.size
+    samplePaidDays: days.filter(d => d.emiStatus === 'paid').slice(0, 3).map(d => ({
+      date: d.date.toISOString().split('T')[0],
+      amount: d.emiAmount
+    }))
   });
 
   return days;
@@ -1018,34 +1030,38 @@ const isDateInEMISchedule = (date: Date, startDate: Date, loanType: string): boo
         // Filter out renewed loans
         const activeLoans = allLoans.filter(loan => !loan.isRenewed && loan.status === 'active');
         
-        // Get ALL payment history from ALL loans with NORMALIZED DATES
+        // Get ALL payment history from ALL loans with IST TIMEZONE FIX
         const allPaymentHistory = activeLoans.flatMap(loan => 
           (loan.emiHistory || []).map(payment => {
-            // FIXED: Normalize payment dates to avoid timezone issues
+            // FIX FOR IST TIMEZONE: Convert to IST by adding 5 hours 30 minutes
             const paymentDate = new Date(payment.paymentDate);
-            paymentDate.setHours(0, 0, 0, 0); // Remove time component
+            // Add IST offset (5 hours 30 minutes) to convert from UTC to IST
+            const istDate = new Date(paymentDate.getTime() + (5 * 60 + 30) * 60 * 1000);
+            const istDateString = istDate.toISOString().split('T')[0];
+            
+            console.log('🕒 Date Conversion:', {
+              original: payment.paymentDate,
+              utc: paymentDate.toISOString(),
+              ist: istDateString,
+              istFull: istDate.toString()
+            });
             
             return {
               ...payment,
               loanId: loan._id,
               loanNumber: loan.loanNumber,
-              paymentDate: paymentDate.toISOString().split('T')[0] // Store as normalized date string
+              paymentDate: istDateString // Store as IST date
             };
           })
         );
 
-        console.log('📅 Calendar Data:', {
+        console.log('📅 Calendar Data with IST Fix:', {
           customer: customer.name,
           activeLoans: activeLoans.length,
           paymentHistory: allPaymentHistory.length,
-          paymentsByLoan: activeLoans.map(loan => ({
-            loanNumber: loan.loanNumber,
-            loanId: loan._id,
-            payments: (loan.emiHistory || []).length,
-            samplePayment: loan.emiHistory && loan.emiHistory.length > 0 ? {
-              originalDate: loan.emiHistory[0].paymentDate,
-              normalizedDate: new Date(loan.emiHistory[0].paymentDate).toISOString().split('T')[0]
-            } : null
+          sampleDates: allPaymentHistory.slice(0, 3).map(p => ({
+            original: p.paymentDate,
+            converted: new Date(p.paymentDate).toString()
           }))
         });
 
@@ -1066,18 +1082,20 @@ const isDateInEMISchedule = (date: Date, startDate: Date, loanType: string): boo
     }
   } catch (error) {
     console.error('Error loading calendar data:', error);
+    // Fallback with IST timezone fix
     const allLoans = getAllCustomerLoans(customer, null);
     const activeLoans = allLoans.filter(loan => !loan.isRenewed && loan.status === 'active');
     const allPaymentHistory = activeLoans.flatMap(loan => 
       (loan.emiHistory || []).map(payment => {
         const paymentDate = new Date(payment.paymentDate);
-        paymentDate.setHours(0, 0, 0, 0);
+        const istDate = new Date(paymentDate.getTime() + (5 * 60 + 30) * 60 * 1000);
+        const istDateString = istDate.toISOString().split('T')[0];
         
         return {
           ...payment,
           loanId: loan._id,
           loanNumber: loan.loanNumber,
-          paymentDate: paymentDate.toISOString().split('T')[0]
+          paymentDate: istDateString
         };
       })
     );

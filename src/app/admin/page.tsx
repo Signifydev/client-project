@@ -267,7 +267,6 @@ function CollectionView({ onBack }: { onBack: () => void }) {
 }
 
 // Loan Details Modal Component
-// Loan Details Modal Component - UPDATED
 function LoanDetailsModal({ stats, onClose }: { 
   stats: any;
   onClose: () => void;
@@ -333,7 +332,7 @@ function LoanDetailsModal({ stats, onClose }: {
             </button>
           </div>
 
-          {/* Time Range Filter - UPDATED */}
+          {/* Time Range Filter */}
           <div className="flex space-x-2 mb-6">
             {['daily', 'weekly', 'monthly'].map((range) => (
               <button
@@ -350,7 +349,7 @@ function LoanDetailsModal({ stats, onClose }: {
             ))}
           </div>
 
-          {/* Summary Cards - UPDATED */}
+          {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
               <p className="text-sm font-medium text-blue-600">Total {timeRange.charAt(0).toUpperCase() + timeRange.slice(1)} Loans</p>
@@ -767,8 +766,29 @@ function EnhancedReportsView({ onBack }: { onBack: () => void }) {
 }
 
 // Team Management Component
-// Team Management Component - UPDATED
-function TeamManagementView({ onBack }: { onBack: () => void }) {
+function TeamManagementView({ 
+  onBack,
+  showViewDetailsModal,
+  setShowViewDetailsModal,
+  selectedTeamMember,
+  setSelectedTeamMember,
+  showResetCredentials,
+  setShowResetCredentials,
+  newCredentials,
+  setNewCredentials,
+  handleResetCredentials
+}: { 
+  onBack: () => void;
+  showViewDetailsModal: boolean;
+  setShowViewDetailsModal: (value: boolean) => void;
+  selectedTeamMember: any;
+  setSelectedTeamMember: (member: any) => void;
+  showResetCredentials: boolean;
+  setShowResetCredentials: (value: boolean) => void;
+  newCredentials: any;
+  setNewCredentials: (credentials: any) => void;
+  handleResetCredentials: () => void;
+}) {
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
@@ -834,6 +854,12 @@ function TeamManagementView({ onBack }: { onBack: () => void }) {
     } else {
       setShowDataEntryModal(true);
     }
+  };
+
+  // ADDED: View Details function
+  const handleViewDetails = (member: any) => {
+    setSelectedTeamMember(member);
+    setShowViewDetailsModal(true);
   };
 
   const handleAddRecoveryMember = () => {
@@ -1042,6 +1068,14 @@ function TeamManagementView({ onBack }: { onBack: () => void }) {
                   </div>
 
                   <div className="flex items-center space-x-2">
+                    {/* ADDED: View Details Button */}
+                    <button 
+                      onClick={() => handleViewDetails(member)}
+                      className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                    >
+                      View Details
+                    </button>
+                    
                     <button 
                       onClick={() => handleEditMember(member)}
                       className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
@@ -1093,12 +1127,214 @@ function TeamManagementView({ onBack }: { onBack: () => void }) {
           }}
         />
       )}
+
+      {/* ADDED: View Details Modal */}
+      {showViewDetailsModal && selectedTeamMember && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-900">Team Member Details</h2>
+                <button 
+                  onClick={() => {
+                    setShowViewDetailsModal(false);
+                    setSelectedTeamMember(null);
+                    setShowResetCredentials(false);
+                  }}
+                  className="text-gray-500 hover:text-gray-700 text-2xl"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Member Information */}
+              <div className="space-y-6">
+                {/* Basic Information */}
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Basic Information</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                      <p className="text-lg font-semibold text-gray-900">{selectedTeamMember.name}</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        selectedTeamMember.role === 'Recovery Team' 
+                          ? 'bg-red-100 text-red-800' 
+                          : 'bg-blue-100 text-blue-800'
+                      }`}>
+                        {selectedTeamMember.role}
+                      </span>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                      <p className="text-lg font-semibold text-gray-900">{selectedTeamMember.phone}</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        selectedTeamMember.status === 'active' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-red-100 text-red-800'
+                      }`}>
+                        {selectedTeamMember.status}
+                      </span>
+                    </div>
+                    {selectedTeamMember.whatsappNumber && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">WhatsApp Number</label>
+                        <p className="text-lg font-semibold text-gray-900">{selectedTeamMember.whatsappNumber}</p>
+                      </div>
+                    )}
+                    {selectedTeamMember.officeCategory && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Office Category</label>
+                        <p className="text-lg font-semibold text-gray-900">{selectedTeamMember.officeCategory}</p>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {selectedTeamMember.address && (
+                    <div className="mt-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                      <p className="text-lg font-semibold text-gray-900">{selectedTeamMember.address}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Login Credentials */}
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900">Login Credentials</h3>
+                    <button
+                      onClick={() => setShowResetCredentials(!showResetCredentials)}
+                      className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium"
+                    >
+                      {showResetCredentials ? 'Cancel Reset' : 'Reset Credentials'}
+                    </button>
+                  </div>
+
+                  {!showResetCredentials ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Login ID</label>
+                        <p className="text-lg font-semibold text-gray-900 font-mono bg-gray-100 p-2 rounded">
+                          {selectedTeamMember.loginId}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                        <p className="text-lg font-semibold text-gray-500 italic">
+                          ••••••••••••
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Password is securely stored and cannot be viewed
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                      <h4 className="text-md font-semibold text-yellow-800 mb-3">Reset Login Credentials</h4>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">New Login ID</label>
+                          <input
+                            type="text"
+                            value={newCredentials.loginId}
+                            onChange={(e) => setNewCredentials({...newCredentials, loginId: e.target.value})}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                            placeholder="Enter new Login ID"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">New Password</label>
+                          <input
+                            type="password"
+                            value={newCredentials.password}
+                            onChange={(e) => setNewCredentials({...newCredentials, password: e.target.value})}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                            placeholder="Enter new password"
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Confirm New Password</label>
+                          <input
+                            type="password"
+                            value={newCredentials.confirmPassword}
+                            onChange={(e) => setNewCredentials({...newCredentials, confirmPassword: e.target.value})}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                            placeholder="Confirm new password"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end space-x-3">
+                        <button
+                          onClick={() => setShowResetCredentials(false)}
+                          className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleResetCredentials}
+                          className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700"
+                        >
+                          Update Credentials
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Additional Information */}
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Additional Information</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Member Since</label>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {selectedTeamMember.joinDate ? new Date(selectedTeamMember.joinDate).toLocaleDateString() : 'N/A'}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Last Updated</label>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {selectedTeamMember.updatedAt ? new Date(selectedTeamMember.updatedAt).toLocaleDateString() : 'N/A'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 mt-6 pt-6 border-t border-gray-200">
+                <button
+                  onClick={() => {
+                    setShowViewDetailsModal(false);
+                    setSelectedTeamMember(null);
+                    setShowResetCredentials(false);
+                  }}
+                  className="px-6 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => handleEditMember(selectedTeamMember)}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  Edit Member
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// Recovery Team Member Modal Component - UPDATED WIDTH
-// Recovery Team Member Modal Component - UPDATED
+// Recovery Team Member Modal Component
 function RecoveryTeamModal({ member, onSave, onClose }: { 
   member: any; 
   onSave: (data: any) => void;
@@ -1364,7 +1600,7 @@ function RecoveryTeamModal({ member, onSave, onClose }: {
   );
 }
 
-// Data Entry Operator Modal Component - UPDATED
+// Data Entry Operator Modal Component
 function DataEntryOperatorModal({ member, onSave, onClose }: { 
   member: any; 
   onSave: (data: any) => void;
@@ -2395,7 +2631,7 @@ function PendingRequestsView({
     return String(value);
   };
 
-  // Get all customer details for display - FIXED VERSION
+  // Get all customer details for display
   const getCustomerDetails = (request: any) => {
     console.log('🔍 Full Request data:', request);
     
@@ -2424,7 +2660,7 @@ function PendingRequestsView({
     return extractedData;
   };
 
-  // Render detailed customer information - FIXED VERSION
+  // Render detailed customer information
   const renderCustomerDetails = (request: any) => {
     const customerData = getCustomerDetails(request);
     
@@ -2946,28 +3182,84 @@ export default function DashboardPage() {
   const [customers, setCustomers] = useState<any[]>([])
   const [pendingRequests, setPendingRequests] = useState<any[]>([])
   const [dashboardStats, setDashboardStats] = useState({
-  totalLoans: 0,
-  totalAmount: 0,
-  totalCustomers: 0,
-  totalTeamMembers: 0, // ADD THIS LINE
-  pendingRequests: 0
-})
+    totalLoans: 0,
+    totalAmount: 0,
+    totalCustomers: 0,
+    totalTeamMembers: 0,
+    pendingRequests: 0
+  })
+
+  const [showViewDetailsModal, setShowViewDetailsModal] = useState(false);
+  const [selectedTeamMember, setSelectedTeamMember] = useState<any>(null);
+  const [showResetCredentials, setShowResetCredentials] = useState(false);
+  const [newCredentials, setNewCredentials] = useState({
+    loginId: '',
+    password: '',
+    confirmPassword: ''
+  });
   
   // Filter states
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
-  customerNumber: '',
-  loanType: '',
-  status: '',
-  officeCategory: '',
-  category: '' // Add category filter
-});
+    customerNumber: '',
+    loanType: '',
+    status: '',
+    officeCategory: '',
+    category: ''
+  });
 
   // Sort state
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   const [loading, setLoading] = useState(true)
   const [showLoanDetails, setShowLoanDetails] = useState(false)
+
+  // Handle reset credentials function - ADDED
+  const handleResetCredentials = async () => {
+    if (!newCredentials.loginId || !newCredentials.password) {
+      alert('Please enter both Login ID and Password');
+      return;
+    }
+
+    if (newCredentials.password !== newCredentials.confirmPassword) {
+      alert('Passwords do not match!');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/admin/team-members', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          memberId: selectedTeamMember._id,
+          loginId: newCredentials.loginId,
+          password: newCredentials.password,
+          name: selectedTeamMember.name,
+          phone: selectedTeamMember.phone,
+          whatsappNumber: selectedTeamMember.whatsappNumber,
+          address: selectedTeamMember.address,
+          role: selectedTeamMember.role,
+          officeCategory: selectedTeamMember.officeCategory,
+          status: selectedTeamMember.status
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        alert('Credentials updated successfully!');
+        setShowResetCredentials(false);
+        setNewCredentials({ loginId: '', password: '', confirmPassword: '' });
+        // Refresh team members if needed
+      } else {
+        alert(`Error updating credentials: ${data.error || 'Unknown error'}`);
+      }
+    } catch (error: any) {
+      alert('Error updating credentials: ' + error.message);
+    }
+  };
 
   // Enhanced filtered and sorted customers calculation
   const filteredAndSortedCustomers = customers
@@ -3032,38 +3324,35 @@ export default function DashboardPage() {
     }
   }
 
- const fetchPendingRequests = async () => {
-  try {
-    console.log('🟡 Super Admin - Fetching pending requests...');
-    
-    const response = await fetch('/api/admin/requests');
-    
-    if (!response.ok) {
-      console.log('❌ Admin requests failed, trying data-entry endpoint...');
-      const fallbackResponse = await fetch('/api/data-entry/requests');
+  const fetchPendingRequests = async () => {
+    try {
+      console.log('🟡 Super Admin - Fetching pending requests...');
       
-      if (!fallbackResponse.ok) {
-        throw new Error(`HTTP error! status: ${fallbackResponse.status}`);
+      const response = await fetch('/api/admin/requests');
+      
+      if (!response.ok) {
+        console.log('❌ Admin requests failed, trying data-entry endpoint...');
+        const fallbackResponse = await fetch('/api/data-entry/requests');
+        
+        if (!fallbackResponse.ok) {
+          throw new Error(`HTTP error! status: ${fallbackResponse.status}`);
+        }
+        
+        const fallbackData = await fallbackResponse.json();
+        console.log('🔵 Data-entry requests response STRUCTURE:', fallbackData);
+        
+        if (fallbackData.success && Array.isArray(fallbackData.data?.requests)) {
+          console.log('📊 First request object:', JSON.stringify(fallbackData.data.requests[0], null, 2));
+          setPendingRequests(fallbackData.data.requests);
+        } else {
+          setPendingRequests([]);
+        }
+        return;
       }
-      
-      const fallbackData = await fallbackResponse.json();
-      console.log('🔵 Data-entry requests response STRUCTURE:', fallbackData);
-      
-      // Log the first request to see its structure
-      if (fallbackData.success && Array.isArray(fallbackData.data?.requests)) {
-        console.log('📊 First request object:', JSON.stringify(fallbackData.data.requests[0], null, 2));
-        setPendingRequests(fallbackData.data.requests);
-      } else {
-        setPendingRequests([]);
-      }
-      return;
-    }
 
-    const data = await response.json();
-    console.log('🔵 Admin requests response STRUCTURE:', data);
-    
-    // Log the first request to see its structure
-    if (data.success) {
+      const data = await response.json();
+      console.log('🔵 Admin requests response STRUCTURE:', data);
+      
       let requestsArray = [];
       
       if (Array.isArray(data.data)) {
@@ -3079,13 +3368,12 @@ export default function DashboardPage() {
       }
       
       setPendingRequests(requestsArray);
+      
+    } catch (error) {
+      console.error('❌ Error fetching requests:', error);
+      setPendingRequests([]);
     }
-    
-  } catch (error) {
-    console.error('❌ Error fetching requests:', error);
-    setPendingRequests([]);
-  }
-};
+  };
 
   useEffect(() => {
     const loadData = async () => {
@@ -3100,15 +3388,11 @@ export default function DashboardPage() {
     loadData()
   }, [activeTab])
 
-  // Handle request approval - FIXED VERSION
+  // Handle request approval
   const handleApproveRequest = async (request: any) => {
     try {
       console.log('🟡 Approving request:', request._id);
       console.log('📊 Request type:', request.type);
-      
-      // For both NEW and EDIT requests, just call the approve endpoint
-      // The backend will handle customer creation/activation automatically
-      console.log('📨 Sending approval request to backend...');
       
       const approveResponse = await fetch('/api/admin/approve-request', {
         method: 'POST',
@@ -3141,7 +3425,7 @@ export default function DashboardPage() {
     }
   };
 
-  // Handle request rejection - FIXED VERSION
+  // Handle request rejection
   const handleRejectRequest = async (request: any) => {
     try {
       console.log('🟡 Rejecting request:', request._id);
@@ -3163,7 +3447,6 @@ export default function DashboardPage() {
 
       if (response.ok && data.success) {
         alert('Request rejected successfully!');
-        // Refresh data
         await Promise.all([
           fetchDashboardData(),
           fetchPendingRequests()
@@ -3231,259 +3514,259 @@ export default function DashboardPage() {
 
   // Enhanced Search and Filters function with Sort Button
   const renderSearchAndFilters = () => {
-  const handleFilterChange = (key: keyof typeof filters, value: string) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
-  };
+    const handleFilterChange = (key: keyof typeof filters, value: string) => {
+      setFilters(prev => ({ ...prev, [key]: value }));
+    };
 
-  const clearFilters = () => {
-    setFilters({
-      customerNumber: '',
-      loanType: '',
-      status: '',
-      officeCategory: '',
-      category: ''
-    });
-    setSearchTerm('');
-    setSortOrder('asc');
-  };
+    const clearFilters = () => {
+      setFilters({
+        customerNumber: '',
+        loanType: '',
+        status: '',
+        officeCategory: '',
+        category: ''
+      });
+      setSearchTerm('');
+      setSortOrder('asc');
+    };
 
-  const loanTypes = [...new Set(customers.map(customer => customer.loanType).filter(Boolean))];
-  const officeCategories = [...new Set(customers.map(customer => customer.officeCategory).filter(Boolean))];
-  const customerCategories = [...new Set(customers.map(customer => customer.category).filter(Boolean))];
+    const loanTypes = [...new Set(customers.map(customer => customer.loanType).filter(Boolean))];
+    const officeCategories = [...new Set(customers.map(customer => customer.officeCategory).filter(Boolean))];
+    const customerCategories = [...new Set(customers.map(customer => customer.category).filter(Boolean))];
 
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="flex-1">
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search by customer name or customer number..."
-              className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <span className="text-gray-400">🔍</span>
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex-1">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search by customer name or customer number..."
+                className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <span className="text-gray-400">🔍</span>
+              </div>
             </div>
           </div>
+          
+          <div className="flex gap-2">
+            {/* Sort Button */}
+            <button
+              onClick={toggleSortOrder}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <span>Sort</span>
+              <span className={`transform ${sortOrder === 'asc' ? '' : 'rotate-180'}`}>
+                ↓
+              </span>
+            </button>
+            
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <span>Filters</span>
+              <span className={`transform transition-transform ${showFilters ? 'rotate-180' : ''}`}>
+                ▼
+              </span>
+            </button>
+            
+            {(filters.customerNumber || filters.loanType || filters.status || filters.officeCategory || filters.category || searchTerm || sortOrder !== 'asc') && (
+              <button
+                onClick={clearFilters}
+                className="px-4 py-2 text-red-600 border border-red-300 rounded-lg hover:bg-red-50 transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
-        
-        <div className="flex gap-2">
-          {/* Sort Button */}
-          <button
-            onClick={toggleSortOrder}
-            className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            <span>Sort</span>
-            <span className={`transform ${sortOrder === 'asc' ? '' : 'rotate-180'}`}>
-              ↓
-            </span>
-          </button>
+
+        {showFilters && (
+          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              {/* Customer Number Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Customer Number
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter customer number..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  value={filters.customerNumber}
+                  onChange={(e) => handleFilterChange('customerNumber', e.target.value)}
+                />
+              </div>
+
+              {/* Loan Type Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Loan Type
+                </label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  value={filters.loanType}
+                  onChange={(e) => handleFilterChange('loanType', e.target.value)}
+                >
+                  <option value="">All Loan Types</option>
+                  {loanTypes.map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Status Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Status
+                </label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  value={filters.status}
+                  onChange={(e) => handleFilterChange('status', e.target.value)}
+                >
+                  <option value="">All Status</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="pending">Pending</option>
+                </select>
+              </div>
+
+              {/* Office Category Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Office Category
+                </label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  value={filters.officeCategory}
+                  onChange={(e) => handleFilterChange('officeCategory', e.target.value)}
+                >
+                  <option value="">All Offices</option>
+                  {officeCategories.map(office => (
+                    <option key={office} value={office}>{office}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Category Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Category
+                </label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  value={filters.category}
+                  onChange={(e) => handleFilterChange('category', e.target.value)}
+                >
+                  <option value="">All Categories</option>
+                  <option value="A">Category A</option>
+                  <option value="B">Category B</option>
+                  <option value="C">Category C</option>
+                  {customerCategories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Active Filters Display */}
+            {(filters.customerNumber || filters.loanType || filters.status || filters.officeCategory || filters.category || sortOrder !== 'asc') && (
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm text-gray-600">Active filters:</span>
+                  {filters.customerNumber && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
+                      Customer No: {filters.customerNumber}
+                      <button 
+                        onClick={() => handleFilterChange('customerNumber', '')}
+                        className="ml-1 text-blue-600 hover:text-blue-800"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                  {filters.loanType && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
+                      Type: {filters.loanType}
+                      <button 
+                        onClick={() => handleFilterChange('loanType', '')}
+                        className="ml-1 text-green-600 hover:text-green-800"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                  {filters.status && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
+                      Status: {filters.status}
+                      <button 
+                        onClick={() => handleFilterChange('status', '')}
+                        className="ml-1 text-purple-600 hover:text-purple-800"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                  {filters.officeCategory && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-orange-100 text-orange-800">
+                      Office: {filters.officeCategory}
+                      <button 
+                        onClick={() => handleFilterChange('officeCategory', '')}
+                        className="ml-1 text-orange-600 hover:text-orange-800"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                  {filters.category && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-indigo-100 text-indigo-800">
+                      Category: {filters.category}
+                      <button 
+                        onClick={() => handleFilterChange('category', '')}
+                        className="ml-1 text-indigo-600 hover:text-indigo-800"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800">
+                    Sort: {sortOrder === 'asc' ? 'A-Z' : 'Z-A'}
+                    <button 
+                      onClick={() => setSortOrder('asc')}
+                      className="ml-1 text-gray-600 hover:text-gray-800"
+                    >
+                      ×
+                    </button>
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex justify-between items-center">
+          <span className="text-sm text-gray-600">
+            Showing {filteredAndSortedCustomers.length} of {customers.length} customers
+            {sortOrder === 'asc' ? ' (A-Z)' : ' (Z-A)'}
+          </span>
           
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            <span>Filters</span>
-            <span className={`transform transition-transform ${showFilters ? 'rotate-180' : ''}`}>
-              ▼
-            </span>
-          </button>
-          
-          {(filters.customerNumber || filters.loanType || filters.status || filters.officeCategory || filters.category || searchTerm || sortOrder !== 'asc') && (
+          {(filteredAndSortedCustomers.length < customers.length || sortOrder !== 'asc') && (
             <button
               onClick={clearFilters}
-              className="px-4 py-2 text-red-600 border border-red-300 rounded-lg hover:bg-red-50 transition-colors"
+              className="text-sm text-blue-600 hover:text-blue-800"
             >
-              Clear
+              Clear all filters
             </button>
           )}
         </div>
       </div>
-
-      {showFilters && (
-        <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-            {/* Customer Number Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Customer Number
-              </label>
-              <input
-                type="text"
-                placeholder="Enter customer number..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                value={filters.customerNumber}
-                onChange={(e) => handleFilterChange('customerNumber', e.target.value)}
-              />
-            </div>
-
-            {/* Loan Type Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Loan Type
-              </label>
-              <select
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                value={filters.loanType}
-                onChange={(e) => handleFilterChange('loanType', e.target.value)}
-              >
-                <option value="">All Loan Types</option>
-                {loanTypes.map(type => (
-                  <option key={type} value={type}>{type}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Status Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Status
-              </label>
-              <select
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                value={filters.status}
-                onChange={(e) => handleFilterChange('status', e.target.value)}
-              >
-                <option value="">All Status</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-                <option value="pending">Pending</option>
-              </select>
-            </div>
-
-            {/* Office Category Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Office Category
-              </label>
-              <select
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                value={filters.officeCategory}
-                onChange={(e) => handleFilterChange('officeCategory', e.target.value)}
-              >
-                <option value="">All Offices</option>
-                {officeCategories.map(office => (
-                  <option key={office} value={office}>{office}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Category Filter - NEW */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Category
-              </label>
-              <select
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                value={filters.category}
-                onChange={(e) => handleFilterChange('category', e.target.value)}
-              >
-                <option value="">All Categories</option>
-                <option value="A">Category A</option>
-                <option value="B">Category B</option>
-                <option value="C">Category C</option>
-                {customerCategories.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Active Filters Display */}
-          {(filters.customerNumber || filters.loanType || filters.status || filters.officeCategory || filters.category || sortOrder !== 'asc') && (
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm text-gray-600">Active filters:</span>
-                {filters.customerNumber && (
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
-                    Customer No: {filters.customerNumber}
-                    <button 
-                      onClick={() => handleFilterChange('customerNumber', '')}
-                      className="ml-1 text-blue-600 hover:text-blue-800"
-                    >
-                      ×
-                    </button>
-                  </span>
-                )}
-                {filters.loanType && (
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
-                    Type: {filters.loanType}
-                    <button 
-                      onClick={() => handleFilterChange('loanType', '')}
-                      className="ml-1 text-green-600 hover:text-green-800"
-                    >
-                      ×
-                    </button>
-                  </span>
-                )}
-                {filters.status && (
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
-                    Status: {filters.status}
-                    <button 
-                      onClick={() => handleFilterChange('status', '')}
-                      className="ml-1 text-purple-600 hover:text-purple-800"
-                    >
-                      ×
-                    </button>
-                  </span>
-                )}
-                {filters.officeCategory && (
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-orange-100 text-orange-800">
-                    Office: {filters.officeCategory}
-                    <button 
-                      onClick={() => handleFilterChange('officeCategory', '')}
-                      className="ml-1 text-orange-600 hover:text-orange-800"
-                    >
-                      ×
-                    </button>
-                  </span>
-                )}
-                {filters.category && (
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-indigo-100 text-indigo-800">
-                    Category: {filters.category}
-                    <button 
-                      onClick={() => handleFilterChange('category', '')}
-                      className="ml-1 text-indigo-600 hover:text-indigo-800"
-                    >
-                      ×
-                    </button>
-                  </span>
-                )}
-                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800">
-                  Sort: {sortOrder === 'asc' ? 'A-Z' : 'Z-A'}
-                  <button 
-                    onClick={() => setSortOrder('asc')}
-                    className="ml-1 text-gray-600 hover:text-gray-800"
-                  >
-                    ×
-                  </button>
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="flex justify-between items-center">
-        <span className="text-sm text-gray-600">
-          Showing {filteredAndSortedCustomers.length} of {customers.length} customers
-          {sortOrder === 'asc' ? ' (A-Z)' : ' (Z-A)'}
-        </span>
-        
-        {(filteredAndSortedCustomers.length < customers.length || sortOrder !== 'asc') && (
-          <button
-            onClick={clearFilters}
-            className="text-sm text-blue-600 hover:text-blue-800"
-          >
-            Clear all filters
-          </button>
-        )}
-      </div>
-    </div>
-  );
-};
+    );
+  };
 
   // Navigation Tabs - Mobile Scrollable
   const renderNavigation = () => (
@@ -3562,210 +3845,209 @@ export default function DashboardPage() {
   )
 
   // Dashboard Section
-  // Dashboard Section - UPDATED
-const renderDashboard = () => (
-  <div className="space-y-6">
-    {/* Welcome Banner */}
-    <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg p-6 text-white">
-      <h1 className="text-2xl font-bold mb-2">Welcome to Super Admin Dashboard</h1>
-      <p className="opacity-90">Manage your loan business efficiently and effectively</p>
+  const renderDashboard = () => (
+    <div className="space-y-6">
+      {/* Welcome Banner */}
+      <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg p-6 text-white">
+        <h1 className="text-2xl font-bold mb-2">Welcome to Super Admin Dashboard</h1>
+        <p className="opacity-90">Manage your loan business efficiently and effectively</p>
+      </div>
+
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Total Active Customers Card */}
+        <div 
+          onClick={() => setActiveTab('customers')}
+          className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Total Active Customers</p>
+              <p className="text-3xl font-bold text-gray-900 mt-2">{dashboardStats.totalCustomers?.toLocaleString() || '0'}</p>
+              <p className="text-xs text-gray-500 mt-1">Currently active customers</p>
+            </div>
+            <div className="bg-blue-50 p-3 rounded-lg">
+              <span className="text-blue-600 text-xl font-semibold">👥</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Total Loan Amount Card */}
+        <div 
+          onClick={() => setShowLoanDetails(true)}
+          className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Total Loan Amount</p>
+              <p className="text-3xl font-bold text-gray-900 mt-2">₹{(dashboardStats.totalAmount / 100000).toFixed(1)}L</p>
+              <p className="text-xs text-gray-500 mt-1">Active loans amount</p>
+            </div>
+            <div className="bg-green-50 p-3 rounded-lg">
+              <span className="text-green-600 text-xl font-semibold">💰</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Total Team Member Card */}
+        <div 
+          onClick={() => setActiveTab('team')}
+          className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Total Team Members</p>
+              <p className="text-3xl font-bold text-gray-900 mt-2">{dashboardStats.totalTeamMembers || '0'}</p>
+              <p className="text-xs text-gray-500 mt-1">Active team members</p>
+            </div>
+            <div className="bg-purple-50 p-3 rounded-lg">
+              <span className="text-purple-600 text-xl font-semibold">👨‍💼</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Pending Requests Card */}
+        <div 
+          onClick={() => setActiveTab('requests')}
+          className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Pending Requests</p>
+              <p className="text-3xl font-bold text-orange-600 mt-2">{dashboardStats.pendingRequests}</p>
+              <p className="text-xs text-gray-500 mt-1">Awaiting approval</p>
+            </div>
+            <div className="bg-orange-50 p-3 rounded-lg">
+              <span className="text-orange-600 text-xl font-semibold">📋</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <button 
+          onClick={() => setActiveTab('customers')}
+          className="p-4 bg-blue-50 rounded-lg text-center hover:bg-blue-100 transition-colors border border-blue-200"
+        >
+          <div className="text-blue-600 text-lg mb-2">👥</div>
+          <span className="text-sm font-medium text-blue-900">Manage Customers</span>
+        </button>
+        
+        <button 
+          onClick={() => setActiveTab('requests')}
+          className="p-4 bg-orange-50 rounded-lg text-center hover:bg-orange-100 transition-colors border border-orange-200"
+        >
+          <div className="text-orange-600 text-lg mb-2">📋</div>
+          <span className="text-sm font-medium text-orange-900">Pending Requests</span>
+          {pendingRequests.length > 0 && (
+            <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+              {pendingRequests.length}
+            </span>
+          )}
+        </button>
+        
+        <button 
+          onClick={() => setActiveTab('reports')}
+          className="p-4 bg-purple-50 rounded-lg text-center hover:bg-purple-100 transition-colors border border-purple-200"
+        >
+          <div className="text-purple-600 text-lg mb-2">📊</div>
+          <span className="text-sm font-medium text-purple-900">View Reports</span>
+        </button>
+        
+        <button 
+          onClick={() => setActiveTab('team')}
+          className="p-4 bg-green-50 rounded-lg text-center hover:bg-green-100 transition-colors border border-green-200"
+        >
+          <div className="text-green-600 text-lg mb-2">👨‍💼</div>
+          <span className="text-sm font-medium text-green-900">Team Management</span>
+        </button>
+      </div>
+
+      {/* Recent Activities */}
+      <RecentActivities />
+
+      {/* Loan Details Modal */}
+      {showLoanDetails && (
+        <LoanDetailsModal 
+          stats={dashboardStats}
+          onClose={() => setShowLoanDetails(false)}
+        />
+      )}
     </div>
-
-    {/* Stats Grid - UPDATED ORDER AND ADDED TEAM MEMBER CARD */}
-    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-      {/* Total Active Customers Card - FIRST POSITION */}
-      <div 
-        onClick={() => setActiveTab('customers')}
-        className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-      >
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Total Active Customers</p>
-            <p className="text-3xl font-bold text-gray-900 mt-2">{dashboardStats.totalCustomers?.toLocaleString() || '0'}</p>
-            <p className="text-xs text-gray-500 mt-1">Currently active customers</p>
-          </div>
-          <div className="bg-blue-50 p-3 rounded-lg">
-            <span className="text-blue-600 text-xl font-semibold">👥</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Total Loan Amount Card - SECOND POSITION */}
-      <div 
-        onClick={() => setShowLoanDetails(true)}
-        className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-      >
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Total Loan Amount</p>
-            <p className="text-3xl font-bold text-gray-900 mt-2">₹{(dashboardStats.totalAmount / 100000).toFixed(1)}L</p>
-            <p className="text-xs text-gray-500 mt-1">Active loans amount</p>
-          </div>
-          <div className="bg-green-50 p-3 rounded-lg">
-            <span className="text-green-600 text-xl font-semibold">💰</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Total Team Member Card - THIRD POSITION */}
-      <div 
-        onClick={() => setActiveTab('team')}
-        className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-      >
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Total Team Members</p>
-            <p className="text-3xl font-bold text-gray-900 mt-2">{dashboardStats.totalTeamMembers || '0'}</p>
-            <p className="text-xs text-gray-500 mt-1">Active team members</p>
-          </div>
-          <div className="bg-purple-50 p-3 rounded-lg">
-            <span className="text-purple-600 text-xl font-semibold">👨‍💼</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Pending Requests Card - FOURTH POSITION */}
-      <div 
-        onClick={() => setActiveTab('requests')}
-        className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-      >
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Pending Requests</p>
-            <p className="text-3xl font-bold text-orange-600 mt-2">{dashboardStats.pendingRequests}</p>
-            <p className="text-xs text-gray-500 mt-1">Awaiting approval</p>
-          </div>
-          <div className="bg-orange-50 p-3 rounded-lg">
-            <span className="text-orange-600 text-xl font-semibold">📋</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    {/* Quick Actions */}
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      <button 
-        onClick={() => setActiveTab('customers')}
-        className="p-4 bg-blue-50 rounded-lg text-center hover:bg-blue-100 transition-colors border border-blue-200"
-      >
-        <div className="text-blue-600 text-lg mb-2">👥</div>
-        <span className="text-sm font-medium text-blue-900">Manage Customers</span>
-      </button>
-      
-      <button 
-        onClick={() => setActiveTab('requests')}
-        className="p-4 bg-orange-50 rounded-lg text-center hover:bg-orange-100 transition-colors border border-orange-200"
-      >
-        <div className="text-orange-600 text-lg mb-2">📋</div>
-        <span className="text-sm font-medium text-orange-900">Pending Requests</span>
-        {pendingRequests.length > 0 && (
-          <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-            {pendingRequests.length}
-          </span>
-        )}
-      </button>
-      
-      <button 
-        onClick={() => setActiveTab('reports')}
-        className="p-4 bg-purple-50 rounded-lg text-center hover:bg-purple-100 transition-colors border border-purple-200"
-      >
-        <div className="text-purple-600 text-lg mb-2">📊</div>
-        <span className="text-sm font-medium text-purple-900">View Reports</span>
-      </button>
-      
-      <button 
-        onClick={() => setActiveTab('team')}
-        className="p-4 bg-green-50 rounded-lg text-center hover:bg-green-100 transition-colors border border-green-200"
-      >
-        <div className="text-green-600 text-lg mb-2">👨‍💼</div>
-        <span className="text-sm font-medium text-green-900">Team Management</span>
-      </button>
-    </div>
-
-    {/* Recent Activities */}
-    <RecentActivities />
-
-    {/* Loan Details Modal */}
-    {showLoanDetails && (
-      <LoanDetailsModal 
-        stats={dashboardStats}
-        onClose={() => setShowLoanDetails(false)}
-      />
-    )}
-  </div>
-)
+  )
 
   // Customers Section with Enhanced Filters and Sort
   const renderCustomers = () => (
-  <div className="space-y-6">
-    <div className="flex items-center justify-between">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Customer Management</h1>
-        <p className="text-gray-600">Manage all customer accounts and loan details</p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Customer Management</h1>
+          <p className="text-gray-600">Manage all customer accounts and loan details</p>
+        </div>
+        <span className="text-sm text-gray-600">
+          {customers.length} customers • Sorted {sortOrder === 'asc' ? 'A-Z' : 'Z-A'}
+        </span>
       </div>
-      <span className="text-sm text-gray-600">
-        {customers.length} customers • Sorted {sortOrder === 'asc' ? 'A-Z' : 'Z-A'}
-      </span>
-    </div>
 
-    {/* Enhanced Search and Filters with Sort */}
-    {renderSearchAndFilters()}
+      {/* Enhanced Search and Filters with Sort */}
+      {renderSearchAndFilters()}
 
-    <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Customer Number</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Business</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Office</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Category</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {filteredAndSortedCustomers.map((customer) => (
-              <tr key={customer._id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 w-1/6">{customer.customerNumber}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 w-1/6">{customer.name}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/6">{customer.businessName}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/6">
-                  {customer.officeCategory || 'N/A'}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/6">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    customer.category === 'A' ? 'bg-green-100 text-green-800' :
-                    customer.category === 'B' ? 'bg-yellow-100 text-yellow-800' :
-                    customer.category === 'C' ? 'bg-blue-100 text-blue-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
-                    {customer.category || 'Not specified'}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium w-1/6">
-                  <button 
-                    onClick={() => handleViewDetails(customer)}
-                    className="bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 text-sm"
-                  >
-                    View Details
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {filteredAndSortedCustomers.length === 0 && (
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
               <tr>
-                <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
-                  No customers found
-                </td>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Customer Number</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Name</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Business</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Office</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Category</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Actions</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredAndSortedCustomers.map((customer) => (
+                <tr key={customer._id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 w-1/6">{customer.customerNumber}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 w-1/6">{customer.name}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/6">{customer.businessName}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/6">
+                    {customer.officeCategory || 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 w-1/6">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      customer.category === 'A' ? 'bg-green-100 text-green-800' :
+                      customer.category === 'B' ? 'bg-yellow-100 text-yellow-800' :
+                      customer.category === 'C' ? 'bg-blue-100 text-blue-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {customer.category || 'Not specified'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium w-1/6">
+                    <button 
+                      onClick={() => handleViewDetails(customer)}
+                      className="bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 text-sm"
+                    >
+                      View Details
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {filteredAndSortedCustomers.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
+                    No customers found
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
-  </div>
-)
+  )
 
   // Main render function with consistent header and navigation
   const renderMainContent = () => {
@@ -3796,7 +4078,20 @@ const renderDashboard = () => (
       case 'reports':
         return <EnhancedReportsView onBack={() => setActiveTab('dashboard')} />;
       case 'team':
-        return <TeamManagementView onBack={() => setActiveTab('dashboard')} />;
+        return (
+          <TeamManagementView 
+            onBack={() => setActiveTab('dashboard')}
+            showViewDetailsModal={showViewDetailsModal}
+            setShowViewDetailsModal={setShowViewDetailsModal}
+            selectedTeamMember={selectedTeamMember}
+            setSelectedTeamMember={setSelectedTeamMember}
+            showResetCredentials={showResetCredentials}
+            setShowResetCredentials={setShowResetCredentials}
+            newCredentials={newCredentials}
+            setNewCredentials={setNewCredentials}
+            handleResetCredentials={handleResetCredentials}
+          />
+        );
       case 'collection':
         return <CollectionView onBack={() => setActiveTab('dashboard')} />;
       default:
