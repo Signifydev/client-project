@@ -110,6 +110,9 @@ const EMIRow: React.FC<{
   );
 });
 
+// Set display name for EMIRow
+EMIRow.displayName = 'EMIRow';
+
 interface EMISectionProps {
   currentUserOffice: string;
   currentOperator: {
@@ -468,5 +471,8 @@ const EMISection: React.FC<EMISectionProps> = React.memo(({
     prevProps.refreshKey === nextProps.refreshKey
   );
 });
+
+// Set display name for EMISection
+EMISection.displayName = 'EMISection';
 
 export default EMISection;

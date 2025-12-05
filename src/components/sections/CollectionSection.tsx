@@ -64,7 +64,7 @@ export default function CustomersSection({
 
   // Sort customers by customer number
   const sortedAndFilteredCustomers = useMemo(() => {
-    let filtered = customers.filter(customer => {
+    const filtered = customers.filter(customer => { // FIXED: Changed from let to const
       const matchesSearch = searchQuery === '' || 
         customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (customer.customerNumber && customer.customerNumber.toLowerCase().includes(searchQuery.toLowerCase())) ||

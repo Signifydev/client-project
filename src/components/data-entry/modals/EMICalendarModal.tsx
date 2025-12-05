@@ -116,7 +116,7 @@ export default function EMICalendarModal({
       const monthEnd = new Date(selectedYear, selectedMonth + 1, 0);
 
       // Calculate daily, weekly, or monthly EMI dates
-      let currentDate = new Date(startDate);
+      const currentDate = new Date(startDate); // FIXED: Changed from let to const
       
       if (loan.loanType === 'Daily') {
         // Daily EMI - every day
@@ -165,9 +165,10 @@ export default function EMICalendarModal({
         }
       } else if (loan.loanType === 'Weekly') {
         // Weekly EMI - every 7 days
-        while (currentDate <= monthEnd) {
-          if (currentDate >= monthStart && currentDate <= monthEnd) {
-            const dateKey = currentDate.toISOString().split('T')[0];
+        const weeklyDate = new Date(startDate); // Create a new variable for weekly loop
+        while (weeklyDate <= monthEnd) {
+          if (weeklyDate >= monthStart && weeklyDate <= monthEnd) {
+            const dateKey = weeklyDate.toISOString().split('T')[0];
             emiDueDates.add(dateKey);
             
             const payment = loan.emiHistory?.find(p => {
@@ -195,7 +196,7 @@ export default function EMICalendarModal({
                 loanNumbers: [...(existing?.loanNumbers || []), loanNumber]
               });
             } else {
-              const status: EMIStatusInfo['status'] = currentDate < today ? 'missed' : 'due';
+              const status: EMIStatusInfo['status'] = weeklyDate < today ? 'missed' : 'due';
               emiStatusMap.set(dateKey, {
                 status,
                 amount: existing?.amount || 0,
@@ -203,7 +204,7 @@ export default function EMICalendarModal({
               });
             }
           }
-          currentDate.setDate(currentDate.getDate() + 7);
+          weeklyDate.setDate(weeklyDate.getDate() + 7);
         }
       } else if (loan.loanType === 'Monthly') {
         // Monthly EMI - same day each month
@@ -217,7 +218,7 @@ export default function EMICalendarModal({
           
           const payment = loan.emiHistory?.find(p => {
             if (!p.paymentDate) return false;
-            const paymentDate = new Date(p.paymentDate);
+            const paymentDate = new Date(paymentDate);
             return paymentDate.toISOString().split('T')[0] === dateKey;
           });
           

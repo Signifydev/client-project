@@ -54,7 +54,7 @@ const LoanSelectionModal: React.FC<{
 
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
-      <div className="relative bg-white rounded-lg shadow-xl w-full max-w-4xl mx-auto max-h-[85vh] flex flex-col"> {/* Added max-h and flex-col */}
+      <div className="relative bg-white rounded-lg shadow-xl w-full max-w-4xl mx-auto max-h-[85vh] flex flex-col">
         {/* Header - Fixed height */}
         <div className="flex-shrink-0 bg-white px-8 py-6 border-b border-gray-200 rounded-t-lg">
           <div className="flex justify-between items-center">
@@ -76,7 +76,7 @@ const LoanSelectionModal: React.FC<{
         </div>
 
         {/* Body - Scrollable content */}
-        <div className="flex-1 overflow-y-auto px-8 py-6"> {/* Added overflow-y-auto */}
+        <div className="flex-1 overflow-y-auto px-8 py-6">
           {activeLoans.length > 0 ? (
             <div className="space-y-4">
               {activeLoans.map((loan, index) => {
@@ -293,7 +293,7 @@ export default function CustomersSection({
 
   // Sort and filter customers with FIXED numeric sorting
   const sortedAndFilteredCustomers = useMemo(() => {
-    let filtered = customers.filter(customer => {
+    const filtered = customers.filter(customer => { // FIXED: Changed from let to const
       const matchesSearch = searchQuery === '' || 
         customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (customer.customerNumber && customer.customerNumber.toLowerCase().includes(searchQuery.toLowerCase())) ||

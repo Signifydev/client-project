@@ -33,6 +33,9 @@ const StatCard: React.FC<{
   </div>
 ));
 
+// Set display name for StatCard
+StatCard.displayName = 'StatCard';
+
 // Quick Action Button Component
 const QuickActionButton: React.FC<{
   icon: string;
@@ -50,6 +53,9 @@ const QuickActionButton: React.FC<{
     <div className="text-sm opacity-90 mt-1">{description}</div>
   </button>
 ));
+
+// Set display name for QuickActionButton
+QuickActionButton.displayName = 'QuickActionButton';
 
 const DashboardSection: React.FC<DashboardSectionProps> = React.memo(({
   currentUserOffice,
@@ -376,5 +382,8 @@ const DashboardSection: React.FC<DashboardSectionProps> = React.memo(({
     prevProps.currentUserOffice === nextProps.currentUserOffice
   );
 });
+
+// Set display name for DashboardSection
+DashboardSection.displayName = 'DashboardSection';
 
 export default DashboardSection;
