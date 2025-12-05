@@ -217,21 +217,28 @@ export async function GET(request) {
 }
 
 // POST method to create new requests
+// POST method to create new requests
 export async function POST(request) {
   try {
     await connectDB();
     
     const body = await request.json();
+    console.log('📥 Received request body:', JSON.stringify(body, null, 2));
+    
     const {
       type,
       customerId,
       customerName,
+      customerNumber,
       loanId,
       loanNumber,
+      step1Data, // Accept step1Data for New Customer
+      step2Data, // Accept step2Data for New Customer
+      step3Data, // Accept step3Data for New Customer
       requestedData,
       description,
       priority = 'Medium',
-      status = 'Pending', // Default to 'Pending' with capital P
+      status = 'Pending',
       createdBy,
       createdByRole = 'data_entry',
       requiresCustomerNotification = false,
@@ -240,23 +247,114 @@ export async function POST(request) {
 
     console.log('🟡 Creating new request:', { 
       type, 
-      customerName, 
+      customerName,
+      customerNumber,
       status,
-      createdBy 
+      createdBy,
+      hasStep1Data: !!step1Data,
+      hasStep2Data: !!step2Data,
+      hasStep3Data: !!step3Data,
+      hasRequestedData: !!requestedData
     });
 
-    // Validate required fields
-    if (!type || !customerName || !requestedData) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Missing required fields: type, customerName, and requestedData are required'
-        },
-        { status: 400 }
-      );
+    // VALIDATION FOR NEW CUSTOMER REQUESTS
+    if (type === 'New Customer') {
+      // For New Customer requests, we accept stepXData format
+      if (!customerName || !customerName.trim()) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Missing required field: customerName is required for New Customer requests'
+          },
+          { status: 400 }
+        );
+      }
+      
+      // Check if step1Data exists for New Customer
+      if (!step1Data) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Missing step1Data: Customer details are required for New Customer requests'
+          },
+          { status: 400 }
+        );
+      }
+      
+      // Validate step1Data required fields
+      if (!step1Data.name || !step1Data.name.trim() || 
+          !step1Data.phone || !step1Data.phone.length || 
+          !step1Data.customerNumber || !step1Data.customerNumber.trim()) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Missing required customer details: name, phone, and customerNumber are required'
+          },
+          { status: 400 }
+        );
+      }
+      
+      // Validate step2Data for loan details
+      if (!step2Data) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Missing step2Data: Loan details are required for New Customer requests'
+          },
+          { status: 400 }
+        );
+      }
+      
+      // Validate step2Data required fields
+      if (!step2Data.loanAmount || step2Data.loanAmount <= 0 || 
+          !step2Data.emiAmount || step2Data.emiAmount <= 0 || 
+          !step2Data.loanType) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Missing required loan details: loanAmount, emiAmount, and loanType are required'
+          },
+          { status: 400 }
+        );
+      }
+      
+      // Validate step3Data for login credentials
+      if (!step3Data) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Missing step3Data: Login credentials are required for New Customer requests'
+          },
+          { status: 400 }
+        );
+      }
+      
+      // Validate step3Data required fields
+      if (!step3Data.loginId || !step3Data.loginId.trim() || 
+          !step3Data.password || !step3Data.password.trim()) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Missing required login credentials: loginId and password are required'
+          },
+          { status: 400 }
+        );
+      }
+      
+    } else {
+      // For other request types, validate requestedData
+      if (!type || !customerName || !requestedData) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Missing required fields: type, customerName, and requestedData are required'
+          },
+          { status: 400 }
+        );
+      }
     }
 
-    // Validate status against enum values - CRITICAL FIX
+    // Validate status against enum values
     const validStatuses = ['Pending', 'Approved', 'Rejected', 'In Review', 'On Hold'];
     if (status && !validStatuses.includes(status)) {
       console.error(`❌ Invalid status provided: '${status}'. Valid values:`, validStatuses);
@@ -305,22 +403,65 @@ export async function POST(request) {
       autoRequiresNotification = false;
     }
 
-    // Create the request with validated data
-    const newRequest = new Request({
+    // Prepare request data object
+    const requestData = {
       type,
       customerId: customerId || null,
       customerName: customerName.trim(),
+      customerNumber: customerNumber || (step1Data && step1Data.customerNumber) || null,
       loanId: loanId || null,
       loanNumber: loanNumber || null,
-      requestedData,
-      description: description || `${type} request for ${customerName}`,
       priority: autoPriority,
-      status: status, // ✅ This is now guaranteed to be valid
+      status: status,
       createdBy: createdBy || 'data_entry_operator_1',
       createdByRole,
       requiresCustomerNotification: autoRequiresNotification,
       estimatedImpact: autoEstimatedImpact
+    };
+
+    // Add description
+    if (description && description.trim()) {
+      requestData.description = description.trim();
+    } else {
+      // Auto-generate description
+      if (type === 'New Customer') {
+        requestData.description = `New customer registration for ${customerName.trim()} - Customer Number: ${customerNumber || (step1Data && step1Data.customerNumber) || 'N/A'}`;
+      } else {
+        requestData.description = `${type} request for ${customerName.trim()}`;
+      }
+    }
+
+    // For New Customer requests, add step data
+    if (type === 'New Customer') {
+      requestData.step1Data = step1Data;
+      requestData.step2Data = step2Data;
+      requestData.step3Data = step3Data;
+      // Also include in requestedData for compatibility
+      requestData.requestedData = {
+        ...step1Data,
+        ...step2Data,
+        ...step3Data,
+        type: 'New Customer',
+        customerName: customerName.trim(),
+        customerNumber: customerNumber || step1Data.customerNumber
+      };
+    } else {
+      // For other types, use requestedData
+      requestData.requestedData = requestedData;
+    }
+
+    console.log('💾 Creating request with data:', {
+      type: requestData.type,
+      customerName: requestData.customerName,
+      customerNumber: requestData.customerNumber,
+      status: requestData.status,
+      hasStep1Data: !!requestData.step1Data,
+      hasStep2Data: !!requestData.step2Data,
+      hasStep3Data: !!requestData.step3Data
     });
+
+    // Create the request with validated data
+    const newRequest = new Request(requestData);
 
     console.log('💾 Saving request to database...');
     await newRequest.save();
@@ -334,6 +475,7 @@ export async function POST(request) {
           requestId: newRequest._id,
           type: newRequest.type,
           customerName: newRequest.customerName,
+          customerNumber: newRequest.customerNumber,
           status: newRequest.status,
           createdAt: newRequest.createdAt,
           priority: newRequest.priority
@@ -344,6 +486,7 @@ export async function POST(request) {
 
   } catch (error) {
     console.error('❌ Error creating request:', error);
+    console.error('Error stack:', error.stack);
     
     // Handle validation errors
     if (error.name === 'ValidationError') {

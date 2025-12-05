@@ -9,7 +9,7 @@ export async function GET(request, { params }) {
   try {
     await connectDB();
     
-    const { id } = params;
+    const { id } = await params;
     console.log('🔍 Fetching single customer details for ID:', id);
 
     if (!id) {
@@ -131,7 +131,7 @@ export async function PUT(request, { params }) {
   try {
     await connectDB();
     
-    const { id } = params;
+    const { id } = await params;
     const updateData = await request.json();
 
     console.log('🔄 Updating customer with ID:', id);
@@ -182,7 +182,7 @@ export async function DELETE(request, { params }) {
   try {
     await connectDB();
     
-    const { id } = params;
+    const { id } = await params;
     console.log('🗑️ Deleting customer with ID:', id);
 
     if (!id) {

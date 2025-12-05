@@ -20,34 +20,70 @@ export async function GET(request) {
 
     let query = {};
 
-    // Filter by status if provided
+    // FIXED: Better handling of officeCategory filter
+    if (officeCategory && officeCategory.trim() !== '' && officeCategory !== 'all') {
+      query.officeCategory = officeCategory;
+      console.log('✅ Applying officeCategory filter:', officeCategory);
+    } else {
+      console.log('ℹ️ No officeCategory filter applied');
+    }
+
+    // FIXED: Handle status filter properly
     if (status && status !== 'all') {
       query.status = status;
+      console.log('✅ Applying status filter:', status);
+    } else {
+      // Default to active customers only
+      query.status = { $in: ['active', 'pending'] };
     }
 
-    // Filter by office category if provided
-    if (officeCategory && officeCategory !== 'all') {
-      query.officeCategory = officeCategory;
-    }
-
-    // Search across multiple fields
-    if (search) {
+    // FIXED: Improved search functionality
+    if (search && search.trim() !== '') {
+      const searchRegex = new RegExp(search.trim(), 'i');
       query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { customerNumber: { $regex: search, $options: 'i' } },
-        { businessName: { $regex: search, $options: 'i' } },
-        { area: { $regex: search, $options: 'i' } },
-        { phone: { $in: [new RegExp(search, 'i')] } }
+        { name: searchRegex },
+        { customerNumber: searchRegex },
+        { businessName: searchRegex },
+        { area: searchRegex },
+        { phone: { $in: [searchRegex] } }
       ];
+      console.log('✅ Applying search filter:', search);
     }
 
-    const customers = await Customer.find(query).sort({ createdAt: -1 });
-    
-    console.log(`✅ Found ${customers.length} customers`);
+    console.log('📋 Final query:', JSON.stringify(query, null, 2));
+
+    // FIXED: Add proper error handling for database query
+    let customers;
+    try {
+      customers = await Customer.find(query)
+        .sort({ createdAt: -1 })
+        .select('-password -loginId') // Exclude sensitive fields
+        .lean(); // Convert to plain objects
+      
+      console.log(`✅ Found ${customers.length} customers`);
+      
+      // Enhance customers with loan summary
+      for (const customer of customers) {
+        const loans = await Loan.find({ customerId: customer._id, status: 'active' });
+        customer.totalLoans = loans.length;
+        customer.totalLoanAmount = loans.reduce((sum, loan) => sum + (loan.amount || 0), 0);
+        customer.activeLoan = loans.find(loan => loan.status === 'active');
+      }
+      
+    } catch (dbError) {
+      console.error('❌ Database query error:', dbError);
+      throw new Error(`Database error: ${dbError.message}`);
+    }
 
     return NextResponse.json({
       success: true,
+      count: customers.length,
       data: customers
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      }
     });
 
   } catch (error) {
@@ -55,9 +91,16 @@ export async function GET(request) {
     return NextResponse.json(
       { 
         success: false,
-        error: 'Failed to fetch customers: ' + error.message 
+        error: 'Failed to fetch customers',
+        message: error.message,
+        timestamp: new Date().toISOString()
       },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
     );
   }
 }
@@ -71,9 +114,29 @@ export async function POST(request) {
     
     console.log('📦 Received form data with fields:', Array.from(formData.keys()));
 
-    // Extract all form data with detailed logging
+    // Extract all form data
     const name = formData.get('name');
-    const phone = formData.getAll('phone[]').filter(p => p && p.trim() !== '');
+    
+    // Handle phone numbers
+    let phone = [];
+    const phoneArray = formData.getAll('phone[]');
+    if (phoneArray.length > 0) {
+      phone = phoneArray.filter(p => p && p.trim() !== '');
+      console.log('📞 Using phone[] format:', phone);
+    } else {
+      // Fallback to indexed format
+      let index = 0;
+      while (true) {
+        const phoneNumber = formData.get(`phone[${index}]`);
+        if (!phoneNumber) break;
+        if (phoneNumber && phoneNumber.trim() !== '') {
+          phone.push(phoneNumber);
+        }
+        index++;
+      }
+      console.log('📞 Extracted phone numbers:', phone);
+    }
+    
     const whatsappNumber = formData.get('whatsappNumber') || '';
     const businessName = formData.get('businessName');
     const area = formData.get('area');
@@ -82,52 +145,42 @@ export async function POST(request) {
     const category = formData.get('category');
     const officeCategory = formData.get('officeCategory');
 
-    // DEBUG: Log each extracted value with type and length
-    console.log('🔍 EXTRACTED FIELD ANALYSIS:');
-    const fieldAnalysis = {
-      name: { value: name, type: typeof name, length: name?.length, empty: !name?.trim() },
-      phone: { value: phone, type: 'array', length: phone.length, empty: phone.length === 0 },
-      whatsappNumber: { value: whatsappNumber, type: typeof whatsappNumber, length: whatsappNumber?.length },
-      businessName: { value: businessName, type: typeof businessName, length: businessName?.length, empty: !businessName?.trim() },
-      area: { value: area, type: typeof area, length: area?.length, empty: !area?.trim() },
-      customerNumber: { value: customerNumber, type: typeof customerNumber, length: customerNumber?.length, empty: !customerNumber?.trim() },
-      address: { value: address, type: typeof address, length: address?.length, empty: !address?.trim() },
-      category: { value: category, type: typeof category, length: category?.length, empty: !category?.trim() },
-      officeCategory: { value: officeCategory, type: typeof officeCategory, length: officeCategory?.length, empty: !officeCategory?.trim() }
-    };
-    
-    console.log('Field analysis:', JSON.stringify(fieldAnalysis, null, 2));
+    // Normalize customer number
+    let normalizedCustomerNumber = customerNumber;
+    if (normalizedCustomerNumber && !normalizedCustomerNumber.toUpperCase().startsWith('CN')) {
+      normalizedCustomerNumber = `CN${normalizedCustomerNumber.replace(/^CN/gi, '')}`;
+    }
+    normalizedCustomerNumber = normalizedCustomerNumber.toUpperCase();
 
-    // Check for empty required fields
-    const requiredFields = {
-      name: name?.trim(),
-      phone: phone.length > 0,
-      businessName: businessName?.trim(),
-      area: area?.trim(),
-      customerNumber: customerNumber?.trim(),
-      address: address?.trim(),
-      category: category?.trim(),
-      officeCategory: officeCategory?.trim()
-    };
-
-    console.log('✅ REQUIRED FIELDS VALIDATION:');
-    const missingFields = [];
-    Object.entries(requiredFields).forEach(([field, value]) => {
-      const isValid = !!value;
-      console.log(`  ${field}: ${isValid ? '✅' : '❌ MISSING'} (value: "${value}")`);
-      if (!isValid) {
-        missingFields.push(field);
-      }
+    console.log('🔍 Field analysis:', {
+      name: !!name?.trim(),
+      phone: phone.length,
+      businessName: !!businessName?.trim(),
+      area: !!area?.trim(),
+      customerNumber: normalizedCustomerNumber,
+      address: !!address?.trim(),
+      category,
+      officeCategory
     });
 
+    // Validate required fields
+    const missingFields = [];
+    if (!name?.trim()) missingFields.push('name');
+    if (phone.length === 0) missingFields.push('phone');
+    if (!businessName?.trim()) missingFields.push('businessName');
+    if (!area?.trim()) missingFields.push('area');
+    if (!normalizedCustomerNumber?.trim()) missingFields.push('customerNumber');
+    if (!address?.trim()) missingFields.push('address');
+    if (!category?.trim()) missingFields.push('category');
+    if (!officeCategory?.trim()) missingFields.push('officeCategory');
+
     if (missingFields.length > 0) {
-      console.log('❌ MISSING REQUIRED FIELDS:', missingFields);
+      console.log('❌ Missing required fields:', missingFields);
       return NextResponse.json(
         { 
           success: false, 
           error: 'All customer details are required',
-          missingFields: missingFields,
-          fieldAnalysis: fieldAnalysis
+          missingFields
         },
         { status: 400 }
       );
@@ -143,31 +196,7 @@ export async function POST(request) {
     const emiType = formData.get('emiType');
     const customEmiAmount = formData.get('customEmiAmount') || '';
 
-    console.log('🔍 LOAN DATA ANALYSIS:');
-    const loanFieldAnalysis = {
-      loanDate: { value: loanDate, empty: !loanDate },
-      emiStartDate: { value: emiStartDate, empty: !emiStartDate },
-      loanAmount: { value: loanAmount, empty: !loanAmount },
-      emiAmount: { value: emiAmount, empty: !emiAmount },
-      loanDays: { value: loanDays, empty: !loanDays },
-      loanType: { value: loanType, empty: !loanType },
-      emiType: { value: emiType, empty: !emiType },
-      customEmiAmount: { value: customEmiAmount, empty: !customEmiAmount }
-    };
-    console.log('Loan field analysis:', JSON.stringify(loanFieldAnalysis, null, 2));
-
-    // Login credentials
-    const loginId = formData.get('loginId');
-    const password = formData.get('password');
-    const confirmPassword = formData.get('confirmPassword');
-    const createdBy = formData.get('createdBy') || 'data_entry_operator_1';
-
-    // File uploads
-    const profilePicture = formData.get('profilePicture');
-    const fiDocumentShop = formData.get('fiDocumentShop');
-    const fiDocumentHome = formData.get('fiDocumentHome');
-
-    // Validate required loan fields
+    // Validate loan details
     if (!loanDate || !emiStartDate || !loanAmount || !loanDays || !loanType || !emiType) {
       return NextResponse.json(
         { success: false, error: 'All basic loan details are required' },
@@ -175,9 +204,8 @@ export async function POST(request) {
       );
     }
 
-    // Validate EMI amounts based on loan type and EMI type
+    // Validate EMI amounts
     if (loanType === 'Daily') {
-      // Daily loans only need emiAmount
       if (!emiAmount) {
         return NextResponse.json(
           { success: false, error: 'EMI Amount is required for Daily loans' },
@@ -185,7 +213,6 @@ export async function POST(request) {
         );
       }
     } else {
-      // Weekly/Monthly loans
       if (emiType === 'fixed') {
         if (!emiAmount) {
           return NextResponse.json(
@@ -194,7 +221,6 @@ export async function POST(request) {
           );
         }
       } else if (emiType === 'custom') {
-        // Custom EMI requires both fixed EMI amount and last EMI amount
         if (!emiAmount || !customEmiAmount) {
           return NextResponse.json(
             { success: false, error: 'Both Fixed EMI Amount and Last EMI Amount are required for Custom EMI type' },
@@ -203,6 +229,12 @@ export async function POST(request) {
         }
       }
     }
+
+    // Login credentials
+    const loginId = formData.get('loginId');
+    const password = formData.get('password');
+    const confirmPassword = formData.get('confirmPassword');
+    const createdBy = formData.get('createdBy') || 'data_entry_operator_1';
 
     if (!loginId || !password || !confirmPassword) {
       return NextResponse.json(
@@ -254,9 +286,9 @@ export async function POST(request) {
 
     // Check for duplicate customer number
     const existingCustomerNumber = await Customer.findOne({
-      customerNumber: customerNumber
+      customerNumber: { $regex: new RegExp(`^${normalizedCustomerNumber}$`, 'i') }
     });
-    
+
     if (existingCustomerNumber) {
       return NextResponse.json(
         { 
@@ -268,27 +300,11 @@ export async function POST(request) {
       );
     }
 
-    // Check for duplicate login ID
-    const existingLoginId = await Customer.findOne({
-      loginId: loginId
-    });
-    
-    if (existingLoginId) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          error: 'Login ID already exists',
-          field: 'loginId'
-        },
-        { status: 409 }
-      );
-    }
-
-    // Check if there's already a pending request for this customer
+    // Check for existing pending request
     const existingRequest = await Request.findOne({
       $or: [
         { 'step1Data.phone': { $in: phone } },
-        { 'step1Data.customerNumber': customerNumber },
+        { 'step1Data.customerNumber': { $regex: new RegExp(`^${normalizedCustomerNumber}$`, 'i') } },
         { 'step3Data.loginId': loginId }
       ],
       status: 'Pending',
@@ -352,7 +368,7 @@ export async function POST(request) {
       console.log('✅ FI Home document uploaded:', fiDocumentHomePath);
     }
 
-    // Calculate total loan amount based on EMI type
+    // Calculate total loan amount
     let totalLoanAmount = 0;
     if (emiType === 'custom' && loanType !== 'Daily') {
       const fixedPeriods = parseInt(loanDays) - 1;
@@ -363,24 +379,22 @@ export async function POST(request) {
       totalLoanAmount = parseFloat(emiAmount) * parseInt(loanDays);
     }
 
-    // ✅ FIXED: Create request data in MULTI-STEP STRUCTURE
+    // Create request data
     const requestData = {
       type: 'New Customer',
       customerName: name,
-      customerNumber: customerNumber,
+      customerNumber: normalizedCustomerNumber,
       status: 'Pending',
       createdBy: createdBy,
       createdByRole: 'data_entry',
       
-      // ✅ STORE DATA IN STEP STRUCTURE (this is what the approval logic expects)
       step1Data: {
-        // Customer details
         name,
         phone,
         whatsappNumber: whatsappNumber || '',
         businessName,
         area,
-        customerNumber,
+        customerNumber: normalizedCustomerNumber,
         address,
         category,
         officeCategory,
@@ -424,7 +438,6 @@ export async function POST(request) {
       },
       
       step2Data: {
-        // Loan details
         loanDate,
         emiStartDate,
         loanAmount: parseFloat(loanAmount),
@@ -437,7 +450,6 @@ export async function POST(request) {
       },
       
       step3Data: {
-        // Login credentials
         loginId,
         password,
         confirmPassword
@@ -449,24 +461,21 @@ export async function POST(request) {
       updatedAt: new Date()
     };
 
-    console.log('📋 Creating new customer request with multi-step data:', {
+    console.log('📋 Creating new customer request:', {
       name,
       customerNumber,
       businessName,
       loanAmount,
       emiAmount,
       loanType,
-      emiType,
-      hasStep1Data: !!requestData.step1Data,
-      hasStep2Data: !!requestData.step2Data,
-      hasStep3Data: !!requestData.step3Data
+      emiType
     });
 
     // Create the request
     const newRequest = new Request(requestData);
     await newRequest.save();
 
-    console.log('✅ New customer request created successfully with multi-step data:', newRequest._id);
+    console.log('✅ New customer request created successfully:', newRequest._id);
 
     return NextResponse.json({
       success: true,
@@ -474,7 +483,7 @@ export async function POST(request) {
       data: {
         requestId: newRequest._id,
         customerName: name,
-        customerNumber: customerNumber
+        customerNumber: normalizedCustomerNumber
       }
     });
 
@@ -517,7 +526,7 @@ export async function PUT(request) {
     
     const { searchParams } = new URL(request.url);
     const requestId = searchParams.get('requestId');
-    const action = searchParams.get('action'); // 'approve' or 'reject'
+    const action = searchParams.get('action');
 
     if (!requestId || !action) {
       return NextResponse.json(
@@ -535,7 +544,6 @@ export async function PUT(request) {
     }
 
     if (action === 'approve') {
-      // Update request status to approved
       requestDoc.status = 'Approved';
       requestDoc.reviewedAt = new Date();
       requestDoc.updatedAt = new Date();
@@ -547,7 +555,6 @@ export async function PUT(request) {
         message: 'Customer request approved successfully'
       });
     } else if (action === 'reject') {
-      // Update request status to rejected
       requestDoc.status = 'Rejected';
       requestDoc.reviewedAt = new Date();
       requestDoc.updatedAt = new Date();
