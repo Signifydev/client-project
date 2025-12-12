@@ -123,6 +123,13 @@ export async function GET(request) {
       const diffTime = Math.abs(now - created);
       const ageInDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       
+      // Add loan selection type
+      const loanSelectionType = requestObj.step2Data?.loanType === 'single' 
+        ? 'Single Loan' 
+        : requestObj.step2Data?.loanType === 'multiple' 
+          ? 'Multiple Loans (Add Later)' 
+          : 'Not Specified';
+      
       return {
         ...requestObj,
         ageInDays,
@@ -131,6 +138,7 @@ export async function GET(request) {
         formattedCreatedTime: created.toLocaleTimeString('en-IN'),
         displayType: getDisplayType(requestObj.type),
         displayPriority: getDisplayPriority(requestObj.priority),
+        loanSelectionType,
         // Add customer data for easy access
         customer: requestObj.customerId ? {
           name: requestObj.customerId.name,
@@ -217,7 +225,6 @@ export async function GET(request) {
 }
 
 // POST method to create new requests
-// POST method to create new requests
 export async function POST(request) {
   try {
     await connectDB();
@@ -254,7 +261,8 @@ export async function POST(request) {
       hasStep1Data: !!step1Data,
       hasStep2Data: !!step2Data,
       hasStep3Data: !!step3Data,
-      hasRequestedData: !!requestedData
+      loanType: step2Data?.loanType,
+      loanNumber: step2Data?.loanNumber
     });
 
     // VALIDATION FOR NEW CUSTOMER REQUESTS
@@ -294,29 +302,63 @@ export async function POST(request) {
         );
       }
       
-      // Validate step2Data for loan details
+      // Check if step2Data exists
       if (!step2Data) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'Missing step2Data: Loan details are required for New Customer requests'
-          },
-          { status: 400 }
-        );
-      }
-      
-      // Validate step2Data required fields
-      if (!step2Data.loanAmount || step2Data.loanAmount <= 0 || 
-          !step2Data.emiAmount || step2Data.emiAmount <= 0 || 
-          !step2Data.loanType) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'Missing required loan details: loanAmount, emiAmount, and loanType are required'
-          },
-          { status: 400 }
-        );
-      }
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Missing step2Data: Loan selection details are required'
+      },
+      { status: 400 }
+    );
+  }
+  
+  // Validate step2Data required fields
+  if (!step2Data.loanSelectionType) { // Changed from loanType
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Loan selection type (single/multiple) is required'
+      },
+      { status: 400 }
+    );
+  }
+  
+  // For single loans, validate loan details
+  if (step2Data.loanSelectionType === 'single') {
+    if (!step2Data.loanNumber || !step2Data.loanNumber.trim()) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Loan number is required for single loan'
+        },
+        { status: 400 }
+      );
+    }
+    
+    if (!step2Data.loanNumber.startsWith('LN')) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Loan number must start with "LN" prefix (e.g., LN01, LN02)'
+        },
+        { status: 400 }
+      );
+    }
+    
+    if (!step2Data.loanAmount || step2Data.loanAmount <= 0 || 
+        !step2Data.emiAmount || step2Data.emiAmount <= 0 || 
+        !step2Data.loanType) { // Changed from loanFrequency
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Missing required loan details: loanAmount, emiAmount, and loanType are required for single loan'
+        },
+        { status: 400 }
+      );
+    }
+  }
+      // For multiple loans, no loan details validation needed
       
       // Validate step3Data for login credentials
       if (!step3Data) {
@@ -410,7 +452,7 @@ export async function POST(request) {
       customerName: customerName.trim(),
       customerNumber: customerNumber || (step1Data && step1Data.customerNumber) || null,
       loanId: loanId || null,
-      loanNumber: loanNumber || null,
+      loanNumber: loanNumber || (step2Data && step2Data.loanNumber) || null,
       priority: autoPriority,
       status: status,
       createdBy: createdBy || 'data_entry_operator_1',
@@ -419,23 +461,12 @@ export async function POST(request) {
       estimatedImpact: autoEstimatedImpact
     };
 
-    // Add description
-    if (description && description.trim()) {
-      requestData.description = description.trim();
-    } else {
-      // Auto-generate description
-      if (type === 'New Customer') {
-        requestData.description = `New customer registration for ${customerName.trim()} - Customer Number: ${customerNumber || (step1Data && step1Data.customerNumber) || 'N/A'}`;
-      } else {
-        requestData.description = `${type} request for ${customerName.trim()}`;
-      }
-    }
-
-    // For New Customer requests, add step data
+    // Add step data for New Customer
     if (type === 'New Customer') {
       requestData.step1Data = step1Data;
       requestData.step2Data = step2Data;
       requestData.step3Data = step3Data;
+      
       // Also include in requestedData for compatibility
       requestData.requestedData = {
         ...step1Data,
@@ -443,17 +474,36 @@ export async function POST(request) {
         ...step3Data,
         type: 'New Customer',
         customerName: customerName.trim(),
-        customerNumber: customerNumber || step1Data.customerNumber
+        customerNumber: customerNumber || step1Data.customerNumber,
+        loanType: step2Data.loanType,
+        loanNumber: step2Data.loanNumber
       };
     } else {
       // For other types, use requestedData
       requestData.requestedData = requestedData;
     }
 
+    // Add description
+    if (description && description.trim()) {
+      requestData.description = description.trim();
+    } else {
+      // Auto-generate description
+      if (type === 'New Customer') {
+        const loanTypeDesc = step2Data?.loanType === 'single' 
+          ? 'with Single Loan' 
+          : 'for Multiple Loans (Add Later)';
+        requestData.description = `New customer registration for ${customerName.trim()} - ${loanTypeDesc}`;
+      } else {
+        requestData.description = `${type} request for ${customerName.trim()}`;
+      }
+    }
+
     console.log('💾 Creating request with data:', {
       type: requestData.type,
       customerName: requestData.customerName,
       customerNumber: requestData.customerNumber,
+      loanType: step2Data?.loanType,
+      loanNumber: step2Data?.loanNumber,
       status: requestData.status,
       hasStep1Data: !!requestData.step1Data,
       hasStep2Data: !!requestData.step2Data,
@@ -476,6 +526,8 @@ export async function POST(request) {
           type: newRequest.type,
           customerName: newRequest.customerName,
           customerNumber: newRequest.customerNumber,
+          loanType: step2Data?.loanType,
+          loanNumber: step2Data?.loanNumber,
           status: newRequest.status,
           createdAt: newRequest.createdAt,
           priority: newRequest.priority

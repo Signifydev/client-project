@@ -13,48 +13,171 @@ export async function POST(request) {
     console.log('🟡 Starting approve-request API call');
     await connectDB();
     const body = await request.json();
-    const { requestId, action, reason, processedBy = 'admin' } = body;
-
-    console.log('🟡 Processing request:', { requestId, action, processedBy });
-
-    if (!requestId) {
-      return NextResponse.json({ 
-        success: false,
-        error: 'Request ID is required' 
-      }, { status: 400 });
-    }
-
-    // Find the request
-    const requestDoc = await Request.findById(requestId);
-    if (!requestDoc) {
-      return NextResponse.json({ 
-        success: false,
-        error: 'Request not found' 
-      }, { status: 404 });
-    }
-
-    console.log('🔍 Found request:', {
-      type: requestDoc.type,
-      customerName: requestDoc.customerName,
-      status: requestDoc.status
-    });
-
-    if (action === 'approve') {
-      return await handleApproval(requestDoc, reason, processedBy);
-    } else if (action === 'reject') {
-      return await handleRejection(requestDoc, reason, processedBy);
+    
+    // Check if this is a CREATE request or APPROVE/REJECT request
+    const { action, requestId } = body;
+    
+    if (action && ['approve', 'reject'].includes(action)) {
+      // This is an APPROVE/REJECT request
+      return await handleApproveReject(body);
     } else {
-      return NextResponse.json({ 
-        success: false,
-        error: 'Invalid action. Use "approve" or "reject".' 
-      }, { status: 400 });
+      // This is a CREATE request (new request submission)
+      return await handleCreateRequest(body);
     }
+    
   } catch (error) {
     console.error('❌ Error in approve-request:', error);
     return NextResponse.json({ 
       success: false,
       error: error.message 
     }, { status: 500 });
+  }
+}
+
+// Handle CREATE request (new request submission)
+async function handleCreateRequest(body) {
+  try {
+    console.log('📝 Creating new request...');
+    
+    const { type, customerId, customerName, customerNumber, requestedData, createdBy = 'data_entry_operator' } = body;
+    
+    // Validate required fields
+    if (!type) {
+      return NextResponse.json({ 
+        success: false,
+        error: 'Request type is required' 
+      }, { status: 400 });
+    }
+    
+    const validTypes = ['New Customer', 'Loan Addition', 'Customer Edit', 'Loan Edit', 'Loan Deletion', 'Loan Renew'];
+    if (!validTypes.includes(type)) {
+      return NextResponse.json({ 
+        success: false,
+        error: `Invalid request type. Must be one of: ${validTypes.join(', ')}` 
+      }, { status: 400 });
+    }
+    
+    // For Loan Addition, validate loan data
+    if (type === 'Loan Addition') {
+      if (!requestedData || !requestedData.loanNumber || !requestedData.loanAmount) {
+        return NextResponse.json({ 
+          success: false,
+          error: 'For Loan Addition, requestedData must include loanNumber and loanAmount' 
+        }, { status: 400 });
+      }
+      
+      // Validate customer exists for loan addition
+      if (!customerId) {
+        return NextResponse.json({ 
+          success: false,
+          error: 'Customer ID is required for Loan Addition' 
+        }, { status: 400 });
+      }
+      
+      const customer = await Customer.findById(customerId);
+      if (!customer) {
+        return NextResponse.json({ 
+          success: false,
+          error: 'Customer not found' 
+        }, { status: 404 });
+      }
+    }
+    
+    // For New Customer, validate step data
+    if (type === 'New Customer') {
+      if (!body.step1Data || !body.step2Data || !body.step3Data) {
+        return NextResponse.json({ 
+          success: false,
+          error: 'For New Customer, all step data (step1Data, step2Data, step3Data) is required' 
+        }, { status: 400 });
+      }
+    }
+    
+    // Create the request in database
+    const newRequest = new Request({
+      type: type,
+      customerId: customerId || null,
+      customerName: customerName || '',
+      customerNumber: customerNumber || '',
+      customerPhone: body.customerPhone || '',
+      loanId: body.loanId || null,
+      requestedData: requestedData || {},
+      step1Data: body.step1Data || null,
+      step2Data: body.step2Data || null,
+      step3Data: body.step3Data || null,
+      status: 'Pending',
+      createdBy: createdBy,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    
+    await newRequest.save();
+    
+    console.log('✅ Request created successfully:', {
+      id: newRequest._id,
+      type: newRequest.type,
+      customerName: newRequest.customerName,
+      loanNumber: requestedData?.loanNumber || 'N/A'
+    });
+    
+    return NextResponse.json({
+      success: true,
+      message: `${type} request created successfully`,
+      data: {
+        requestId: newRequest._id,
+        type: newRequest.type,
+        customerName: newRequest.customerName,
+        status: newRequest.status,
+        createdAt: newRequest.createdAt
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error in handleCreateRequest:', error);
+    return NextResponse.json({ 
+      success: false,
+      error: error.message || 'Failed to create request' 
+    }, { status: 500 });
+  }
+}
+
+// Handle APPROVE/REJECT request
+async function handleApproveReject(body) {
+  const { requestId, action, reason, processedBy = 'admin' } = body;
+  
+  console.log('🟡 Processing approve/reject:', { requestId, action, processedBy });
+
+  if (!requestId) {
+    return NextResponse.json({ 
+      success: false,
+      error: 'Request ID is required' 
+    }, { status: 400 });
+  }
+
+  // Find the request
+  const requestDoc = await Request.findById(requestId);
+  if (!requestDoc) {
+    return NextResponse.json({ 
+      success: false,
+      error: 'Request not found' 
+    }, { status: 404 });
+  }
+
+  console.log('🔍 Found request:', {
+    type: requestDoc.type,
+    customerName: requestDoc.customerName,
+    status: requestDoc.status
+  });
+
+  if (action === 'approve') {
+    return await handleApproval(requestDoc, reason, processedBy);
+  } else if (action === 'reject') {
+    return await handleRejection(requestDoc, reason, processedBy);
+  } else {
+    return NextResponse.json({ 
+      success: false,
+      error: 'Invalid action. Use "approve" or "reject".' 
+    }, { status: 400 });
   }
 }
 
@@ -162,8 +285,18 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
 
     console.log('🔍 Step data validation passed');
 
+    // Handle loanSelectionType vs loanType
+    const loanSelectionType = step2Data.loanSelectionType; // This is "single" or "multiple"
+    const loanType = step2Data.loanType; // This is "Daily", "Weekly", or "Monthly"
+    
+    console.log('📊 Loan data:', {
+      loanSelectionType,
+      loanType,
+      loanNumber: step2Data.loanNumber
+    });
+
     // Validate required fields with specific error messages
-    const requiredStep1Fields = ['name', 'customerNumber', 'phone', 'businessName', 'area', 'address'];
+    const requiredStep1Fields = ['name', 'customerNumber', 'phone', 'businessName', 'area'];
     const missingStep1Fields = requiredStep1Fields.filter(field => !step1Data[field]);
     
     if (missingStep1Fields.length > 0) {
@@ -175,6 +308,22 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     
     if (missingStep2Fields.length > 0) {
       throw new Error(`Missing required loan fields: ${missingStep2Fields.join(', ')}`);
+    }
+
+    // Validate loan number for single loans (LN1-LN15)
+    if (loanSelectionType === 'single') {
+      if (!step2Data.loanNumber || !step2Data.loanNumber.trim()) {
+        throw new Error('Loan number is required for single loan');
+      }
+      
+      // Validate LN1-LN15 range
+      const loanNum = step2Data.loanNumber.replace('LN', '');
+      const loanNumValue = parseInt(loanNum);
+      if (!step2Data.loanNumber.startsWith('LN') || isNaN(loanNumValue) || loanNumValue < 1 || loanNumValue > 15) {
+        throw new Error('Loan number must be between LN1 and LN15 for single loans');
+      }
+      
+      console.log(`✅ Valid loan number: ${step2Data.loanNumber}`);
     }
 
     const requiredStep3Fields = ['loginId', 'password'];
@@ -282,60 +431,65 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
       // Continue even if user creation fails - this is not critical
     }
 
-    // Create loan
-    try {
-      const loanNumber = await Loan.generateLoanNumber(customer._id);
-      
-      // Simple date handling with validation
-      const loanDate = step2Data.loanDate ? new Date(step2Data.loanDate) : new Date();
-      let emiStartDate = step2Data.emiStartDate ? new Date(step2Data.emiStartDate) : new Date(loanDate);
-      
-      // Ensure emiStartDate is not before loanDate
-      if (emiStartDate < loanDate) {
-        console.log('⚠️ Adjusting EMI start date to match loan date');
-        emiStartDate = new Date(loanDate);
-      }
-
-      // Calculate next EMI date
-      const calculateNextEmiDate = (startDate, loanType) => {
-        const date = new Date(startDate);
-        switch(loanType) {
-          case 'Daily': date.setDate(date.getDate() + 1); break;
-          case 'Weekly': date.setDate(date.getDate() + 7); break;
-          case 'Monthly': date.setMonth(date.getMonth() + 1); break;
-          default: date.setDate(date.getDate() + 1);
+    // Only create loan if it's a single loan selection
+    if (loanSelectionType === 'single') {
+      try {
+        // Use the loan number from the form (LN1-LN15) instead of generating new one
+        const loanNumber = step2Data.loanNumber; // This is LN1, LN2, etc.
+        
+        // Simple date handling with validation
+        const loanDate = step2Data.loanDate ? new Date(step2Data.loanDate) : new Date();
+        let emiStartDate = step2Data.emiStartDate ? new Date(step2Data.emiStartDate) : new Date(loanDate);
+        
+        // Ensure emiStartDate is not before loanDate
+        if (emiStartDate < loanDate) {
+          console.log('⚠️ Adjusting EMI start date to match loan date');
+          emiStartDate = new Date(loanDate);
         }
-        return date;
-      };
 
-      const loanData = {
-        customerId: customer._id,
-        customerName: customer.name,
-        customerNumber: customer.customerNumber,
-        loanNumber: loanNumber,
-        amount: parseFloat(step2Data.loanAmount) || 0,
-        emiAmount: parseFloat(step2Data.emiAmount) || 0,
-        loanType: step2Data.loanType || 'Daily',
-        dateApplied: loanDate,
-        loanDays: parseInt(step2Data.loanDays) || 30,
-        emiType: step2Data.emiType || 'fixed',
-        customEmiAmount: step2Data.customEmiAmount ? parseFloat(step2Data.customEmiAmount) : null,
-        emiStartDate: emiStartDate,
-        totalEmiCount: parseInt(step2Data.loanDays) || 30,
-        emiPaidCount: 0,
-        lastEmiDate: null,
-        nextEmiDate: calculateNextEmiDate(emiStartDate, step2Data.loanType),
-        totalPaidAmount: 0,
-        remainingAmount: parseFloat(step2Data.loanAmount) || 0,
-        status: 'active',
-        createdBy: requestDoc.createdBy || 'system'
-      };
+        // Calculate next EMI date
+        const calculateNextEmiDate = (startDate, loanType) => {
+          const date = new Date(startDate);
+          switch(loanType) {
+            case 'Daily': date.setDate(date.getDate() + 1); break;
+            case 'Weekly': date.setDate(date.getDate() + 7); break;
+            case 'Monthly': date.setMonth(date.getMonth() + 1); break;
+            default: date.setDate(date.getDate() + 1);
+          }
+          return date;
+        };
 
-      await Loan.create(loanData);
-      console.log('✅ Loan created:', loanNumber);
-    } catch (loanError) {
-      console.error('❌ Error creating loan:', loanError);
-      // Continue even if loan creation fails - customer is already created
+        const loanData = {
+          customerId: customer._id,
+          customerName: customer.name,
+          customerNumber: customer.customerNumber,
+          loanNumber: loanNumber,
+          amount: parseFloat(step2Data.loanAmount) || 0,
+          emiAmount: parseFloat(step2Data.emiAmount) || 0,
+          loanType: step2Data.loanType || 'Daily',
+          dateApplied: loanDate,
+          loanDays: parseInt(step2Data.loanDays) || 30,
+          emiType: step2Data.emiType || 'fixed',
+          customEmiAmount: step2Data.customEmiAmount ? parseFloat(step2Data.customEmiAmount) : null,
+          emiStartDate: emiStartDate,
+          totalEmiCount: parseInt(step2Data.loanDays) || 30,
+          emiPaidCount: 0,
+          lastEmiDate: null,
+          nextEmiDate: calculateNextEmiDate(emiStartDate, step2Data.loanType),
+          totalPaidAmount: 0,
+          remainingAmount: parseFloat(step2Data.loanAmount) || 0,
+          status: 'active',
+          createdBy: requestDoc.createdBy || 'system'
+        };
+
+        await Loan.create(loanData);
+        console.log('✅ Loan created with selected number:', loanNumber);
+      } catch (loanError) {
+        console.error('❌ Error creating loan:', loanError);
+        // Continue even if loan creation fails - customer is already created
+      }
+    } else {
+      console.log('ℹ️ No loan created (Multiple Loans option selected)');
     }
 
     // Update request
@@ -344,7 +498,7 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     requestDoc.reviewedBy = processedBy;
     requestDoc.reviewedByRole = 'admin';
     requestDoc.reviewNotes = reason || 'Customer approved by admin';
-    requestDoc.actionTaken = `Customer account created`;
+    requestDoc.actionTaken = `Customer account created with ${loanSelectionType === 'single' ? 'Single Loan' : 'Multiple Loans (Add Later)'}`;
     requestDoc.reviewedAt = new Date();
     requestDoc.approvedAt = new Date();
     requestDoc.completedAt = new Date();
@@ -359,7 +513,9 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
       data: {
         customerId: customer._id,
         customerName: customer.name,
-        customerNumber: customer.customerNumber
+        customerNumber: customer.customerNumber,
+        loanSelectionType: loanSelectionType,
+        loanNumber: loanSelectionType === 'single' ? step2Data.loanNumber : null
       }
     });
 
@@ -394,9 +550,26 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
     }, { status: 404 });
   }
 
-  // NEW: Use atomic loan number generation
-  const loanNumber = await Loan.generateLoanNumber(customer._id);
-  console.log('🔧 Generated loan number for additional loan:', loanNumber);
+  // For additional loans, we can generate or use provided loan number
+  let loanNumber;
+  
+  // Check if loan number is provided and validate it if it's a specific format
+  if (requestedData.loanNumber && requestedData.loanNumber.startsWith('LN')) {
+    // Validate LN1-LN15 range if it's in that format
+    const loanNum = requestedData.loanNumber.replace('LN', '');
+    const loanNumValue = parseInt(loanNum);
+    if (isNaN(loanNumValue) || loanNumValue < 1 || loanNumValue > 15) {
+      console.log('⚠️ Provided loan number is not in LN1-LN15 range, generating new one');
+      loanNumber = await Loan.generateLoanNumber(customer._id);
+    } else {
+      loanNumber = requestedData.loanNumber;
+      console.log(`✅ Using provided loan number: ${loanNumber}`);
+    }
+  } else {
+    // Generate new loan number
+    loanNumber = await Loan.generateLoanNumber(customer._id);
+    console.log('🔧 Generated loan number for additional loan:', loanNumber);
+  }
 
   const calculateNextEmiDate = (emiStartDate, loanType) => {
     const date = new Date(emiStartDate || new Date());
@@ -583,7 +756,7 @@ async function approveCustomerEdit(requestDoc, reason, processedBy) {
   let updatedFields = [];
   updatableFields.forEach(field => {
     if (changes[field] !== undefined && changes[field] !== null) {
-      // NEW: Normalize customer number if it's being updated
+      // Normalize customer number if it's being updated
       if (field === 'customerNumber') {
         customer[field] = normalizeCustomerNumber(changes[field]);
       } else {
@@ -643,7 +816,7 @@ async function approveCustomerEdit(requestDoc, reason, processedBy) {
     updatedFields.push('fiDocuments');
   }
 
-  // NEW: Check for duplicates if critical fields are updated
+  // Check for duplicates if critical fields are updated
   if (updatedFields.some(field => ['phone', 'customerNumber', 'loginId'].includes(field))) {
     const hasDuplicates = await checkForDuplicates({
       phone: customer.phone,

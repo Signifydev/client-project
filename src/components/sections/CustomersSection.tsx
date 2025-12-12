@@ -217,6 +217,12 @@ const LoanSelectionModal: React.FC<{
   );
 };
 
+// Update the props interface
+interface ExtendedCustomersSectionProps extends CustomersSectionProps {
+  onAddNewCustomer?: () => void;
+  onViewEMICalendar?: (customer: Customer) => void;
+}
+
 export default function CustomersSection({
   currentUserOffice,
   onViewCustomerDetails,
@@ -224,8 +230,9 @@ export default function CustomersSection({
   onEditCustomer,
   onAddLoan,
   refreshKey,
-  onAddNewCustomer
-}: CustomersSectionProps & { onAddNewCustomer?: () => void }) {
+  onAddNewCustomer,
+  onViewEMICalendar
+}: ExtendedCustomersSectionProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<Filters>({
@@ -293,7 +300,7 @@ export default function CustomersSection({
 
   // Sort and filter customers with FIXED numeric sorting
   const sortedAndFilteredCustomers = useMemo(() => {
-    const filtered = customers.filter(customer => { // FIXED: Changed from let to const
+    const filtered = customers.filter(customer => {
       const matchesSearch = searchQuery === '' || 
         customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (customer.customerNumber && customer.customerNumber.toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -419,17 +426,8 @@ export default function CustomersSection({
     }
   };
 
-  // NEW: Handle loan selection from modal
-  const handleLoanSelect = (loan: Loan) => {
-    if (selectedCustomerForEMI) {
-      onUpdateEMI(selectedCustomerForEMI, loan);
-      setShowLoanSelection(false);
-      setSelectedCustomerForEMI(null);
-    }
-  };
-
-  // FIXED: Now fetches complete customer details with loans before showing EMI Calendar
-  const handleViewEMICalendar = async (customer: Customer) => {
+  // NEW: Handle EMI Calendar button click
+  const handleViewEMICalendarClick = async (customer: Customer) => {
     try {
       const customerId = customer._id || customer.id;
       if (!customerId) {
@@ -442,13 +440,29 @@ export default function CustomersSection({
       const details = await fetchCustomerDetails(customerId);
       if (details) {
         console.log('✅ Customer details fetched for EMI calendar');
-        onViewCustomerDetails(details);
+        // Call the onViewEMICalendar prop if provided
+        if (onViewEMICalendar) {
+          onViewEMICalendar(details);
+        } else {
+          // Fallback to customer details
+          console.warn('onViewEMICalendar prop not provided, showing customer details instead');
+          onViewCustomerDetails(details);
+        }
       } else {
         alert('Failed to fetch customer details for EMI calendar');
       }
     } catch (error: any) {
       console.error('Error fetching customer details for EMI calendar:', error);
       alert('Failed to fetch customer details: ' + error.message);
+    }
+  };
+
+  // NEW: Handle loan selection from modal
+  const handleLoanSelect = (loan: Loan) => {
+    if (selectedCustomerForEMI) {
+      onUpdateEMI(selectedCustomerForEMI, loan);
+      setShowLoanSelection(false);
+      setSelectedCustomerForEMI(null);
     }
   };
 
@@ -729,9 +743,9 @@ export default function CustomersSection({
                             View Details
                           </button>
                           
-                          {/* EMI Calendar Button */}
+                          {/* EMI Calendar Button - FIXED: Now calls correct handler */}
                           <button
-                            onClick={() => handleViewEMICalendar(customer)}
+                            onClick={() => handleViewEMICalendarClick(customer)}
                             className="px-3 py-1.5 bg-purple-600 text-white text-xs font-medium rounded hover:bg-purple-700 transition-colors duration-200"
                           >
                             EMI Calendar

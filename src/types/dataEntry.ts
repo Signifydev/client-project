@@ -179,6 +179,8 @@ export interface NewCustomerStep2 {
   loanDate: string;
   amount: string;
   emiStartDate: string;
+  loanNumber: string;
+  loanOption?: 'single' | 'multiple';
   loanAmount: string;
   emiAmount: string;
   loanDays: string;

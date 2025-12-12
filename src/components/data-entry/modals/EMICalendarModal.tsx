@@ -2,8 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { Customer, Loan, EMIHistory } from '@/src/types/dataEntry';
-import { formatDateToDDMMYYYY } from '@/src/utils/dateCalculations';
-import { calculateEMICompletion } from '@/src/utils/loanCalculations';
 
 interface EMICalendarModalProps {
   isOpen: boolean;
@@ -18,15 +16,25 @@ interface CalendarDay {
   isWeekend: boolean;
   isToday: boolean;
   isPast: boolean;
-  status?: 'paid' | 'partial' | 'missed' | 'advance' | 'due';
+  status?: 'paid' | 'partial' | 'missed' | 'advance' | 'due' | 'amount-only';
   amount?: number;
   loanNumbers?: string[];
+  loanDetails?: {
+    loanNumber: string;
+    amount: number;
+    status: 'paid' | 'partial' | 'missed' | 'advance' | 'due';
+  }[];
 }
 
 interface EMIStatusInfo {
   status: 'paid' | 'partial' | 'missed' | 'advance' | 'due';
   amount: number;
   loanNumbers: string[];
+  loanDetails: {
+    loanNumber: string;
+    amount: number;
+    status: 'paid' | 'partial' | 'missed' | 'advance' | 'due';
+  }[];
 }
 
 export default function EMICalendarModal({
@@ -39,7 +47,11 @@ export default function EMICalendarModal({
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [calendarDays, setCalendarDays] = useState<CalendarDay[]>([]);
   const [customerLoans, setCustomerLoans] = useState<Loan[]>([]);
+  const [selectedLoan, setSelectedLoan] = useState<string>('all'); // 'all', 'L1', 'L2', etc.
   const [isLoading, setIsLoading] = useState(false);
+  const [loanOptions, setLoanOptions] = useState<{ value: string; label: string }[]>([
+    { value: 'all', label: 'All Loans (Amount Dues Only)' }
+  ]);
 
   // Extract loans from customer
   useEffect(() => {
@@ -89,15 +101,34 @@ export default function EMICalendarModal({
       );
       
       setCustomerLoans(activeLoans);
+      
+      // Generate loan options for dropdown
+      const options = [
+        { value: 'all', label: 'All Loans (Amount Dues Only)' }
+      ];
+      
+      activeLoans.forEach((loan, index) => {
+        options.push({
+          value: loan.loanNumber || `L${index + 1}`,
+          label: loan.loanNumber || `L${index + 1}`
+        });
+      });
+      
+      setLoanOptions(options);
     }
   }, [customer]);
 
-  // Generate calendar days for selected month
+  // Generate calendar days based on selected loan
   useEffect(() => {
     if (!customerLoans || customerLoans.length === 0) {
       setCalendarDays([]);
       return;
     }
+
+    // Filter loans based on selection
+    const loansToShow = selectedLoan === 'all' 
+      ? customerLoans 
+      : customerLoans.filter(loan => loan.loanNumber === selectedLoan);
 
     const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
     const days: CalendarDay[] = [];
@@ -106,7 +137,7 @@ export default function EMICalendarModal({
     const emiDueDates = new Set<string>();
     const emiStatusMap = new Map<string, EMIStatusInfo>();
 
-    customerLoans.forEach(loan => {
+    loansToShow.forEach(loan => {
       if (!loan.nextEmiDate || !loan.loanType || !loan.emiAmount) return;
 
       // Generate EMI schedule for the month
@@ -116,7 +147,8 @@ export default function EMICalendarModal({
       const monthEnd = new Date(selectedYear, selectedMonth + 1, 0);
 
       // Calculate daily, weekly, or monthly EMI dates
-      const currentDate = new Date(startDate); // FIXED: Changed from let to const
+      const currentDate = new Date(startDate);
+      const loanNumber = loan.loanNumber || 'L1';
       
       if (loan.loanType === 'Daily') {
         // Daily EMI - every day
@@ -133,7 +165,6 @@ export default function EMICalendarModal({
             });
             
             const existing = emiStatusMap.get(dateKey);
-            const loanNumber = loan.loanNumber || 'L1';
             
             if (payment) {
               // Determine status from payment
@@ -146,18 +177,32 @@ export default function EMICalendarModal({
                 status = 'advance';
               }
               
+              const loanDetail = {
+                loanNumber,
+                amount: payment.amount,
+                status
+              };
+              
               emiStatusMap.set(dateKey, {
                 status,
                 amount: (existing?.amount || 0) + payment.amount,
-                loanNumbers: [...(existing?.loanNumbers || []), loanNumber]
+                loanNumbers: [...(existing?.loanNumbers || []), loanNumber],
+                loanDetails: [...(existing?.loanDetails || []), loanDetail]
               });
             } else {
               // No payment found, mark as due or missed
               const status: EMIStatusInfo['status'] = currentDate < today ? 'missed' : 'due';
+              const loanDetail = {
+                loanNumber,
+                amount: loan.emiAmount,
+                status
+              };
+              
               emiStatusMap.set(dateKey, {
                 status,
-                amount: existing?.amount || 0,
-                loanNumbers: [...(existing?.loanNumbers || []), loanNumber]
+                amount: existing?.amount || loan.emiAmount,
+                loanNumbers: [...(existing?.loanNumbers || []), loanNumber],
+                loanDetails: [...(existing?.loanDetails || []), loanDetail]
               });
             }
           }
@@ -165,7 +210,7 @@ export default function EMICalendarModal({
         }
       } else if (loan.loanType === 'Weekly') {
         // Weekly EMI - every 7 days
-        const weeklyDate = new Date(startDate); // Create a new variable for weekly loop
+        const weeklyDate = new Date(startDate);
         while (weeklyDate <= monthEnd) {
           if (weeklyDate >= monthStart && weeklyDate <= monthEnd) {
             const dateKey = weeklyDate.toISOString().split('T')[0];
@@ -178,7 +223,6 @@ export default function EMICalendarModal({
             });
             
             const existing = emiStatusMap.get(dateKey);
-            const loanNumber = loan.loanNumber || 'L1';
             
             if (payment) {
               let status: EMIStatusInfo['status'] = 'due';
@@ -190,17 +234,31 @@ export default function EMICalendarModal({
                 status = 'advance';
               }
               
+              const loanDetail = {
+                loanNumber,
+                amount: payment.amount,
+                status
+              };
+              
               emiStatusMap.set(dateKey, {
                 status,
                 amount: (existing?.amount || 0) + payment.amount,
-                loanNumbers: [...(existing?.loanNumbers || []), loanNumber]
+                loanNumbers: [...(existing?.loanNumbers || []), loanNumber],
+                loanDetails: [...(existing?.loanDetails || []), loanDetail]
               });
             } else {
               const status: EMIStatusInfo['status'] = weeklyDate < today ? 'missed' : 'due';
+              const loanDetail = {
+                loanNumber,
+                amount: loan.emiAmount,
+                status
+              };
+              
               emiStatusMap.set(dateKey, {
                 status,
-                amount: existing?.amount || 0,
-                loanNumbers: [...(existing?.loanNumbers || []), loanNumber]
+                amount: existing?.amount || loan.emiAmount,
+                loanNumbers: [...(existing?.loanNumbers || []), loanNumber],
+                loanDetails: [...(existing?.loanDetails || []), loanDetail]
               });
             }
           }
@@ -218,12 +276,11 @@ export default function EMICalendarModal({
           
           const payment = loan.emiHistory?.find(p => {
             if (!p.paymentDate) return false;
-            const paymentDate = new Date(paymentDate);
+            const paymentDate = new Date(p.paymentDate);
             return paymentDate.toISOString().split('T')[0] === dateKey;
           });
           
           const existing = emiStatusMap.get(dateKey);
-          const loanNumber = loan.loanNumber || 'L1';
           
           if (payment) {
             let status: EMIStatusInfo['status'] = 'due';
@@ -235,17 +292,31 @@ export default function EMICalendarModal({
               status = 'advance';
             }
             
+            const loanDetail = {
+              loanNumber,
+              amount: payment.amount,
+              status
+            };
+            
             emiStatusMap.set(dateKey, {
               status,
               amount: (existing?.amount || 0) + payment.amount,
-              loanNumbers: [...(existing?.loanNumbers || []), loanNumber]
+              loanNumbers: [...(existing?.loanNumbers || []), loanNumber],
+              loanDetails: [...(existing?.loanDetails || []), loanDetail]
             });
           } else {
             const status: EMIStatusInfo['status'] = emiDate < today ? 'missed' : 'due';
+            const loanDetail = {
+              loanNumber,
+              amount: loan.emiAmount,
+              status
+            };
+            
             emiStatusMap.set(dateKey, {
               status,
-              amount: existing?.amount || 0,
-              loanNumbers: [...(existing?.loanNumbers || []), loanNumber]
+              amount: existing?.amount || loan.emiAmount,
+              loanNumbers: [...(existing?.loanNumbers || []), loanNumber],
+              loanDetails: [...(existing?.loanDetails || []), loanDetail]
             });
           }
         }
@@ -266,20 +337,26 @@ export default function EMICalendarModal({
       
       const emiInfo = emiStatusMap.get(dateKey);
 
+      // For "All Loans" view, show only amount dues without status colors
+      const statusForDisplay = selectedLoan === 'all' 
+        ? (isEmiDue ? 'amount-only' : undefined)
+        : emiInfo?.status;
+
       days.push({
         date,
         isEmiDue,
         isWeekend,
         isToday,
         isPast,
-        status: emiInfo?.status,
+        status: statusForDisplay,
         amount: emiInfo?.amount,
-        loanNumbers: emiInfo?.loanNumbers
+        loanNumbers: emiInfo?.loanNumbers,
+        loanDetails: emiInfo?.loanDetails
       });
     }
 
     setCalendarDays(days);
-  }, [selectedMonth, selectedYear, customerLoans]);
+  }, [selectedMonth, selectedYear, customerLoans, selectedLoan]);
 
   const navigateMonth = (direction: 'prev' | 'next') => {
     if (direction === 'prev') {
@@ -305,6 +382,7 @@ export default function EMICalendarModal({
       case 'partial': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
       case 'advance': return 'bg-blue-100 text-blue-800 border-blue-300';
       case 'missed': return 'bg-red-100 text-red-800 border-red-300';
+      case 'amount-only': return 'bg-purple-100 text-purple-800 border-purple-300';
       default: return 'bg-gray-100 text-gray-800 border-gray-300';
     }
   };
@@ -315,6 +393,7 @@ export default function EMICalendarModal({
       case 'partial': return 'Partial';
       case 'advance': return 'Advance';
       case 'missed': return 'Missed';
+      case 'amount-only': return 'Amount Due';
       default: return 'Due';
     }
   };
@@ -338,7 +417,7 @@ export default function EMICalendarModal({
                 EMI Calendar - {customer.name}
               </h3>
               <p className="text-sm text-gray-500 mt-1">
-                Customer Number: {customer.customerNumber} • Active Loans: {customerLoans.length}
+                Customer Number: {customer.customerNumber} • {customerLoans.length} active loan(s)
               </p>
             </div>
             <button
@@ -351,66 +430,51 @@ export default function EMICalendarModal({
         </div>
 
         <div className="p-6">
-          {/* Month Navigation */}
-          <div className="flex items-center justify-between mb-6">
+          {/* Month Navigation and Loan Selection */}
+          <div className="flex flex-col sm:flex-row items-center justify-between mb-6 gap-4">
             <button
               onClick={() => navigateMonth('prev')}
-              className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+              className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors duration-200"
             >
               ← Previous Month
             </button>
-            <h2 className="text-xl font-semibold text-gray-900">
-              {monthNames[selectedMonth]} {selectedYear}
-            </h2>
+            
+            <div className="flex flex-col items-center">
+              <h2 className="text-xl font-semibold text-gray-900">
+                {monthNames[selectedMonth]} {selectedYear}
+              </h2>
+              
+              {/* Loan Selection Dropdown */}
+              <div className="mt-2 w-full max-w-xs">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Select Loan to View:
+                </label>
+                <select
+                  value={selectedLoan}
+                  onChange={(e) => setSelectedLoan(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
+                >
+                  {loanOptions.map(option => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {selectedLoan === 'all' 
+                    ? 'Showing total amount dues for all loans' 
+                    : `Showing detailed EMI history for ${selectedLoan}`}
+                </p>
+              </div>
+            </div>
+            
             <button
               onClick={() => navigateMonth('next')}
-              className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+              className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors duration-200"
             >
               Next Month →
             </button>
           </div>
-
-          {/* Active Loans Summary */}
-          {customerLoans.length > 0 && (
-            <div className="mb-6">
-              <h4 className="text-lg font-medium text-gray-900 mb-3">Active Loans</h4>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {customerLoans.map((loan, index) => {
-                  const completion = calculateEMICompletion(loan);
-                  return (
-                    <div key={loan._id || index} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-medium text-gray-900">{loan.loanNumber || `Loan ${index + 1}`}</p>
-                          <p className="text-sm text-gray-600">EMI: ₹{loan.emiAmount} ({loan.loanType})</p>
-                        </div>
-                        <span className={`text-xs px-2 py-1 rounded-full ${
-                          loan.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {loan.status}
-                        </span>
-                      </div>
-                      <div className="mt-2">
-                        <div className="flex justify-between text-xs mb-1">
-                          <span>Progress</span>
-                          <span>{completion.completionPercentage.toFixed(1)}%</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div 
-                            className="bg-green-600 h-2 rounded-full" 
-                            style={{width: `${Math.min(completion.completionPercentage, 100)}%`}}
-                          ></div>
-                        </div>
-                      </div>
-                      <div className="mt-2 text-xs text-gray-600">
-                        <p>Next EMI: {loan.nextEmiDate ? formatDateToDDMMYYYY(loan.nextEmiDate) : 'N/A'}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
           {/* Calendar */}
           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
@@ -431,7 +495,7 @@ export default function EMICalendarModal({
                 return (
                   <div
                     key={index}
-                    className={`min-h-[100px] p-2 border border-gray-200 ${
+                    className={`min-h-[120px] p-2 border border-gray-200 ${
                       !isCurrentMonth ? 'bg-gray-50' : ''
                     } ${
                       day.isToday ? 'bg-blue-50' : ''
@@ -447,7 +511,7 @@ export default function EMICalendarModal({
                         }`}>
                           {day.date.getDate()}
                         </span>
-                        {day.isEmiDue && (
+                        {day.isEmiDue && day.status && (
                           <span className={`text-xs px-1.5 py-0.5 rounded-full border ${getStatusColor(day.status)}`}>
                             {getStatusText(day.status)}
                           </span>
@@ -455,23 +519,62 @@ export default function EMICalendarModal({
                       </div>
 
                       {day.isEmiDue && (
-                        <div className="mt-auto">
-                          <div className="text-xs text-gray-600">
-                            <div className="font-medium">EMI Due</div>
-                            {day.amount && day.amount > 0 && (
-                              <div className="text-green-600">₹{day.amount}</div>
-                            )}
-                            {day.loanNumbers && day.loanNumbers.length > 0 && (
-                              <div className="text-gray-500 text-xs mt-1">
-                                {day.loanNumbers.slice(0, 2).map(loanNo => (
-                                  <div key={loanNo} className="truncate">{loanNo}</div>
-                                ))}
-                                {day.loanNumbers.length > 2 && (
-                                  <div className="text-gray-400">+{day.loanNumbers.length - 2} more</div>
-                                )}
+                        <div className="mt-auto space-y-1">
+                          {selectedLoan === 'all' ? (
+                            // All Loans View: Show only amount
+                            <div className="text-xs">
+                              <div className="font-medium text-purple-700">Total Due:</div>
+                              <div className="text-purple-600 font-bold">₹{day.amount?.toLocaleString() || '0'}</div>
+                              {day.loanNumbers && day.loanNumbers.length > 0 && (
+                                <div className="text-gray-500 text-xs mt-1">
+                                  {day.loanNumbers.slice(0, 2).map(loanNo => (
+                                    <div key={loanNo} className="truncate">{loanNo}</div>
+                                  ))}
+                                  {day.loanNumbers.length > 2 && (
+                                    <div className="text-gray-400">+{day.loanNumbers.length - 2} more</div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            // Single Loan View: Show detailed status
+                            <div className="text-xs">
+                              <div className="font-medium text-gray-700">
+                                EMI {getStatusText(day.status)}
                               </div>
-                            )}
-                          </div>
+                              <div className={`font-bold ${
+                                day.status === 'paid' ? 'text-green-600' :
+                                day.status === 'missed' ? 'text-red-600' :
+                                day.status === 'partial' ? 'text-yellow-600' :
+                                day.status === 'advance' ? 'text-blue-600' :
+                                'text-gray-600'
+                              }`}>
+                                ₹{day.amount?.toLocaleString() || '0'}
+                              </div>
+                              {day.loanDetails && day.loanDetails.length > 0 && (
+                                <div className="mt-1">
+                                  {day.loanDetails.map((detail, idx) => (
+                                    <div key={idx} className="flex justify-between items-center">
+                                      <span className="text-gray-600">{detail.loanNumber}</span>
+                                      <span className={`px-1 rounded text-xs ${
+                                        detail.status === 'paid' ? 'bg-green-100 text-green-800' :
+                                        detail.status === 'missed' ? 'bg-red-100 text-red-800' :
+                                        detail.status === 'partial' ? 'bg-yellow-100 text-yellow-800' :
+                                        detail.status === 'advance' ? 'bg-blue-100 text-blue-800' :
+                                        'bg-gray-100 text-gray-800'
+                                      }`}>
+                                        {detail.status === 'paid' ? '✓' : 
+                                         detail.status === 'missed' ? '✗' : 
+                                         detail.status === 'partial' ? '~' : 
+                                         detail.status === 'advance' ? '↑' : 
+                                         '●'}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -481,46 +584,63 @@ export default function EMICalendarModal({
             </div>
           </div>
 
-          {/* Legend */}
+          {/* Legend - Dynamic based on selection */}
           <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
             <h4 className="text-sm font-medium text-gray-900 mb-2">Legend</h4>
             <div className="flex flex-wrap gap-3">
-              <div className="flex items-center">
-                <div className="w-4 h-4 bg-green-100 border border-green-300 rounded mr-2"></div>
-                <span className="text-sm text-gray-700">Paid</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-4 h-4 bg-yellow-100 border border-yellow-300 rounded mr-2"></div>
-                <span className="text-sm text-gray-700">Partial</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-4 h-4 bg-blue-100 border border-blue-300 rounded mr-2"></div>
-                <span className="text-sm text-gray-700">Advance</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-4 h-4 bg-red-100 border border-red-300 rounded mr-2"></div>
-                <span className="text-sm text-gray-700">Missed</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-4 h-4 bg-gray-100 border border-gray-300 rounded mr-2"></div>
-                <span className="text-sm text-gray-700">Due</span>
-              </div>
+              {selectedLoan === 'all' ? (
+                // Legend for All Loans view
+                <div className="flex items-center">
+                  <div className="w-4 h-4 bg-purple-100 border border-purple-300 rounded mr-2"></div>
+                  <span className="text-sm text-gray-700">Amount Due (Total from all loans)</span>
+                </div>
+              ) : (
+                // Legend for Single Loan view
+                <>
+                  <div className="flex items-center">
+                    <div className="w-4 h-4 bg-green-100 border border-green-300 rounded mr-2"></div>
+                    <span className="text-sm text-gray-700">Paid</span>
+                  </div>
+                  <div className="flex items-center">
+                    <div className="w-4 h-4 bg-yellow-100 border border-yellow-300 rounded mr-2"></div>
+                    <span className="text-sm text-gray-700">Partial</span>
+                  </div>
+                  <div className="flex items-center">
+                    <div className="w-4 h-4 bg-blue-100 border border-blue-300 rounded mr-2"></div>
+                    <span className="text-sm text-gray-700">Advance</span>
+                  </div>
+                  <div className="flex items-center">
+                    <div className="w-4 h-4 bg-red-100 border border-red-300 rounded mr-2"></div>
+                    <span className="text-sm text-gray-700">Missed</span>
+                  </div>
+                  <div className="flex items-center">
+                    <div className="w-4 h-4 bg-gray-100 border border-gray-300 rounded mr-2"></div>
+                    <span className="text-sm text-gray-700">Due</span>
+                  </div>
+                </>
+              )}
               <div className="flex items-center">
                 <div className="w-4 h-4 bg-blue-50 border border-blue-200 rounded mr-2"></div>
                 <span className="text-sm text-gray-700">Today</span>
+              </div>
+              <div className="flex items-center">
+                <div className="w-4 h-4 bg-red-50 border border-red-200 rounded mr-2"></div>
+                <span className="text-sm text-gray-700">Weekend</span>
               </div>
             </div>
           </div>
         </div>
 
         <div className="sticky bottom-0 bg-white px-6 py-4 border-t border-gray-200">
-          <div className="flex justify-between">
+          <div className="flex justify-between items-center">
             <div className="text-sm text-gray-600">
-              Showing EMI schedule for {monthNames[selectedMonth]} {selectedYear}
+              {selectedLoan === 'all' 
+                ? `Showing total amount dues for all loans in ${monthNames[selectedMonth]} ${selectedYear}`
+                : `Showing EMI history for ${selectedLoan} in ${monthNames[selectedMonth]} ${selectedYear}`}
             </div>
             <button
               onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors duration-200"
             >
               Close Calendar
             </button>

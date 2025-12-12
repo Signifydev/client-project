@@ -328,14 +328,14 @@ export const validateStep1 = (step1Data: NewCustomerStep1, customers: Customer[]
     }
   }
   
-  // Address
-  if (!step1Data.address.trim()) {
-    errors.address = 'Address is required';
-  } else if (step1Data.address.trim().length < 10) {
-    errors.address = 'Address must be at least 10 characters';
-  } else if (step1Data.address.trim().length > 500) {
-    errors.address = 'Address cannot exceed 500 characters';
+  // Address - UPDATED: Now optional, removed minimum length requirement
+  if (step1Data.address && step1Data.address.trim()) {
+    // Only validate if address is provided
+    if (step1Data.address.trim().length > 500) {
+      errors.address = 'Address cannot exceed 500 characters';
+    }
   }
+  // Removed the "required" validation and 10-character minimum
 
   // Category
   if (!step1Data.category) {
@@ -353,141 +353,158 @@ export const validateStep1 = (step1Data: NewCustomerStep1, customers: Customer[]
 export const validateStep2 = (step2Data: NewCustomerStep2): { [key: string]: string } => {
   const errors: { [key: string]: string } = {};
   
-  // Loan date
-  if (!step2Data.loanDate) {
-    errors.loanDate = 'Loan date is required';
-  } else {
-    const dateValidation = isValidIndianDateNotFuture(step2Data.loanDate);
-    if (!dateValidation.isValid) {
-      errors.loanDate = dateValidation.message || 'Invalid loan date';
-    }
-  }
-  
-  // Amount
-  const amount = parseFloat(step2Data.amount);
-  if (!step2Data.amount || isNaN(amount)) {
-    errors.amount = 'Amount is required';
-  } else if (amount <= 0) {
-    errors.amount = 'Amount must be greater than 0';
-  } else if (amount > 10000000) {
-    errors.amount = 'Amount cannot exceed ₹10,000,000';
-  } else if (amount < 100) {
-    errors.amount = 'Amount must be at least ₹100';
-  }
-  
-  // EMI start date
-  if (!step2Data.emiStartDate) {
-    errors.emiStartDate = 'EMI starting date is required';
-  } else {
-    const dateValidation = isValidIndianDateNotFuture(step2Data.emiStartDate);
-    if (!dateValidation.isValid) {
-      errors.emiStartDate = dateValidation.message || 'Invalid EMI start date';
-    } else if (step2Data.loanDate) {
-      const emiStartDate = getIndianDate(step2Data.emiStartDate);
-      const loanDate = getIndianDate(step2Data.loanDate);
-      
-      if (emiStartDate < loanDate) {
-        errors.emiStartDate = 'EMI start date cannot be before loan date';
-      }
-    }
-  }
-  
-  // Loan days
-  const loanDays = parseInt(step2Data.loanDays);
-  if (!step2Data.loanDays || isNaN(loanDays)) {
-    errors.loanDays = `Valid number of ${step2Data.loanType === 'Daily' ? 'days' : step2Data.loanType === 'Weekly' ? 'weeks' : 'months'} is required`;
-  } else if (loanDays <= 0) {
-    errors.loanDays = `Number of ${step2Data.loanType === 'Daily' ? 'days' : step2Data.loanType === 'Weekly' ? 'weeks' : 'months'} must be greater than 0`;
-  } else if (step2Data.loanType === 'Daily' && loanDays > 365) {
-    errors.loanDays = 'Daily loans cannot exceed 365 days';
-  } else if (step2Data.loanType === 'Weekly' && loanDays > 52) {
-    errors.loanDays = 'Weekly loans cannot exceed 52 weeks';
-  } else if (step2Data.loanType === 'Monthly' && loanDays > 36) {
-    errors.loanDays = 'Monthly loans cannot exceed 36 months';
-  }
-  
-  // EMI validation
-  if (step2Data.loanType === 'Daily') {
-    const emiAmount = parseFloat(step2Data.emiAmount);
-    if (!step2Data.emiAmount || isNaN(emiAmount)) {
-      errors.emiAmount = 'Valid EMI amount is required for Daily loans';
-    } else if (emiAmount <= 0) {
-      errors.emiAmount = 'EMI amount must be greater than 0';
-    } else if (emiAmount > 50000) {
-      errors.emiAmount = 'Daily EMI amount cannot exceed ₹50,000';
-    } else if (emiAmount < 10) {
-      errors.emiAmount = 'Daily EMI amount must be at least ₹10';
-    }
-    
-    if (loanDays > 0 && emiAmount > 0) {
-      const calculatedTotal = emiAmount * loanDays;
-      const enteredAmount = parseFloat(step2Data.loanAmount) || 0;
-      if (Math.abs(calculatedTotal - enteredAmount) > 1) {
-        errors.loanAmount = `Loan amount should be ₹${(emiAmount * loanDays).toFixed(2)} for ${loanDays} days at ₹${emiAmount} per day`;
+  // Only validate if it's a single loan - UPDATED to check loanSelectionType
+  if (step2Data.loanSelectionType === 'single') { // Changed from loanType to loanSelectionType
+    // Loan number validation - Updated for dropdown selection
+    if (!step2Data.loanNumber || !step2Data.loanNumber.trim()) {
+      errors.loanNumber = 'Loan number is required for single loan';
+    } else if (!step2Data.loanNumber.startsWith('LN')) {
+      errors.loanNumber = 'Loan number must start with "LN" prefix';
+    } else {
+      // Validate it's one of the allowed values (LN1 to LN15)
+      const loanNum = step2Data.loanNumber.replace('LN', '');
+      const loanNumValue = parseInt(loanNum);
+      if (isNaN(loanNumValue) || loanNumValue < 1 || loanNumValue > 15) {
+        errors.loanNumber = 'Please select a valid loan number between LN1 and LN15';
       }
     }
     
-  } else if (step2Data.loanType === 'Weekly' || step2Data.loanType === 'Monthly') {
-    if (step2Data.emiType === 'fixed') {
+    // Loan date
+    if (!step2Data.loanDate) {
+      errors.loanDate = 'Loan date is required';
+    } else {
+      const dateValidation = isValidIndianDateNotFuture(step2Data.loanDate);
+      if (!dateValidation.isValid) {
+        errors.loanDate = dateValidation.message || 'Invalid loan date';
+      }
+    }
+    
+    // Amount
+    const amount = parseFloat(step2Data.amount);
+    if (!step2Data.amount || isNaN(amount)) {
+      errors.amount = 'Amount is required';
+    } else if (amount <= 0) {
+      errors.amount = 'Amount must be greater than 0';
+    } else if (amount > 10000000) {
+      errors.amount = 'Amount cannot exceed ₹10,000,000';
+    } else if (amount < 100) {
+      errors.amount = 'Amount must be at least ₹100';
+    }
+    
+    // EMI start date
+    if (!step2Data.emiStartDate) {
+      errors.emiStartDate = 'EMI starting date is required';
+    } else {
+      const dateValidation = isValidIndianDateNotFuture(step2Data.emiStartDate);
+      if (!dateValidation.isValid) {
+        errors.emiStartDate = dateValidation.message || 'Invalid EMI start date';
+      } else if (step2Data.loanDate) {
+        const emiStartDate = getIndianDate(step2Data.emiStartDate);
+        const loanDate = getIndianDate(step2Data.loanDate);
+        
+        if (emiStartDate < loanDate) {
+          errors.emiStartDate = 'EMI start date cannot be before loan date';
+        }
+      }
+    }
+    
+    // Loan days
+    const loanDays = parseInt(step2Data.loanDays);
+    if (!step2Data.loanDays || isNaN(loanDays)) {
+      errors.loanDays = `Valid number of ${step2Data.loanType === 'Daily' ? 'days' : step2Data.loanType === 'Weekly' ? 'weeks' : 'months'} is required`;
+    } else if (loanDays <= 0) {
+      errors.loanDays = `Number of ${step2Data.loanType === 'Daily' ? 'days' : step2Data.loanType === 'Weekly' ? 'weeks' : 'months'} must be greater than 0`;
+    } else if (step2Data.loanType === 'Daily' && loanDays > 365) {
+      errors.loanDays = 'Daily loans cannot exceed 365 days';
+    } else if (step2Data.loanType === 'Weekly' && loanDays > 52) {
+      errors.loanDays = 'Weekly loans cannot exceed 52 weeks';
+    } else if (step2Data.loanType === 'Monthly' && loanDays > 36) {
+      errors.loanDays = 'Monthly loans cannot exceed 36 months';
+    }
+    
+    // EMI validation
+    if (step2Data.loanType === 'Daily') {
       const emiAmount = parseFloat(step2Data.emiAmount);
       if (!step2Data.emiAmount || isNaN(emiAmount)) {
-        errors.emiAmount = 'Valid EMI amount is required for Fixed EMI type';
+        errors.emiAmount = 'Valid EMI amount is required for Daily loans';
       } else if (emiAmount <= 0) {
         errors.emiAmount = 'EMI amount must be greater than 0';
-      } else if (emiAmount > 100000) {
-        errors.emiAmount = 'EMI amount cannot exceed ₹100,000';
+      } else if (emiAmount > 50000) {
+        errors.emiAmount = 'Daily EMI amount cannot exceed ₹50,000';
+      } else if (emiAmount < 10) {
+        errors.emiAmount = 'Daily EMI amount must be at least ₹10';
       }
       
       if (loanDays > 0 && emiAmount > 0) {
         const calculatedTotal = emiAmount * loanDays;
         const enteredAmount = parseFloat(step2Data.loanAmount) || 0;
         if (Math.abs(calculatedTotal - enteredAmount) > 1) {
-          errors.loanAmount = `Loan amount should be ₹${(emiAmount * loanDays).toFixed(2)} for ${loanDays} ${step2Data.loanType === 'Weekly' ? 'weeks' : 'months'} at ₹${emiAmount} per ${step2Data.loanType === 'Weekly' ? 'week' : 'month'}`;
+          errors.loanAmount = `Loan amount should be ₹${(emiAmount * loanDays).toFixed(2)} for ${loanDays} days at ₹${emiAmount} per day`;
         }
       }
       
-    } else if (step2Data.emiType === 'custom') {
-      const emiAmount = parseFloat(step2Data.emiAmount);
-      const customEmiAmount = parseFloat(step2Data.customEmiAmount || '0');
-      
-      if (!step2Data.emiAmount || isNaN(emiAmount) || emiAmount <= 0) {
-        errors.emiAmount = 'Valid fixed EMI amount is required for Custom EMI type';
-      } else if (emiAmount > 100000) {
-        errors.emiAmount = 'Fixed EMI amount cannot exceed ₹100,000';
-      }
-      
-      if (!step2Data.customEmiAmount || isNaN(customEmiAmount) || customEmiAmount <= 0) {
-        errors.customEmiAmount = 'Valid last EMI amount is required for Custom EMI type';
-      } else if (customEmiAmount > 200000) {
-        errors.customEmiAmount = 'Last EMI amount cannot exceed ₹200,000';
-      }
-      
-      if (emiAmount === customEmiAmount) {
-        errors.customEmiAmount = 'Last EMI amount must be different from fixed EMI amount';
-      }
-      
-      if (loanDays > 0 && emiAmount > 0 && customEmiAmount > 0) {
-        const fixedPeriods = loanDays - 1;
-        const calculatedTotal = (emiAmount * fixedPeriods) + customEmiAmount;
-        const enteredAmount = parseFloat(step2Data.loanAmount) || 0;
-        if (Math.abs(calculatedTotal - enteredAmount) > 1) {
-          errors.customEmiAmount = `Last EMI amount should be ₹${(enteredAmount - (emiAmount * fixedPeriods)).toFixed(2)} to match total loan amount`;
+    } else if (step2Data.loanType === 'Weekly' || step2Data.loanType === 'Monthly') {
+      if (step2Data.emiType === 'fixed') {
+        const emiAmount = parseFloat(step2Data.emiAmount);
+        if (!step2Data.emiAmount || isNaN(emiAmount)) {
+          errors.emiAmount = 'Valid EMI amount is required for Fixed EMI type';
+        } else if (emiAmount <= 0) {
+          errors.emiAmount = 'EMI amount must be greater than 0';
+        } else if (emiAmount > 100000) {
+          errors.emiAmount = 'EMI amount cannot exceed ₹100,000';
+        }
+        
+        if (loanDays > 0 && emiAmount > 0) {
+          const calculatedTotal = emiAmount * loanDays;
+          const enteredAmount = parseFloat(step2Data.loanAmount) || 0;
+          if (Math.abs(calculatedTotal - enteredAmount) > 1) {
+            errors.loanAmount = `Loan amount should be ₹${(emiAmount * loanDays).toFixed(2)} for ${loanDays} ${step2Data.loanType === 'Weekly' ? 'weeks' : 'months'} at ₹${emiAmount} per ${step2Data.loanType === 'Weekly' ? 'week' : 'month'}`;
+          }
+        }
+        
+      } else if (step2Data.emiType === 'custom') {
+        const emiAmount = parseFloat(step2Data.emiAmount);
+        const customEmiAmount = parseFloat(step2Data.customEmiAmount || '0');
+        
+        if (!step2Data.emiAmount || isNaN(emiAmount) || emiAmount <= 0) {
+          errors.emiAmount = 'Valid fixed EMI amount is required for Custom EMI type';
+        } else if (emiAmount > 100000) {
+          errors.emiAmount = 'Fixed EMI amount cannot exceed ₹100,000';
+        }
+        
+        if (!step2Data.customEmiAmount || isNaN(customEmiAmount) || customEmiAmount <= 0) {
+          errors.customEmiAmount = 'Valid last EMI amount is required for Custom EMI type';
+        } else if (customEmiAmount > 200000) {
+          errors.customEmiAmount = 'Last EMI amount cannot exceed ₹200,000';
+        }
+        
+        if (emiAmount === customEmiAmount) {
+          errors.customEmiAmount = 'Last EMI amount must be different from fixed EMI amount';
+        }
+        
+        if (loanDays > 0 && emiAmount > 0 && customEmiAmount > 0) {
+          const fixedPeriods = loanDays - 1;
+          const calculatedTotal = (emiAmount * fixedPeriods) + customEmiAmount;
+          const enteredAmount = parseFloat(step2Data.loanAmount) || 0;
+          if (Math.abs(calculatedTotal - enteredAmount) > 1) {
+            errors.customEmiAmount = `Last EMI amount should be ₹${(enteredAmount - (emiAmount * fixedPeriods)).toFixed(2)} to match total loan amount`;
+          }
         }
       }
     }
-  }
-  
-  // Loan amount
-  if (!errors.loanAmount) {
-    const loanAmount = parseFloat(step2Data.loanAmount);
-    if (!step2Data.loanAmount || isNaN(loanAmount)) {
-      errors.loanAmount = 'Valid loan amount is required';
-    } else if (loanAmount <= 0) {
-      errors.loanAmount = 'Loan amount must be greater than 0';
-    } else if (loanAmount > 10000000) {
-      errors.loanAmount = 'Loan amount cannot exceed ₹10,000,000';
-    } else if (loanAmount < 100) {
-      errors.loanAmount = 'Loan amount must be at least ₹100';
+    
+    // Loan amount
+    if (!errors.loanAmount) {
+      const loanAmount = parseFloat(step2Data.loanAmount);
+      if (!step2Data.loanAmount || isNaN(loanAmount)) {
+        errors.loanAmount = 'Valid loan amount is required';
+      } else if (loanAmount <= 0) {
+        errors.loanAmount = 'Loan amount must be greater than 0';
+      } else if (loanAmount > 10000000) {
+        errors.loanAmount = 'Loan amount cannot exceed ₹10,000,000';
+      } else if (loanAmount < 100) {
+        errors.loanAmount = 'Loan amount must be at least ₹100';
+      }
     }
   }
   
@@ -666,6 +683,26 @@ export const validateAmount = (amount: string): { isValid: boolean; message?: st
   
   if (amountValue < 100) {
     return { isValid: false, message: 'Amount must be at least ₹100' };
+  }
+  
+  return { isValid: true };
+};
+
+/**
+ * Validate loan number format
+ */
+export const validateLoanNumber = (loanNumber: string): { isValid: boolean; message?: string } => {
+  if (!loanNumber.trim()) {
+    return { isValid: false, message: 'Loan number is required' };
+  }
+  
+  if (!loanNumber.startsWith('LN')) {
+    return { isValid: false, message: 'Loan number must start with "LN" prefix' };
+  }
+  
+  const numericPart = loanNumber.replace('LN', '').replace(/^ln/gi, '');
+  if (!numericPart || !/^\d+$/.test(numericPart)) {
+    return { isValid: false, message: 'Loan number must contain digits after "LN" prefix' };
   }
   
   return { isValid: true };

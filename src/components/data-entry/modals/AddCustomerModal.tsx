@@ -79,13 +79,15 @@ export default function AddCustomerModal({
   });
   
   const [step2Data, setStep2Data] = useState<NewCustomerStep2>({
+    loanSelectionType: 'single', // Changed from loanType to loanSelectionType
+    loanNumber: '',
     loanDate: getTodayISTDate(),
     amount: '',
     emiStartDate: getTodayISTDate(),
     loanAmount: '',
     emiAmount: '',
     loanDays: '',
-    loanType: 'Daily',
+    loanType: 'Daily', // This is now only for Daily/Weekly/Monthly
     emiType: 'fixed',
     customEmiAmount: '',
   });
@@ -132,20 +134,20 @@ export default function AddCustomerModal({
   };
 
   useEffect(() => {
-    if (step2Data.loanType === 'Daily' || step2Data.emiType === 'fixed') {
+    if (step2Data.loanSelectionType === 'single' && (step2Data.loanType === 'Daily' || step2Data.emiType === 'fixed')) {
       const totalAmount = calculateTotalLoanAmount();
       setStep2Data(prev => ({ 
         ...prev, 
         loanAmount: totalAmount > 0 ? totalAmount.toString() : '' 
       }));
-    } else if (step2Data.loanType !== 'Daily' && step2Data.emiType === 'custom') {
+    } else if (step2Data.loanSelectionType === 'single' && step2Data.loanType !== 'Daily' && step2Data.emiType === 'custom') {
       const totalAmount = calculateTotalLoanAmount();
       setStep2Data(prev => ({ 
         ...prev, 
         loanAmount: totalAmount > 0 ? totalAmount.toString() : '' 
       }));
     }
-  }, [step2Data.emiAmount, step2Data.loanDays, step2Data.customEmiAmount, step2Data.loanType, step2Data.emiType]);
+  }, [step2Data.emiAmount, step2Data.loanDays, step2Data.customEmiAmount, step2Data.loanType, step2Data.emiType, step2Data.loanSelectionType]);
 
   useEffect(() => {
     return () => {
@@ -219,27 +221,31 @@ export default function AddCustomerModal({
   };
 
   const generatePassword = (): void => {
-    const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    const lowercase = 'abcdefghijklmnopqrstuvwxyz';
-    const numbers = '0123456789';
-    const specialChars = '!@#$%^&*';
-    
-    let password = '';
-    
-    password += uppercase[Math.floor(Math.random() * uppercase.length)];
-    password += lowercase[Math.floor(Math.random() * lowercase.length)];
-    password += numbers[Math.floor(Math.random() * numbers.length)];
-    password += specialChars[Math.floor(Math.random() * specialChars.length)];
-    
-    const allChars = uppercase + lowercase + numbers + specialChars;
-    for (let i = 0; i < 4; i++) {
-      password += allChars[Math.floor(Math.random() * allChars.length)];
-    }
-    
-    password = password.split('').sort(() => Math.random() - 0.5).join('');
-    
-    setStep3Data(prev => ({ ...prev, password, confirmPassword: password }));
-  };
+  // Limited symbols as requested: #,@,$,%,!
+  const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+  const numbers = '0123456789';
+  const specialChars = '#@$%!'; // Limited to specific symbols only
+  
+  let password = '';
+  
+  // Ensure at least one of each required type
+  password += uppercase[Math.floor(Math.random() * uppercase.length)];
+  password += lowercase[Math.floor(Math.random() * lowercase.length)];
+  password += numbers[Math.floor(Math.random() * numbers.length)];
+  password += specialChars[Math.floor(Math.random() * specialChars.length)];
+  
+  // Fill remaining characters with random from all allowed characters
+  const allChars = uppercase + lowercase + numbers + specialChars;
+  for (let i = 0; i < 4; i++) {
+    password += allChars[Math.floor(Math.random() * allChars.length)];
+  }
+  
+  // Shuffle the password
+  password = password.split('').sort(() => Math.random() - 0.5).join('');
+  
+  setStep3Data(prev => ({ ...prev, password, confirmPassword: password }));
+};
 
   const checkCustomerNumberAvailability = async (customerNumber: string): Promise<void> => {
     if (!customerNumber || extractNumericPart(customerNumber).length < 1) {
@@ -403,12 +409,14 @@ export default function AddCustomerModal({
       };
       
       const preparedStep2Data = {
+        loanSelectionType: step2Data.loanSelectionType, // Changed from loanType
+        loanNumber: step2Data.loanNumber,
         loanDate: step2Data.loanDate,
         emiStartDate: step2Data.emiStartDate,
         loanAmount: parseFloat(step2Data.loanAmount) || totalLoanAmount,
         emiAmount: parseFloat(step2Data.emiAmount) || 0,
         loanDays: parseFloat(step2Data.loanDays) || 0,
-        loanType: step2Data.loanType,
+        loanType: step2Data.loanType, // This is now only for Daily/Weekly/Monthly
         emiType: step2Data.emiType,
         customEmiAmount: step2Data.customEmiAmount ? parseFloat(step2Data.customEmiAmount) : null
       };
@@ -436,10 +444,12 @@ export default function AddCustomerModal({
           address: step1Data.address || '',
           category: step1Data.category,
           officeCategory: step1Data.officeCategory,
+          loanSelectionType: step2Data.loanSelectionType, // Changed from loanType
+          loanNumber: step2Data.loanNumber,
           loanAmount: parseFloat(step2Data.loanAmount) || totalLoanAmount,
           emiAmount: parseFloat(step2Data.emiAmount) || 0,
           loanDays: parseFloat(step2Data.loanDays) || 0,
-          loanType: step2Data.loanType,
+          loanType: step2Data.loanType, // This is now only for Daily/Weekly/Monthly
           emiType: step2Data.emiType,
           customEmiAmount: step2Data.customEmiAmount ? parseFloat(step2Data.customEmiAmount) : null,
           loginId: step3Data.loginId,
@@ -457,7 +467,10 @@ export default function AddCustomerModal({
       console.log('📋 Sending approval request:', {
         type: approvalRequest.type,
         customerName: approvalRequest.customerName,
-        customerNumber: approvalRequest.customerNumber
+        customerNumber: approvalRequest.customerNumber,
+        loanSelectionType: approvalRequest.step2Data.loanSelectionType,
+        loanType: approvalRequest.step2Data.loanType,
+        loanNumber: approvalRequest.step2Data.loanNumber
       });
       
       const response = await fetch('/api/data-entry/requests', {
@@ -582,21 +595,25 @@ export default function AddCustomerModal({
   const handleStep2Next = (): void => {
     console.log('Step 2 data:', step2Data);
     
-    const errors = validateStep2(step2Data);
-    setStep2Errors(errors);
-    
-    if (Object.keys(errors).length === 0) {
-      console.log('Step 2 validation passed, moving to step 3');
-      setCurrentStep(3);
-    } else {
-      console.log('Step 2 validation failed');
-      setTimeout(() => {
-        const firstErrorElement = document.querySelector('[id^="error-"]');
-        if (firstErrorElement) {
-          firstErrorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-      }, 100);
+    if (step2Data.loanSelectionType === 'single') {
+      const errors = validateStep2(step2Data);
+      setStep2Errors(errors);
+      
+      if (Object.keys(errors).length > 0) {
+        console.log('Step 2 validation failed');
+        setTimeout(() => {
+          const firstErrorElement = document.querySelector('[id^="error-"]');
+          if (firstErrorElement) {
+            firstErrorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 100);
+        return;
+      }
     }
+    
+    // For multiple loans, no validation needed
+    console.log('Step 2 validation passed, moving to step 3');
+    setCurrentStep(3);
   };
 
   const handleStep2Back = (): void => {
@@ -629,6 +646,8 @@ export default function AddCustomerModal({
       }
     });
     setStep2Data({
+      loanSelectionType: 'single', // Changed from loanType
+      loanNumber: '',
       loanDate: getTodayISTDate(),
       amount: '',
       emiStartDate: getTodayISTDate(),
@@ -677,64 +696,6 @@ export default function AddCustomerModal({
     
     setIsLoading(true);
     try {
-      const formData = new FormData();
-    
-      formData.append('name', step1Data.name.trim());
-      formData.append('businessName', step1Data.businessName);
-      formData.append('area', step1Data.area);
-      formData.append('customerNumber', normalizedCustomerNumber);
-      formData.append('address', step1Data.address);
-      formData.append('category', step1Data.category);
-      formData.append('officeCategory', step1Data.officeCategory);
-      
-      step1Data.phone.forEach((phoneNum, index) => {
-        if (phoneNum && phoneNum.trim() !== '') {
-          formData.append(`phone[${index}]`, phoneNum);
-        }
-      });
-      
-      if (step1Data.whatsappNumber && step1Data.whatsappNumber.trim()) {
-        formData.append('whatsappNumber', step1Data.whatsappNumber);
-      }
-      
-      if (step1Data.profilePicture) {
-        formData.append('profilePicture', step1Data.profilePicture);
-      }
-      
-      if (step1Data.fiDocuments.shop) {
-        formData.append('fiDocumentShop', step1Data.fiDocuments.shop);
-      }
-      
-      if (step1Data.fiDocuments.home) {
-        formData.append('fiDocumentHome', step1Data.fiDocuments.home);
-      }
-      
-      formData.append('loanDate', step2Data.loanDate);
-      formData.append('amount', step2Data.amount);
-      formData.append('emiStartDate', step2Data.emiStartDate);
-      formData.append('loanAmount', totalLoanAmount.toString());
-      formData.append('emiAmount', step2Data.emiAmount);
-      formData.append('loanDays', step2Data.loanDays);
-      formData.append('loanType', step2Data.loanType);
-      formData.append('emiType', step2Data.emiType);
-      
-      if (step2Data.customEmiAmount) {
-        formData.append('customEmiAmount', step2Data.customEmiAmount);
-      }
-      
-      formData.append('loginId', step3Data.loginId);
-      formData.append('password', step3Data.password);
-      formData.append('confirmPassword', step3Data.confirmPassword);
-      
-      formData.append('requestType', 'new_customer');
-      formData.append('status', 'pending_approval');
-      formData.append('requestedBy', currentUserOffice);
-      formData.append('requestDate', new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
-      
-      console.log('🔍 SUBMITTING CUSTOMER REQUEST FOR APPROVAL:');
-      console.log('Customer Name:', step1Data.name);
-      console.log('Customer Number:', normalizedCustomerNumber);
-      
       const result = await sendApprovalRequest();
       
       if (result.success) {
@@ -1120,21 +1081,21 @@ export default function AddCustomerModal({
 
                 {/* Address */}
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Address *
-                  </label>
-                  <textarea
-                    className={`w-full px-3 py-2 border ${step1Errors.address ? 'border-red-300' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
-                    rows={3}
-                    value={step1Data.address}
-                    onChange={(e) => setStep1Data(prev => ({ ...prev, address: e.target.value }))}
-                    placeholder="Enter complete address"
-                    id="error-address"
-                  />
-                  {step1Errors.address && (
-                    <p className="mt-1 text-sm text-red-600">{step1Errors.address}</p>
-                  )}
-                </div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">
+    Address {/* Removed asterisk */}
+  </label>
+  <textarea
+    className={`w-full px-3 py-2 border ${step1Errors.address ? 'border-red-300' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+    rows={3}
+    value={step1Data.address}
+    onChange={(e) => setStep1Data(prev => ({ ...prev, address: e.target.value }))}
+    placeholder="Enter complete address (Optional)"
+    id="error-address"
+  />
+  {step1Errors.address && (
+    <p className="mt-1 text-sm text-red-600">{step1Errors.address}</p>
+  )}
+</div>
 
                 {/* Category */}
                 <div>
@@ -1292,7 +1253,7 @@ export default function AddCustomerModal({
             </div>
           )}
 
-          {/* Step 2: Loan Details */}
+          {/* Step 2: Loan Type Selection & Details */}
           {currentStep === 2 && (
             <div className="space-y-6">
               <div className="bg-blue-50 border border-blue-100 rounded-lg p-4">
@@ -1301,334 +1262,538 @@ export default function AddCustomerModal({
                     <span className="text-blue-400 text-lg">💰</span>
                   </div>
                   <div className="ml-3">
-                    <h3 className="text-sm font-medium text-blue-800">Loan Details</h3>
+                    <h3 className="text-sm font-medium text-blue-800">Loan Type Selection</h3>
+                    <p className="text-sm text-blue-700 mt-1">
+                      Choose whether to create a single loan now or add multiple loans later
+                    </p>
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Loan Type */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Loan Type *
-                  </label>
-                  <select
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    value={step2Data.loanType}
-                    onChange={(e) => {
-                      const newLoanType = e.target.value;
-                      setStep2Data(prev => ({ 
-                        ...prev, 
-                        loanType: newLoanType,
-                        emiType: newLoanType === 'Daily' ? 'fixed' : prev.emiType,
-                        customEmiAmount: newLoanType === 'Daily' ? '' : prev.customEmiAmount,
-                        loanAmount: ''
-                      }));
-                    }}
-                  >
-                    {loanTypes.map(type => (
-                      <option key={type} value={type}>{type}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Loan Date */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Loan Date *
-                  </label>
-                  <input
-                    type="date"
-                    className={`w-full px-3 py-2 border ${step2Errors.loanDate ? 'border-red-300' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
-                    value={step2Data.loanDate}
-                    onChange={(e) => {
-                      setStep2Data(prev => ({ ...prev, loanDate: e.target.value }));
-                      if (step2Errors.loanDate) {
-                        setStep2Errors(prev => ({ ...prev, loanDate: '' }));
-                      }
-                    }}
-                    id="error-loanDate"
-                  />
-                  {step2Errors.loanDate && (
-                    <p className="mt-1 text-sm text-red-600">{step2Errors.loanDate}</p>
-                  )}
-                </div>
-
-                {/* Amount */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Amount (Principal) *
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <span className="text-gray-500">₹</span>
+              {/* Loan Type Selection */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <div className={`border-2 rounded-lg p-6 cursor-pointer transition-all ${
+                  step2Data.loanSelectionType === 'single' 
+                    ? 'border-blue-500 bg-blue-50' 
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+                onClick={() => setStep2Data(prev => ({ ...prev, loanSelectionType: 'single' }))}>
+                  <div className="flex items-center mb-4">
+                    <div className={`h-6 w-6 rounded-full border-2 flex items-center justify-center mr-3 ${
+                      step2Data.loanSelectionType === 'single' 
+                        ? 'border-blue-500 bg-blue-500' 
+                        : 'border-gray-300'
+                    }`}>
+                      {step2Data.loanSelectionType === 'single' && (
+                        <div className="h-3 w-3 rounded-full bg-white"></div>
+                      )}
                     </div>
-                    <input
-                      type="number"
-                      min="1"
-                      className={`w-full pl-10 px-3 py-2 border ${step2Errors.amount ? 'border-red-300' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
-                      value={step2Data.amount}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setStep2Data(prev => ({ ...prev, amount: value }));
-                        if (step2Errors.amount) {
-                          setStep2Errors(prev => ({ ...prev, amount: '' }));
-                        }
-                      }}
-                      placeholder="Enter principal amount"
-                      id="error-amount"
-                    />
+                    <h3 className="text-lg font-semibold text-gray-900">Single Loan</h3>
                   </div>
-                  {step2Errors.amount && (
-                    <p className="mt-1 text-sm text-red-600">{step2Errors.amount}</p>
-                  )}
+                  <p className="text-gray-600 mb-3">
+                    Create customer with a single loan immediately. All loan details are required.
+                  </p>
+                  <ul className="text-sm text-gray-500 space-y-1">
+                    <li>• Create loan with this customer</li>
+                    <li>• Loan number required (LN prefix)</li>
+                    <li>• All loan details required</li>
+                    <li>• Single loan entry</li>
+                  </ul>
                 </div>
 
-                {/* EMI Start Date */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    EMI Start Date *
-                  </label>
-                  <input
-                    type="date"
-                    className={`w-full px-3 py-2 border ${step2Errors.emiStartDate ? 'border-red-300' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
-                    value={step2Data.emiStartDate}
-                    onChange={(e) => {
-                      setStep2Data(prev => ({ ...prev, emiStartDate: e.target.value }));
-                      if (step2Errors.emiStartDate) {
-                        setStep2Errors(prev => ({ ...prev, emiStartDate: '' }));
-                      }
-                    }}
-                    id="error-emiStartDate"
-                  />
-                  {step2Errors.emiStartDate && (
-                    <p className="mt-1 text-sm text-red-600">{step2Errors.emiStartDate}</p>
-                  )}
-                </div>
-
-                {/* EMI Collection Type */}
-                {(step2Data.loanType === 'Weekly' || step2Data.loanType === 'Monthly') && (
-                  <div className="md:col-span-2">
-                    <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
-                      <label className="block text-lg font-semibold text-blue-800 mb-3">
-                        EMI Collection Type *
-                      </label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <label className={`flex items-center p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                          step2Data.emiType === 'fixed' 
-                            ? 'border-blue-500 bg-blue-100' 
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}>
-                          <div className="flex items-center">
-                            <input
-                              type="radio"
-                              className="h-5 w-5 text-blue-600 focus:ring-blue-500"
-                              checked={step2Data.emiType === 'fixed'}
-                              onChange={() => setStep2Data(prev => ({ 
-                                ...prev, 
-                                emiType: 'fixed', 
-                                customEmiAmount: '',
-                                loanAmount: (parseFloat(prev.emiAmount) * parseFloat(prev.loanDays)).toString() || ''
-                              }))}
-                            />
-                            <div className="ml-3">
-                              <span className="text-base font-medium text-gray-900">Fixed EMI</span>
-                              <p className="text-sm text-gray-600 mt-1">
-                                Same EMI amount for all periods
-                              </p>
-                            </div>
-                          </div>
-                        </label>
-                        
-                        <label className={`flex items-center p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                          step2Data.emiType === 'custom' 
-                            ? 'border-blue-500 bg-blue-100' 
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}>
-                          <div className="flex items-center">
-                            <input
-                              type="radio"
-                              className="h-5 w-5 text-blue-600 focus:ring-blue-500"
-                              checked={step2Data.emiType === 'custom'}
-                              onChange={() => setStep2Data(prev => ({ ...prev, emiType: 'custom' }))}
-                            />
-                            <div className="ml-3">
-                              <span className="text-base font-medium text-gray-900">Custom EMI</span>
-                              <p className="text-sm text-gray-600 mt-1">
-                                Different last EMI amount
-                              </p>
-                            </div>
-                          </div>
-                        </label>
-                      </div>
+                <div className={`border-2 rounded-lg p-6 cursor-pointer transition-all ${
+                  step2Data.loanSelectionType === 'multiple' 
+                    ? 'border-blue-500 bg-blue-50' 
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+                onClick={() => setStep2Data(prev => ({ ...prev, loanSelectionType: 'multiple' }))}>
+                  <div className="flex items-center mb-4">
+                    <div className={`h-6 w-6 rounded-full border-2 flex items-center justify-center mr-3 ${
+                      step2Data.loanSelectionType === 'multiple' 
+                        ? 'border-blue-500 bg-blue-500' 
+                        : 'border-gray-300'
+                    }`}>
+                      {step2Data.loanSelectionType === 'multiple' && (
+                        <div className="h-3 w-3 rounded-full bg-white"></div>
+                      )}
                     </div>
+                    <h3 className="text-lg font-semibold text-gray-900">Multiple Loans</h3>
                   </div>
-                )}
-
-                {/* Number of Periods */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Number of {step2Data.loanType === 'Daily' ? 'Days' : 
-                               step2Data.loanType === 'Weekly' ? 'Weeks' : 'Months'} *
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    className={`w-full px-3 py-2 border ${step2Errors.loanDays ? 'border-red-300' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
-                    value={step2Data.loanDays}
-                    onChange={(e) => {
-                      setStep2Data(prev => ({ ...prev, loanDays: e.target.value }));
-                      if (step2Errors.loanDays) {
-                        setStep2Errors(prev => ({ ...prev, loanDays: '' }));
-                      }
-                    }}
-                    placeholder={`Enter number of ${step2Data.loanType === 'Daily' ? 'days' : 
-                                 step2Data.loanType === 'Weekly' ? 'weeks' : 'months'}`}
-                    id="error-loanDays"
-                  />
-                  {step2Errors.loanDays && (
-                    <p className="mt-1 text-sm text-red-600">{step2Errors.loanDays}</p>
-                  )}
-                </div>
-
-                {/* EMI Amount */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {step2Data.emiType === 'custom' && step2Data.loanType !== 'Daily' 
-                      ? 'Fixed EMI Amount *' 
-                      : 'EMI Amount *'}
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <span className="text-gray-500">₹</span>
-                    </div>
-                    <input
-                      type="number"
-                      min="1"
-                      className={`w-full pl-10 px-3 py-2 border ${step2Errors.emiAmount ? 'border-red-300' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
-                      value={step2Data.emiAmount}
-                      onChange={(e) => {
-                        setStep2Data(prev => ({ ...prev, emiAmount: e.target.value }));
-                        if (step2Errors.emiAmount) {
-                          setStep2Errors(prev => ({ ...prev, emiAmount: '' }));
-                        }
-                      }}
-                      placeholder="Enter EMI amount"
-                      id="error-emiAmount"
-                    />
-                  </div>
-                  {step2Errors.emiAmount && (
-                    <p className="mt-1 text-sm text-red-600">{step2Errors.emiAmount}</p>
-                  )}
-                </div>
-
-                {/* Last EMI Amount */}
-                {step2Data.loanType !== 'Daily' && step2Data.emiType === 'custom' && (
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Last EMI Amount *
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <span className="text-gray-500">₹</span>
-                      </div>
-                      <input
-                        type="number"
-                        min="1"
-                        className={`w-full pl-10 px-3 py-2 border ${step2Errors.customEmiAmount ? 'border-red-300' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
-                        value={step2Data.customEmiAmount}
-                        onChange={(e) => {
-                          setStep2Data(prev => ({ ...prev, customEmiAmount: e.target.value }));
-                          if (step2Errors.customEmiAmount) {
-                            setStep2Errors(prev => ({ ...prev, customEmiAmount: '' }));
-                          }
-                        }}
-                        placeholder="Enter last EMI amount"
-                        id="error-customEmiAmount"
-                      />
-                    </div>
-                    {step2Errors.customEmiAmount && (
-                      <p className="mt-1 text-sm text-red-600">{step2Errors.customEmiAmount}</p>
-                    )}
-                  </div>
-                )}
-
-                {/* Total Loan Amount */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Total Loan Amount
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <span className="text-gray-500">₹</span>
-                    </div>
-                    <input
-                      type="text"
-                      className="w-full pl-10 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed"
-                      value={totalLoanAmount.toLocaleString('en-IN', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2
-                      })}
-                      readOnly
-                    />
-                  </div>
+                  <p className="text-gray-600 mb-3">
+                    Create customer without any loans. You can add multiple loans later from customer profile.
+                  </p>
+                  <ul className="text-sm text-gray-500 space-y-1">
+                    <li>• Create customer only</li>
+                    <li>• No loan details required</li>
+                    <li>• Add loans later from profile</li>
+                    <li>• Multiple loans can be added</li>
+                  </ul>
                 </div>
               </div>
 
-              {/* Loan Summary */}
-              {(step2Data.emiAmount || step2Data.loanDays) && (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <h4 className="font-medium text-gray-900 mb-3">Loan Summary</h4>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div>
-                      <p className="text-xs text-gray-500">Loan Type</p>
-                      <p className="font-semibold">{step2Data.loanType}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Periods</p>
-                      <p className="font-semibold">{loanDays} {periodLabel}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">
-                        {step2Data.emiType === 'custom' ? 'Fixed EMI' : 'EMI Amount'}
-                      </p>
-                      <p className="font-semibold">₹{emiAmount.toLocaleString('en-IN')}</p>
-                    </div>
-                    {step2Data.loanType !== 'Daily' && step2Data.emiType === 'custom' && (
-                      <div>
-                        <p className="text-xs text-gray-500">Last EMI Amount</p>
-                        <p className="font-semibold">₹{customEmiAmount.toLocaleString('en-IN')}</p>
+              {/* Single Loan Details */}
+              {step2Data.loanSelectionType === 'single' && (
+                <div className="space-y-6 border-t pt-6">
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <span className="text-yellow-500 text-lg">📝</span>
                       </div>
-                    )}
-                  </div>
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <p className="text-sm text-gray-600">Calculation:</p>
-                        {step2Data.loanType === 'Daily' ? (
-                          <p className="text-xs text-gray-500">
-                            ₹{emiAmount.toLocaleString()} × {loanDays} days
-                          </p>
-                        ) : step2Data.emiType === 'fixed' ? (
-                          <p className="text-xs text-gray-500">
-                            ₹{emiAmount.toLocaleString()} × {loanDays} {periodLabel}
-                          </p>
-                        ) : (
-                          <p className="text-xs text-gray-500">
-                            (₹{emiAmount.toLocaleString()} × {loanDays - 1}) + ₹{customEmiAmount.toLocaleString()}
-                          </p>
-                        )}
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-gray-500">Total Loan Amount</p>
-                        <p className="text-lg font-bold text-green-600">
-                          ₹{totalLoanAmount.toLocaleString('en-IN', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2
-                          })}
+                      <div className="ml-3">
+                        <h3 className="text-sm font-medium text-yellow-800">Single Loan Details</h3>
+                        <p className="text-sm text-yellow-700 mt-1">
+                          Enter loan details for the single loan. Loan number with "LN" prefix is required.
                         </p>
                       </div>
                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Loan Number */}
+                    <div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">
+    Loan Number *
+    <span className="text-xs font-normal text-gray-500 ml-2">
+      {step2Data.loanSelectionType === 'single' 
+        ? 'Select from available loan numbers (LN1-LN15)' 
+        : '(Enter manually with LN prefix, e.g., LN01, LN02)'}
+    </span>
+  </label>
+  {step2Data.loanSelectionType === 'single' ? (
+    <div className="space-y-2">
+      <select
+        className={`w-full px-3 py-2 border ${step2Errors.loanNumber ? 'border-red-300' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+        value={step2Data.loanNumber}
+        onChange={(e) => {
+          setStep2Data(prev => ({ 
+            ...prev, 
+            loanNumber: e.target.value 
+          }));
+          if (step2Errors.loanNumber) {
+            setStep2Errors(prev => ({ ...prev, loanNumber: '' }));
+          }
+        }}
+        id="error-loanNumber"
+      >
+        <option value="">Select Loan Number</option>
+        {Array.from({ length: 15 }, (_, i) => {
+          const loanNum = `LN${i + 1}`;
+          return (
+            <option key={loanNum} value={loanNum}>
+              {loanNum} {i === 0 ? '(First loan for customer)' : ''}
+            </option>
+          );
+        })}
+      </select>
+      {step2Data.loanNumber === 'LN1' && (
+        <div className="bg-blue-50 border border-blue-200 rounded-md p-2">
+          <p className="text-sm text-blue-700 flex items-center">
+            <span className="mr-2">ℹ️</span>
+            This is the first loan for the customer. Loan number should be LN1.
+          </p>
+        </div>
+      )}
+    </div>
+  ) : (
+    <div className="relative">
+      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+        <span className="text-gray-500 font-medium">LN</span>
+      </div>
+      <input
+        type="text"
+        className={`w-full pl-10 px-3 py-2 border ${step2Errors.loanNumber ? 'border-red-300' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+        value={step2Data.loanNumber.replace('LN', '').replace(/^ln/gi, '')}
+        onChange={(e) => {
+          const numbersOnly = e.target.value.replace(/\D/g, '');
+          setStep2Data(prev => ({ 
+            ...prev, 
+            loanNumber: numbersOnly ? `LN${numbersOnly}` : '' 
+          }));
+          if (step2Errors.loanNumber) {
+            setStep2Errors(prev => ({ ...prev, loanNumber: '' }));
+          }
+        }}
+        placeholder="Enter numbers (e.g., 01, 02)"
+        id="error-loanNumber"
+      />
+    </div>
+  )}
+  {step2Errors.loanNumber && (
+    <p className="mt-1 text-sm text-red-600">{step2Errors.loanNumber}</p>
+  )}
+</div>
+
+                    {/* Loan Type (Daily/Weekly/Monthly) */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Loan Type *
+                      </label>
+                      <select
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value={step2Data.loanType}
+                        onChange={(e) => {
+                          const newLoanType = e.target.value;
+                          setStep2Data(prev => ({ 
+                            ...prev, 
+                            loanType: newLoanType,
+                            emiType: newLoanType === 'Daily' ? 'fixed' : prev.emiType,
+                            customEmiAmount: newLoanType === 'Daily' ? '' : prev.customEmiAmount,
+                            loanAmount: ''
+                          }));
+                        }}
+                      >
+                        {loanTypes.map(type => (
+                          <option key={type} value={type}>{type}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Loan Date */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Loan Date *
+                      </label>
+                      <input
+                        type="date"
+                        className={`w-full px-3 py-2 border ${step2Errors.loanDate ? 'border-red-300' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+                        value={step2Data.loanDate}
+                        onChange={(e) => {
+                          setStep2Data(prev => ({ ...prev, loanDate: e.target.value }));
+                          if (step2Errors.loanDate) {
+                            setStep2Errors(prev => ({ ...prev, loanDate: '' }));
+                          }
+                        }}
+                        id="error-loanDate"
+                      />
+                      {step2Errors.loanDate && (
+                        <p className="mt-1 text-sm text-red-600">{step2Errors.loanDate}</p>
+                      )}
+                    </div>
+
+                    {/* EMI Start Date */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        EMI Start Date *
+                      </label>
+                      <input
+                        type="date"
+                        className={`w-full px-3 py-2 border ${step2Errors.emiStartDate ? 'border-red-300' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+                        value={step2Data.emiStartDate}
+                        onChange={(e) => {
+                          setStep2Data(prev => ({ ...prev, emiStartDate: e.target.value }));
+                          if (step2Errors.emiStartDate) {
+                            setStep2Errors(prev => ({ ...prev, emiStartDate: '' }));
+                          }
+                        }}
+                        id="error-emiStartDate"
+                      />
+                      {step2Errors.emiStartDate && (
+                        <p className="mt-1 text-sm text-red-600">{step2Errors.emiStartDate}</p>
+                      )}
+                    </div>
+
+                    {/* Amount */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Amount (Principal) *
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <span className="text-gray-500">₹</span>
+                        </div>
+                        <input
+                          type="number"
+                          min="1"
+                          className={`w-full pl-10 px-3 py-2 border ${step2Errors.amount ? 'border-red-300' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+                          value={step2Data.amount}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setStep2Data(prev => ({ ...prev, amount: value }));
+                            if (step2Errors.amount) {
+                              setStep2Errors(prev => ({ ...prev, amount: '' }));
+                            }
+                          }}
+                          placeholder="Enter principal amount"
+                          id="error-amount"
+                        />
+                      </div>
+                      {step2Errors.amount && (
+                        <p className="mt-1 text-sm text-red-600">{step2Errors.amount}</p>
+                      )}
+                    </div>
+
+                    {/* Number of Periods */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Number of {step2Data.loanType === 'Daily' ? 'Days' : 
+                                   step2Data.loanType === 'Weekly' ? 'Weeks' : 'Months'} *
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        className={`w-full px-3 py-2 border ${step2Errors.loanDays ? 'border-red-300' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+                        value={step2Data.loanDays}
+                        onChange={(e) => {
+                          setStep2Data(prev => ({ ...prev, loanDays: e.target.value }));
+                          if (step2Errors.loanDays) {
+                            setStep2Errors(prev => ({ ...prev, loanDays: '' }));
+                          }
+                        }}
+                        placeholder={`Enter number of ${step2Data.loanType === 'Daily' ? 'days' : 
+                                     step2Data.loanType === 'Weekly' ? 'weeks' : 'months'}`}
+                        id="error-loanDays"
+                      />
+                      {step2Errors.loanDays && (
+                        <p className="mt-1 text-sm text-red-600">{step2Errors.loanDays}</p>
+                      )}
+                    </div>
+
+                    {/* EMI Collection Type */}
+                    {(step2Data.loanType === 'Weekly' || step2Data.loanType === 'Monthly') && (
+                      <div className="md:col-span-2">
+                        <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                          <label className="block text-lg font-semibold text-blue-800 mb-3">
+                            EMI Collection Type *
+                          </label>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <label className={`flex items-center p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                              step2Data.emiType === 'fixed' 
+                                ? 'border-blue-500 bg-blue-100' 
+                                : 'border-gray-200 hover:border-gray-300'
+                            }`}>
+                              <div className="flex items-center">
+                                <input
+                                  type="radio"
+                                  className="h-5 w-5 text-blue-600 focus:ring-blue-500"
+                                  checked={step2Data.emiType === 'fixed'}
+                                  onChange={() => setStep2Data(prev => ({ 
+                                    ...prev, 
+                                    emiType: 'fixed', 
+                                    customEmiAmount: '',
+                                    loanAmount: (parseFloat(prev.emiAmount) * parseFloat(prev.loanDays)).toString() || ''
+                                  }))}
+                                />
+                                <div className="ml-3">
+                                  <span className="text-base font-medium text-gray-900">Fixed EMI</span>
+                                  <p className="text-sm text-gray-600 mt-1">
+                                    Same EMI amount for all periods
+                                  </p>
+                                </div>
+                              </div>
+                            </label>
+                            
+                            <label className={`flex items-center p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                              step2Data.emiType === 'custom' 
+                                ? 'border-blue-500 bg-blue-100' 
+                                : 'border-gray-200 hover:border-gray-300'
+                            }`}>
+                              <div className="flex items-center">
+                                <input
+                                  type="radio"
+                                  className="h-5 w-5 text-blue-600 focus:ring-blue-500"
+                                  checked={step2Data.emiType === 'custom'}
+                                  onChange={() => setStep2Data(prev => ({ ...prev, emiType: 'custom' }))}
+                                />
+                                <div className="ml-3">
+                                  <span className="text-base font-medium text-gray-900">Custom EMI</span>
+                                  <p className="text-sm text-gray-600 mt-1">
+                                    Different last EMI amount
+                                  </p>
+                                </div>
+                              </div>
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* EMI Amount */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        {step2Data.emiType === 'custom' && step2Data.loanType !== 'Daily' 
+                          ? 'Fixed EMI Amount *' 
+                          : 'EMI Amount *'}
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <span className="text-gray-500">₹</span>
+                        </div>
+                        <input
+                          type="number"
+                          min="1"
+                          className={`w-full pl-10 px-3 py-2 border ${step2Errors.emiAmount ? 'border-red-300' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+                          value={step2Data.emiAmount}
+                          onChange={(e) => {
+                            setStep2Data(prev => ({ ...prev, emiAmount: e.target.value }));
+                            if (step2Errors.emiAmount) {
+                              setStep2Errors(prev => ({ ...prev, emiAmount: '' }));
+                            }
+                          }}
+                          placeholder="Enter EMI amount"
+                          id="error-emiAmount"
+                        />
+                      </div>
+                      {step2Errors.emiAmount && (
+                        <p className="mt-1 text-sm text-red-600">{step2Errors.emiAmount}</p>
+                      )}
+                    </div>
+
+                    {/* Last EMI Amount */}
+                    {step2Data.loanType !== 'Daily' && step2Data.emiType === 'custom' && (
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Last EMI Amount *
+                        </label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <span className="text-gray-500">₹</span>
+                          </div>
+                          <input
+                            type="number"
+                            min="1"
+                            className={`w-full pl-10 px-3 py-2 border ${step2Errors.customEmiAmount ? 'border-red-300' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+                            value={step2Data.customEmiAmount}
+                            onChange={(e) => {
+                              setStep2Data(prev => ({ ...prev, customEmiAmount: e.target.value }));
+                              if (step2Errors.customEmiAmount) {
+                                setStep2Errors(prev => ({ ...prev, customEmiAmount: '' }));
+                              }
+                            }}
+                            placeholder="Enter last EMI amount"
+                            id="error-customEmiAmount"
+                          />
+                        </div>
+                        {step2Errors.customEmiAmount && (
+                          <p className="mt-1 text-sm text-red-600">{step2Errors.customEmiAmount}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Total Loan Amount */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Total Loan Amount
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <span className="text-gray-500">₹</span>
+                        </div>
+                        <input
+                          type="text"
+                          className="w-full pl-10 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed"
+                          value={totalLoanAmount.toLocaleString('en-IN', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                          })}
+                          readOnly
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Loan Summary */}
+                  {(step2Data.emiAmount || step2Data.loanDays) && (
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                      <h4 className="font-medium text-gray-900 mb-3">Loan Summary</h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                          <p className="text-xs text-gray-500">Loan Number</p>
+                          <p className="font-semibold">{step2Data.loanNumber || 'Not set'}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Loan Type</p>
+                          <p className="font-semibold">{step2Data.loanType}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Periods</p>
+                          <p className="font-semibold">{loanDays} {periodLabel}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">
+                            {step2Data.emiType === 'custom' ? 'Fixed EMI' : 'EMI Amount'}
+                          </p>
+                          <p className="font-semibold">₹{emiAmount.toLocaleString('en-IN')}</p>
+                        </div>
+                        {step2Data.loanType !== 'Daily' && step2Data.emiType === 'custom' && (
+                          <div className="md:col-span-2">
+                            <p className="text-xs text-gray-500">Last EMI Amount</p>
+                            <p className="font-semibold">₹{customEmiAmount.toLocaleString('en-IN')}</p>
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-4 pt-4 border-t border-gray-200">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <p className="text-sm text-gray-600">Calculation:</p>
+                            {step2Data.loanType === 'Daily' ? (
+                              <p className="text-xs text-gray-500">
+                                ₹{emiAmount.toLocaleString()} × {loanDays} days
+                              </p>
+                            ) : step2Data.emiType === 'fixed' ? (
+                              <p className="text-xs text-gray-500">
+                                ₹{emiAmount.toLocaleString()} × {loanDays} {periodLabel}
+                              </p>
+                            ) : (
+                              <p className="text-xs text-gray-500">
+                                (₹{emiAmount.toLocaleString()} × {loanDays - 1}) + ₹{customEmiAmount.toLocaleString()}
+                              </p>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs text-gray-500">Total Loan Amount</p>
+                            <p className="text-lg font-bold text-green-600">
+                              ₹{totalLoanAmount.toLocaleString('en-IN', {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2
+                              })}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Multiple Loans Message */}
+              {step2Data.loanSelectionType === 'multiple' && (
+                <div className="bg-green-50 border-2 border-green-300 rounded-lg p-6">
+                  <div className="flex items-center mb-4">
+                    <div className="flex-shrink-0">
+                      <span className="text-green-500 text-3xl">✅</span>
+                    </div>
+                    <div className="ml-4">
+                      <h3 className="text-lg font-semibold text-green-800">Customer Creation Only</h3>
+                      <p className="text-green-700 mt-2">
+                        Customer will be created with unique Customer Number <span className="font-bold">{step1Data.customerNumber}</span> without any loan.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="bg-white border border-green-200 rounded-lg p-4 mt-4">
+                    <h4 className="font-medium text-gray-900 mb-2">Next Steps:</h4>
+                    <ul className="text-sm text-gray-600 space-y-2">
+                      <li className="flex items-start">
+                        <span className="text-green-500 mr-2">✓</span>
+                        <span>Customer will be created with unique Customer Number</span>
+                      </li>
+                      <li className="flex items-start">
+                        <span className="text-green-500 mr-2">✓</span>
+                        <span>You can add multiple loans later from the customer's profile</span>
+                      </li>
+                      <li className="flex items-start">
+                        <span className="text-green-500 mr-2">✓</span>
+                        <span>Each loan can have different loan numbers, amounts, and terms</span>
+                      </li>
+                      <li className="flex items-start">
+                        <span className="text-green-500 mr-2">✓</span>
+                        <span>No loan details are required at this stage</span>
+                      </li>
+                    </ul>
+                  </div>
+                  <div className="mt-4 text-center">
+                    <p className="text-sm text-gray-500">
+                      Click <span className="font-semibold">"Next Step"</span> to proceed to login credentials
+                    </p>
                   </div>
                 </div>
               )}
@@ -1779,6 +1944,24 @@ export default function AddCustomerModal({
                         <p className="text-xs text-gray-500">Customer Number</p>
                         <p className="font-semibold text-gray-900">{step1Data.customerNumber || 'Not entered'}</p>
                       </div>
+                      {step2Data.loanSelectionType === 'single' && (
+                        <>
+                          <div>
+                            <p className="text-xs text-gray-500">Loan Type</p>
+                            <p className="font-semibold text-blue-600">Single Loan</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Loan Number</p>
+                            <p className="font-semibold text-gray-900">{step2Data.loanNumber || 'Not set'}</p>
+                          </div>
+                        </>
+                      )}
+                      {step2Data.loanSelectionType === 'multiple' && (
+                        <div>
+                          <p className="text-xs text-gray-500">Loan Type</p>
+                          <p className="font-semibold text-green-600">Multiple Loans (Add Later)</p>
+                        </div>
+                      )}
                       <div>
                         <p className="text-xs text-gray-500">Login ID</p>
                         <p className={`font-semibold ${step3Data.loginId ? 'text-blue-600' : 'text-gray-400'}`}>
@@ -1857,6 +2040,18 @@ export default function AddCustomerModal({
                         <p className="text-xs text-gray-500">Customer Number</p>
                         <p className="font-semibold text-gray-900">{step1Data.customerNumber}</p>
                       </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Loan Type</p>
+                        <p className="font-semibold text-blue-600">
+                          {step2Data.loanSelectionType === 'single' ? 'Single Loan' : 'Multiple Loans (Add Later)'}
+                        </p>
+                      </div>
+                      {step2Data.loanSelectionType === 'single' && step2Data.loanNumber && (
+                        <div>
+                          <p className="text-xs text-gray-500">Loan Number</p>
+                          <p className="font-semibold text-gray-900">{step2Data.loanNumber}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                   
@@ -1872,6 +2067,10 @@ export default function AddCustomerModal({
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                           ⏳ Pending Approval
                         </span>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Request Type</p>
+                        <p className="font-semibold text-purple-600">New Customer Registration</p>
                       </div>
                     </div>
                   </div>
