@@ -1,3 +1,4 @@
+// useRequests.ts - UPDATED with better logging
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { Request } from '@/src/types/dataEntry';
 
@@ -15,10 +16,10 @@ interface UseRequestsReturn {
 
 // Cache implementation
 const requestsCache = new Map<string, { data: Request[]; timestamp: number }>();
-const CACHE_DURATION = 1 * 60 * 1000; // 1 minute for requests (changes frequently)
+const CACHE_DURATION = 1 * 60 * 1000; // 1 minute
 const pendingRequestRequests = new Map<string, Promise<Request[]>>();
 
-export const useRequests = (currentUserOffice?: string): UseRequestsReturn => {
+export const useRequests = (currentUserOffice?: string, currentOperatorId?: string): UseRequestsReturn => {
   const [requests, setRequests] = useState<Request[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -26,18 +27,20 @@ export const useRequests = (currentUserOffice?: string): UseRequestsReturn => {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const fetchRequests = useCallback(async (forceRefresh = false): Promise<Request[]> => {
-    const cacheKey = `requests_${currentUserOffice || 'all'}`;
+    const cacheKey = `requests_${currentUserOffice || 'all'}_${currentOperatorId || 'all'}`;
     
     // Check cache first
     if (!forceRefresh) {
       const cached = requestsCache.get(cacheKey);
       if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+        console.log('📦 Using cached requests');
         return cached.data;
       }
     }
     
     // Check for pending request
     if (pendingRequestRequests.has(cacheKey)) {
+      console.log('⏳ Using pending request');
       return pendingRequestRequests.get(cacheKey)!;
     }
     
@@ -50,10 +53,20 @@ export const useRequests = (currentUserOffice?: string): UseRequestsReturn => {
         
         abortControllerRef.current = new AbortController();
         
-        let url = '/api/data-entry/requests';
-        if (currentUserOffice) {
-          url += `?officeCategory=${encodeURIComponent(currentUserOffice)}`;
+        // Build URL with parameters
+        const params = new URLSearchParams();
+        
+        if (currentUserOffice && currentUserOffice !== 'all') {
+          params.append('officeCategory', currentUserOffice);
         }
+        
+        if (currentOperatorId) {
+          params.append('createdBy', currentOperatorId);
+        } else {
+          console.warn('⚠️ No operator ID provided for filtering requests');
+        }
+        
+        const url = `/api/data-entry/requests${params.toString() ? `?${params.toString()}` : ''}`;
         
         console.log('🔄 Fetching requests from:', url);
         
@@ -61,104 +74,61 @@ export const useRequests = (currentUserOffice?: string): UseRequestsReturn => {
           signal: abortControllerRef.current.signal
         });
         
-        // 🔍 DEBUG CODE STARTS HERE 🔍
-        // First, get the raw response text
-        const responseText = await response.text();
-        console.log('🔍 Raw response (first 500 chars):', responseText.substring(0, 500));
-        
-        // Check if it's HTML
-        if (responseText.trim().startsWith('<!DOCTYPE') || 
-            responseText.trim().startsWith('<html') || 
-            responseText.includes('<head>')) {
-          console.error('❌ ERROR: Received HTML instead of JSON!');
-          console.error('This means:');
-          console.error('1. The API endpoint does not exist');
-          console.error('2. OR there is a server error returning HTML');
-          console.error('3. OR the route file has syntax errors');
-          console.error('');
-          console.error('📁 Expected file location:');
-          console.error('/app/api/data-entry/requests/route.js');
-          console.error('');
-          console.error('🔧 Please check:');
-          console.error('- Is the file at the correct location?');
-          console.error('- Does the file export GET/POST functions?');
-          console.error('- Are there any syntax errors in the file?');
-          console.error('- Is the server running?');
-          console.error('');
-          console.error('📄 Full response type:', typeof responseText);
-          console.error('📄 Response starts with:', responseText.substring(0, 100));
-          
-          throw new Error('API endpoint returned HTML instead of JSON. Check if the route exists at /app/api/data-entry/requests/route.js');
-        }
-        
-        // Try to parse as JSON
-        let result;
-        try {
-          result = JSON.parse(responseText);
-        } catch (parseError) {
-          console.error('❌ Failed to parse response as JSON:', parseError);
-          console.error('Response that failed to parse:', responseText.substring(0, 300));
-          throw new Error('Server returned invalid JSON. Check API endpoint implementation.');
-        }
-        // 🔍 DEBUG CODE ENDS HERE 🔍
+        console.log('📊 Response status:', response.status);
         
         if (!response.ok) {
           throw new Error(`Failed to fetch requests: ${response.status} ${response.statusText}`);
         }
         
-        console.log('📦 Parsed response:', {
+        const result = await response.json();
+        
+        console.log('📦 API Response:', {
           success: result.success,
           hasData: !!result.data,
-          dataType: typeof result.data,
-          responseKeys: Object.keys(result)
+          dataLength: Array.isArray(result.data) ? result.data.length : 'not an array'
         });
         
-        // Check if the response has the expected structure
         if (!result.success) {
           throw new Error(result.error || 'Failed to fetch requests');
         }
         
-        // Extract data from different possible response structures
-        let data: Request[] = [];
+        // Extract data from response - handle different response formats
+        let data: any[] = [];
         
-        if (Array.isArray(result.data)) {
-          // Case 1: data is directly an array
+        if (result.data && Array.isArray(result.data)) {
           data = result.data;
         } else if (result.data && Array.isArray(result.data.requests)) {
-          // Case 2: data has a requests property
           data = result.data.requests;
         } else if (Array.isArray(result.requests)) {
-          // Case 3: requests is directly on result
           data = result.requests;
-        } else if (result.data && typeof result.data === 'object') {
-          // Case 4: data is an object, try to extract
-          console.warn('⚠️ data is an object, not array. Trying to extract...');
-          data = [result.data];
         } else {
           console.warn('⚠️ No requests data found in response, using empty array');
+          console.log('Response structure:', result);
           data = [];
         }
         
         console.log(`✅ Extracted ${data.length} requests`);
         
+        // Log each request for debugging
+        data.forEach((req, index) => {
+          console.log(`  ${index + 1}. ${req.type} - ${req.customerName} (Created by: ${req.createdBy})`);
+        });
+        
         // Format the data
-        const formattedRequests = data.map((req: any) => ({
-          _id: req._id || req.id || `temp_${Math.random()}`,
-          type: req.type || 'New Customer',
-          customerName: req.customerName || 'Unknown Customer',
-          customerNumber: req.customerNumber || '',
-          status: req.status || 'Pending',
-          createdAt: req.createdAt || new Date().toISOString(),
-          description: req.description || `${req.type || 'Request'} request`,
-          data: {
-            loanAmount: req.data?.loanAmount || 0,
-            emiAmount: req.data?.emiAmount || 0,
-            loanType: req.data?.loanType || 'Daily',
-            loanDays: req.data?.loanDays || 0,
-            emiType: req.data?.emiType || 'fixed',
-            customEmiAmount: req.data?.customEmiAmount || null
-          }
-        }));
+        const formattedRequests = data.map((req: any) => {
+          return {
+            _id: req._id || req.id || `temp_${Math.random()}`,
+            type: req.type || 'Unknown',
+            customerName: req.customerName || 'Unknown Customer',
+            customerNumber: req.customerNumber || '',
+            status: req.status || 'Pending',
+            createdAt: req.createdAt || new Date().toISOString(),
+            description: req.description || `${req.type || 'Request'} request`,
+            data: req.data || req.requestedData || {},
+            createdBy: req.createdBy || req.submittedBy || 'Unknown',
+            officeCategory: req.officeCategory || currentUserOffice || 'Unknown'
+          };
+        });
         
         // Update cache
         requestsCache.set(cacheKey, {
@@ -167,11 +137,12 @@ export const useRequests = (currentUserOffice?: string): UseRequestsReturn => {
         });
         
         return formattedRequests;
-      } catch (err) {
+      } catch (err: any) {
         if (err.name === 'AbortError') {
           console.log('Requests request aborted');
           return [];
         }
+        console.error('❌ Error fetching requests:', err);
         throw err;
       } finally {
         pendingRequestRequests.delete(cacheKey);
@@ -180,25 +151,27 @@ export const useRequests = (currentUserOffice?: string): UseRequestsReturn => {
     
     pendingRequestRequests.set(cacheKey, requestPromise);
     return requestPromise;
-  }, [currentUserOffice]);
+  }, [currentUserOffice, currentOperatorId]);
 
   const refetch = useCallback(async (force = false) => {
+    console.log('🔄 Refetching requests, force:', force);
     setLoading(true);
     setError(null);
     
     try {
       const data = await fetchRequests(force);
+      console.log('✅ Refetch complete, received:', data.length, 'requests');
       setRequests(data);
-    } catch (err) {
+    } catch (err: any) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch requests';
+      console.error('❌ Error in refetch:', err);
       setError(new Error(errorMessage));
-      console.error('Error fetching requests:', err);
     } finally {
       setLoading(false);
     }
   }, [fetchRequests]);
 
-  // Calculate statistics with memoization
+  // Calculate statistics
   const statistics = useMemo(() => {
     const pending = requests.filter(req => 
       req.status === 'Pending' || req.status === 'pending'
@@ -217,6 +190,12 @@ export const useRequests = (currentUserOffice?: string): UseRequestsReturn => {
 
   // Initial fetch
   useEffect(() => {
+    console.log('🚀 useRequests initializing...', {
+      currentUserOffice,
+      currentOperatorId,
+      hasOperatorId: !!currentOperatorId
+    });
+    
     refetch();
     
     return () => {

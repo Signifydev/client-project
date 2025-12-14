@@ -9,6 +9,7 @@ export async function GET(request) {
     await connectDB();
     
     const { searchParams } = new URL(request.url);
+    const officeCategory = searchParams.get('officeCategory');
     const type = searchParams.get('type');
     const priority = searchParams.get('priority');
     const createdBy = searchParams.get('createdBy');

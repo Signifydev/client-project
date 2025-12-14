@@ -29,7 +29,6 @@ export interface Customer {
     home?: string;
   };
   category?: string;
-  officeCategory?: string;
   whatsappNumber?: string;
   lastPaymentDate?: string;
   dueAmount?: number;
@@ -39,6 +38,12 @@ export interface Customer {
   totalLoanAmount?: number;
   activeLoan?: Loan;
   totalPaid?: number;
+  createdBy?: string;
+  priority?: string;
+  formattedDate?: string;
+  submittedBy?: string;
+  officeCategory?: string;
+
 }
 
 /**
