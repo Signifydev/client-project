@@ -12,6 +12,7 @@ interface UseEMIReturn {
     totalCustomers: number;
     filteredCount: number;
     totalActiveLoans: number;
+    totalEMIAmount: number;
   };
 }
 
@@ -52,7 +53,8 @@ export const useEMI = (currentUserOffice?: string): UseEMIReturn => {
         
         abortControllerRef.current = new AbortController();
         
-        let url = '/api/data-entry/customers';
+        // FIX: Use const instead of let since url is not reassigned
+        const url = '/api/data-entry/customers';
         const params = new URLSearchParams();
         
         // Only fetch active customers
