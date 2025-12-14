@@ -50,10 +50,10 @@ export const useCollection = (currentUserOffice?: string): UseCollectionReturn =
         
         abortControllerRef.current = new AbortController();
         
-        let url = '/api/data-entry/collections';
-        if (currentUserOffice) {
-          url += `?officeCategory=${encodeURIComponent(currentUserOffice)}`;
-        }
+        // FIX: Build URL properly without reassigning const
+        const url = currentUserOffice
+          ? `/api/data-entry/collections?officeCategory=${encodeURIComponent(currentUserOffice)}`
+          : '/api/data-entry/collections';
         
         const response = await fetch(url, {
           signal: abortControllerRef.current.signal
@@ -73,7 +73,8 @@ export const useCollection = (currentUserOffice?: string): UseCollectionReturn =
         
         return data;
       } catch (err) {
-        if (err.name === 'AbortError') {
+        // FIX: Properly handle unknown error type
+        if (err instanceof Error && err.name === 'AbortError') {
           console.log('Collections request aborted');
           return [];
         }
@@ -95,6 +96,7 @@ export const useCollection = (currentUserOffice?: string): UseCollectionReturn =
       const data = await fetchCollections(force);
       setCollections(data);
     } catch (err) {
+      // FIX: Properly handle unknown error type
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch collections';
       setError(new Error(errorMessage));
       console.error('Error fetching collections:', err);
