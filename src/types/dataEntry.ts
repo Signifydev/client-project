@@ -35,6 +35,10 @@ export interface Customer {
   dueAmount?: number;
   // Add this optional property
   loans?: Loan[];
+  totalLoans?: number;
+  totalLoanAmount?: number;
+  activeLoan?: Loan;
+  totalPaid?: number;
 }
 
 /**
@@ -650,7 +654,15 @@ export interface EMISectionProps {
  * Collection Section props
  */
 export interface CollectionSectionProps {
-  refreshKey: number;
+  refreshKey?: number;
+  currentUserOffice?: string;
+  currentOperator?: {
+    id: string;
+    name: string;
+    fullName: string;
+  };
+  onShowUpdateEMI?: () => void;
+  // Add other props if needed
 }
 
 /**
@@ -723,4 +735,67 @@ export interface PaginatedResponse<T> {
   page: number;
   pageSize: number;
   totalPages: number;
+}
+
+export interface PaymentData {
+  _id: string;
+  customerId: string;
+  customerNumber: string;
+  customerName: string;
+  loanId: string;
+  loanNumber: string;
+  emiAmount: number;
+  paidAmount: number;
+  paymentDate: string;
+  paymentMethod?: string;
+  officeCategory: string;
+  operatorName: string;
+  status?: string;
+}
+
+/**
+ * Collection statistics for collection section
+ */
+export interface CollectionStats {
+  todaysCollection: number;
+  numberOfCustomersPaid: number;
+  totalCollections: number;
+}
+
+/**
+ * Collection API response type
+ */
+export interface CollectionApiResponse {
+  success: boolean;
+  data?: {
+    date: string;
+    payments?: PaymentData[];
+    customers?: Array<{
+      customerId: string;
+      customerNumber: string;
+      customerName: string;
+      totalCollection: number;
+      officeCategory: string;
+      loans?: Array<{
+        loanNumber: string;
+        emiAmount: number;
+        collectedAmount: number;
+      }>;
+    }>;
+    statistics?: {
+      todaysCollection: number;
+      numberOfCustomersPaid: number;
+      totalCollections: number;
+    };
+    summary?: {
+      totalCollection: number;
+      office1Collection: number;
+      office2Collection: number;
+      totalCustomers: number;
+      totalTransactions?: number;
+      numberOfCustomersPaid?: number;
+    };
+  };
+  error?: string;
+  message?: string;
 }

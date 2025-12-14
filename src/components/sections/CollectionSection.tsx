@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Customer, CustomerDetails, Filters, CustomersSectionProps, Loan, EMIHistory } from '@/src/types/dataEntry';
-import { useCustomers } from '@/src/hooks/useCustomers';
-import { getStatusColor } from '@/src/utils/constants';
-import { loanTypes, customerStatusOptions, officeCategories } from '@/src/utils/constants';
+import { 
+  CollectionSectionProps, 
+  PaymentData, 
+  CollectionStats,
+  CollectionApiResponse 
+} from '@/src/types/dataEntry';
 
 // Inline Error Display Component
 const ErrorDisplay = ({ message }: { message: string }) => (
@@ -26,520 +28,531 @@ const LoadingSpinner = () => (
   </div>
 );
 
-// Sort order type
-type SortOrder = 'asc' | 'desc' | 'none';
+// No Data Display Component
+const NoDataDisplay = ({ selectedDate }: { selectedDate: string }) => {
+  const isToday = selectedDate === new Date().toISOString().split('T')[0];
+  
+  return (
+    <div className="text-center py-16">
+      <div className="text-gray-300 text-6xl mb-6">📭</div>
+      <h3 className="text-2xl font-semibold text-gray-800 mb-3">
+        No payments found for {new Date(selectedDate).toLocaleDateString()}
+      </h3>
+      <p className="text-gray-500 max-w-md mx-auto mb-8 text-lg">
+        No EMI payments were recorded on this date.
+        {isToday && (
+          <span className="block mt-2">
+            Click "Record EMI Payment" button to record today's first payment.
+          </span>
+        )}
+      </p>
+    </div>
+  );
+};
 
-export default function CustomersSection({
-  currentUserOffice,
-  onViewCustomerDetails,
-  onUpdateEMI,
-  onEditCustomer,
-  onAddLoan,
-  refreshKey
-}: CustomersSectionProps) {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState<Filters>({
-    customerNumber: '',
-    loanType: '',
-    status: '',
-    officeCategory: ''
+export default function CollectionSection({
+  refreshKey = 0,
+  currentUserOffice = 'all',
+  currentOperator = {
+    id: 'operator_1',
+    name: 'Operator',
+    fullName: 'Operator (Data Entry)'
+  },
+  onShowUpdateEMI = () => console.log('Record EMI Payment clicked')
+}: CollectionSectionProps) {
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [payments, setPayments] = useState<PaymentData[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<CollectionStats>({
+    todaysCollection: 0,
+    numberOfCustomersPaid: 0,
+    totalCollections: 0
   });
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [sortOrder, setSortOrder] = useState<SortOrder>('none');
-  const [showAddCustomer, setShowAddCustomer] = useState(false);
 
-  // Correct destructuring based on useCustomers hook
-  const { 
-    customers, 
-    loading, 
-    error, 
-    refetch,
-    fetchCustomerDetails 
-  } = useCustomers(currentUserOffice);
-
-  useEffect(() => {
-    refetch();
-  }, [refreshKey, refetch]);
-
-  // Sort customers by customer number
-  const sortedAndFilteredCustomers = useMemo(() => {
-    const filtered = customers.filter(customer => { // FIXED: Changed from let to const
-      const matchesSearch = searchQuery === '' || 
-        customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (customer.customerNumber && customer.customerNumber.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (customer.businessName && customer.businessName.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (customer.area && customer.area.toLowerCase().includes(searchQuery.toLowerCase()));
-
-      const matchesCustomerNumber = filters.customerNumber === '' || 
-        (customer.customerNumber && customer.customerNumber.toLowerCase().includes(filters.customerNumber.toLowerCase()));
+  // Fetch payment data for the selected date
+  const fetchPaymentData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Use the correct API endpoint - IMPORTANT: This should match your API route
+      let url = `/api/data-entry/collection?date=${selectedDate}`;
       
-      const matchesLoanType = filters.loanType === '' || 
-        customer.loanType === filters.loanType;
+      if (currentUserOffice && currentUserOffice !== 'all') {
+        url += `&officeCategory=${encodeURIComponent(currentUserOffice)}`;
+      }
       
-      const matchesStatus = filters.status === '' || 
-        customer.status === filters.status;
-
-      const matchesOfficeCategory = filters.officeCategory === '' || 
-        customer.officeCategory === filters.officeCategory;
-
-      return matchesSearch && matchesCustomerNumber && matchesLoanType && matchesStatus && matchesOfficeCategory;
-    });
-
-    // Apply sorting if sortOrder is not 'none'
-    if (sortOrder !== 'none') {
-      filtered.sort((a, b) => {
-        const customerNumberA = a.customerNumber || '';
-        const customerNumberB = b.customerNumber || '';
-        
-        if (customerNumberA < customerNumberB) {
-          return sortOrder === 'asc' ? -1 : 1;
-        }
-        if (customerNumberA > customerNumberB) {
-          return sortOrder === 'asc' ? 1 : -1;
-        }
-        return 0;
+      console.log('📊 Fetching collection data:', { 
+        url, 
+        selectedDate, 
+        currentUserOffice,
+        fullUrl: url 
       });
+      
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const result: CollectionApiResponse = await response.json();
+      console.log('📥 API Response received:', result);
+      
+      if (result.success && result.data) {
+        // Handle different response structures from API
+        let paymentsData: PaymentData[] = [];
+        
+        // Check if data has payments array
+        if (result.data.payments && Array.isArray(result.data.payments)) {
+          paymentsData = result.data.payments;
+        } 
+        // Check if data has customers array (old format)
+        else if (result.data.customers && Array.isArray(result.data.customers)) {
+          paymentsData = result.data.customers.flatMap((customer: any) => {
+            if (customer.loans && Array.isArray(customer.loans)) {
+              return customer.loans.map((loan: any) => ({
+                _id: `${customer.customerId}_${loan.loanNumber}`,
+                customerId: customer.customerId,
+                customerNumber: customer.customerNumber,
+                customerName: customer.customerName,
+                loanId: loan.loanId || 'N/A',
+                loanNumber: loan.loanNumber,
+                emiAmount: loan.emiAmount || 0,
+                paidAmount: loan.collectedAmount || loan.emiAmount || 0,
+                paymentDate: selectedDate,
+                paymentMethod: 'Cash',
+                officeCategory: customer.officeCategory,
+                operatorName: currentOperator.name,
+                status: 'Paid'
+              }));
+            }
+            return [];
+          });
+        }
+        
+        console.log(`💰 Processed ${paymentsData.length} payment records`);
+        
+        setPayments(paymentsData);
+        
+        // FIX: Handle both types of API responses
+        const apiStats = result.data.statistics || result.data.summary;
+        
+        if (apiStats) {
+          // Handle new format (statistics object)
+          if ('todaysCollection' in apiStats) {
+            const stats = apiStats as { todaysCollection: number; numberOfCustomersPaid: number; totalCollections: number };
+            setStats({
+              todaysCollection: stats.todaysCollection || 0,
+              numberOfCustomersPaid: stats.numberOfCustomersPaid || 0,
+              totalCollections: stats.totalCollections || paymentsData.length
+            });
+          } 
+          // Handle old format (summary object)
+          else if ('totalCollection' in apiStats) {
+            const summary = apiStats as { totalCollection: number; numberOfCustomersPaid?: number; totalTransactions?: number };
+            setStats({
+              todaysCollection: summary.totalCollection || 0,
+              numberOfCustomersPaid: summary.numberOfCustomersPaid || 
+                (result.data.customers ? result.data.customers.length : 0) || 0,
+              totalCollections: summary.totalTransactions || paymentsData.length
+            });
+          } else {
+            // Calculate manually if structure is unknown
+            const todaysCollection = paymentsData.reduce((sum, payment) => 
+              sum + (payment.paidAmount || 0), 0
+            );
+            
+            const uniqueCustomerIds = [...new Set(paymentsData.map(p => p.customerId))];
+            
+            setStats({
+              todaysCollection,
+              numberOfCustomersPaid: uniqueCustomerIds.length,
+              totalCollections: paymentsData.length
+            });
+          }
+        } else {
+          // Calculate manually if no stats from API
+          const todaysCollection = paymentsData.reduce((sum, payment) => 
+            sum + (payment.paidAmount || 0), 0
+          );
+          
+          const uniqueCustomerIds = [...new Set(paymentsData.map(p => p.customerId))];
+          
+          setStats({
+            todaysCollection,
+            numberOfCustomersPaid: uniqueCustomerIds.length,
+            totalCollections: paymentsData.length
+          });
+        }
+        
+      } else {
+        const errorMsg = result.error || 'Failed to fetch collection data';
+        console.error('❌ API Error:', errorMsg);
+        setError(errorMsg);
+        setPayments([]);
+        setStats({
+          todaysCollection: 0,
+          numberOfCustomersPaid: 0,
+          totalCollections: 0
+        });
+      }
+    } catch (err: any) {
+      console.error('❌ Error fetching collection data:', err);
+      setError(err.message || 'Failed to load collection data. Please check your API endpoint.');
+      setPayments([]);
+      setStats({
+        todaysCollection: 0,
+        numberOfCustomersPaid: 0,
+        totalCollections: 0
+      });
+    } finally {
+      setLoading(false);
     }
+  }, [selectedDate, currentUserOffice, currentOperator.name]);
 
-    return filtered;
-  }, [customers, searchQuery, filters, sortOrder]);
+  // Initial fetch and refresh on key change
+  useEffect(() => {
+    fetchPaymentData();
+  }, [fetchPaymentData, refreshKey]);
 
-  const toggleSortOrder = () => {
-    setSortOrder(current => {
-      if (current === 'none') return 'asc';
-      if (current === 'asc') return 'desc';
-      return 'none';
+  // Handle date change
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSelectedDate(e.target.value);
+  };
+
+  // Reset to today's date
+  const handleResetDate = () => {
+    setSelectedDate(new Date().toISOString().split('T')[0]);
+  };
+
+  // Format date for display
+  const formatDisplayDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
     });
   };
 
-  const getSortIcon = () => {
-    switch (sortOrder) {
-      case 'asc':
-        return '↑';
-      case 'desc':
-        return '↓';
-      default:
-        return '⇅';
-    }
-  };
+  // Group payments by customer for better display
+  const groupedPayments = useMemo(() => {
+    const groups: { [key: string]: PaymentData[] } = {};
+    
+    payments.forEach(payment => {
+      if (!payment.customerId) return;
+      
+      if (!groups[payment.customerId]) {
+        groups[payment.customerId] = [];
+      }
+      groups[payment.customerId].push(payment);
+    });
+    
+    console.log(`📊 Grouped ${payments.length} payments into ${Object.keys(groups).length} customer groups`);
+    return groups;
+  }, [payments]);
 
-  const getEMIStatus = useCallback((customer: Customer) => {
-    const today = new Date().toISOString().split('T')[0];
-    
-    const hasLoans = (customer as any).loans;
-    const customerLoans = hasLoans || [];
-    
-    const hasPaymentToday = customerLoans.some((loan: any) => 
-      (loan.emiHistory || []).some((payment: any) => 
-        payment.paymentDate.split('T')[0] === today && payment.status === 'Paid'
-      )
+  // Calculate total amount per customer
+  const calculateCustomerTotal = (payments: PaymentData[]) => {
+    return payments.reduce((sum, payment) => 
+      sum + (payment.paidAmount || 0), 0
     );
-    
-    if (hasPaymentToday) return 'paid';
-    
-    const hasPartialPayment = customerLoans.some((loan: any) => 
-      (loan.emiHistory || []).some((payment: any) => 
-        payment.paymentDate.split('T')[0] === today && payment.status === 'Partial'
-      )
-    );
-    
-    if (hasPartialPayment) return 'partial';
-    
-    return 'unpaid';
-  }, []);
-
-  const handleViewDetails = async (customer: Customer) => {
-    try {
-      const customerId = customer._id || customer.id;
-      if (!customerId) {
-        alert('Customer ID not found');
-        return;
-      }
-
-      const details = await fetchCustomerDetails(customerId);
-      if (details) {
-        onViewCustomerDetails(details);
-      }
-    } catch (error: any) {
-      console.error('Error fetching customer details:', error);
-      alert('Failed to fetch customer details: ' + error.message);
-    }
-  };
-
-  const handleUpdateEMI = (customer: Customer) => {
-    setSelectedCustomer(customer);
-    onUpdateEMI(customer);
-  };
-
-  const handleViewEMICalendar = async (customer: Customer) => {
-    try {
-      const customerId = customer._id || customer.id;
-      if (!customerId) {
-        alert('Customer ID not found');
-        return;
-      }
-
-      const details = await fetchCustomerDetails(customerId);
-      if (details) {
-        // You'll need to handle EMI calendar view differently
-        // For now, let's open the customer details and navigate to EMI calendar from there
-        onViewCustomerDetails(details);
-        // In your CustomerDetailsModal, you'll need to trigger the EMI calendar modal
-      }
-    } catch (error: any) {
-      console.error('Error fetching customer details for EMI calendar:', error);
-      alert('Failed to fetch customer details: ' + error.message);
-    }
-  };
-
-  const handleAddNewCustomer = () => {
-    // This should trigger the Add Customer modal from the parent
-    // Since we don't have direct access to setShowAddCustomer from parent,
-    // we'll need to add a prop for this
-    alert('Add New Customer functionality will be handled by the parent component');
-    // In the parent component (DataEntryDashboard), make sure to handle this
   };
 
   if (loading) {
     return <LoadingSpinner />;
   }
 
-  if (error) {
-    return <ErrorDisplay message={error.message || 'Failed to load customers'} />;
-  }
-
-  const customersToDisplay = sortedAndFilteredCustomers;
-
   return (
     <div className="px-4 py-6 sm:px-0">
+      {/* Debug button - remove in production */}
+      <div className="mb-4 flex justify-end">
+        <button
+          onClick={() => console.log('Debug info:', { payments, stats, groupedPayments })}
+          className="px-3 py-1 text-xs bg-gray-800 text-white rounded hover:bg-gray-700"
+        >
+          Debug Info
+        </button>
+      </div>
+
+      {/* Header */}
       <div className="mb-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">Customers</h2>
-            <p className="text-sm text-gray-600 mt-1">Manage all customer records and information</p>
+            <h2 className="text-2xl font-bold text-gray-900">Collection Management</h2>
+            <p className="text-sm text-gray-600 mt-1">Track and manage daily collections and payments</p>
           </div>
           
-          <button
-            onClick={handleAddNewCustomer}
-            className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-medium rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 flex items-center gap-2"
-          >
-            <span className="text-lg">+</span>
-            <span>Add New Customer (Requires Admin Approval)</span>
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onShowUpdateEMI}
+              className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-700 text-white font-medium rounded-lg hover:from-green-700 hover:to-emerald-800 transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 flex items-center gap-2"
+            >
+              <span className="text-lg">💰</span>
+              <span>Record EMI Payment</span>
+            </button>
+          </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div className="relative w-full sm:w-2/3">
-            <input
-              type="text"
-              placeholder="Search by customer name, number, business, or area..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full px-4 py-3 pl-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-base"
-            />
-            <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
-              <span className="text-gray-400 text-lg">🔍</span>
+        {/* Date Selection */}
+        <div className="mb-8 p-6 bg-white rounded-xl border border-gray-200 shadow-sm">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">Select Date</h3>
+              <p className="text-sm text-gray-600">
+                View collections for a specific date. Default is today.
+              </p>
             </div>
-          </div>
-          
-          <div className="flex gap-3 w-full sm:w-auto">
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="px-5 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center justify-center gap-2 transition-all duration-200 hover:shadow-sm"
-            >
-              <span className="font-medium">Filters</span>
-              <span className={`transform transition-transform ${showFilters ? 'rotate-180' : ''}`}>▼</span>
-            </button>
             
-            <button
-              onClick={toggleSortOrder}
-              className="px-5 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center justify-center gap-2 transition-all duration-200 hover:shadow-sm"
-              title={`Sort by Customer Number (${sortOrder === 'asc' ? 'Ascending' : sortOrder === 'desc' ? 'Descending' : 'None'})`}
-            >
-              <span className="font-medium">Sort</span>
-              <span className="text-blue-600 font-bold">{getSortIcon()}</span>
-            </button>
+            <div className="flex items-center gap-4">
+              <div className="flex flex-col">
+                <label className="text-sm font-medium text-gray-700 mb-1">
+                  Collection Date
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={handleDateChange}
+                    className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                    max={new Date().toISOString().split('T')[0]}
+                  />
+                  <button
+                    onClick={handleResetDate}
+                    className="px-4 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition-all duration-200"
+                  >
+                    Reset to Today
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="mt-4">
+            <p className="text-lg font-semibold text-blue-700">
+              Showing collections for: <span className="font-bold">{formatDisplayDate(selectedDate)}</span>
+            </p>
           </div>
         </div>
 
-        {showFilters && (
-          <div className="mt-4 p-6 bg-gray-50 rounded-xl border border-gray-200 animate-fade-in">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {error && <ErrorDisplay message={error} />}
+
+        {/* Statistics Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          {/* Today's Collection Card */}
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-xl p-6 shadow-sm">
+            <div className="flex items-center justify-between">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Customer Number
-                </label>
-                <input
-                  type="text"
-                  value={filters.customerNumber}
-                  onChange={(e) => setFilters({ ...filters, customerNumber: e.target.value })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Enter customer number"
-                />
+                <h3 className="text-sm font-medium text-blue-800 mb-2">Today's Collection</h3>
+                <p className="text-3xl font-bold text-blue-900">
+                  ₹{stats.todaysCollection.toLocaleString('en-IN')}
+                </p>
+                <p className="text-sm text-blue-700 mt-2">
+                  Total EMI collected on {selectedDate}
+                </p>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Loan Type
-                </label>
-                <select
-                  value={filters.loanType}
-                  onChange={(e) => setFilters({ ...filters, loanType: e.target.value })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">All Types</option>
-                  {loanTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
+              <div className="text-4xl text-blue-500">
+                💰
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Status
-                </label>
-                <select
-                  value={filters.status}
-                  onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">All Status</option>
-                  {customerStatusOptions.map((status) => (
-                    <option key={status} value={status}>
-                      {status.charAt(0).toUpperCase() + status.slice(1)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Office Category
-                </label>
-                <select
-                  value={filters.officeCategory}
-                  onChange={(e) => setFilters({ ...filters, officeCategory: e.target.value })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">All Offices</option>
-                  {officeCategories.map((office) => (
-                    <option key={office} value={office}>
-                      {office}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end">
-              <button
-                onClick={() => setFilters({
-                  customerNumber: '',
-                  loanType: '',
-                  status: '',
-                  officeCategory: ''
-                })}
-                className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-all duration-200"
-              >
-                Clear All Filters
-              </button>
             </div>
           </div>
-        )}
 
-        <div className="mt-4 text-sm text-gray-600">
-          Showing <span className="font-semibold text-gray-800">{customersToDisplay.length}</span> of <span className="font-semibold text-gray-800">{customers.length}</span> customers
-          {sortOrder !== 'none' && (
-            <span className="ml-3 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-              Sorted: Customer Number {sortOrder === 'asc' ? 'A→Z' : 'Z→A'}
-            </span>
-          )}
-        </div>
-      </div>
+          {/* Number of Customers Paid Card */}
+          <div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-xl p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-green-800 mb-2">Customers Paid</h3>
+                <p className="text-3xl font-bold text-green-900">
+                  {stats.numberOfCustomersPaid}
+                </p>
+                <p className="text-sm text-green-700 mt-2">
+                  Unique customers who made payments
+                </p>
+              </div>
+              <div className="text-4xl text-green-500">
+                👥
+              </div>
+            </div>
+          </div>
 
-      {customersToDisplay.length === 0 ? (
-        <div className="text-center py-16 bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl border border-gray-200">
-          <div className="text-gray-300 text-6xl mb-6">👥</div>
-          <h3 className="text-2xl font-semibold text-gray-800 mb-3">
-            {customers.length === 0 ? 'No customers found' : 'No matching customers'}
-          </h3>
-          <p className="text-gray-500 max-w-md mx-auto mb-8 text-lg">
-            {customers.length === 0 
-              ? 'Start by adding your first customer using the button above.'
-              : 'Try adjusting your search or filters to find what you\'re looking for.'
-            }
-          </p>
-          {customers.length === 0 && (
-            <button
-              onClick={handleAddNewCustomer}
-              className="px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-medium rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-            >
-              Add Your First Customer
-            </button>
-          )}
+          {/* Total Collections Card */}
+          <div className="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 rounded-xl p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-purple-800 mb-2">Total Transactions</h3>
+                <p className="text-3xl font-bold text-purple-900">
+                  {stats.totalCollections}
+                </p>
+                <p className="text-sm text-purple-700 mt-2">
+                  Number of EMI payments recorded
+                </p>
+              </div>
+              <div className="text-4xl text-purple-500">
+                📊
+              </div>
+            </div>
+          </div>
         </div>
-      ) : (
+
+        {/* Customer Payment List */}
         <div className="bg-white shadow-xl rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
-                <tr>
-                  <th className="px-8 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Customer Number
-                  </th>
-                  <th className="px-8 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Name
-                  </th>
-                  <th className="px-8 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Business
-                  </th>
-                  <th className="px-8 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Office
-                  </th>
-                  <th className="px-8 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {customersToDisplay.map((customer) => {
-                  const emiStatus = getEMIStatus(customer);
-                  const statusColor = getStatusColor(emiStatus);
-                  
-                  return (
-                    <tr 
-                      key={customer._id || customer.id} 
-                      className="hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 transition-all duration-200 group"
-                    >
-                      {/* Customer Number */}
-                      <td className="px-8 py-5 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="flex-shrink-0 h-12 w-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md group-hover:shadow-lg transition-shadow duration-200">
-                            <span className="text-white font-bold text-lg">
-                              {customer.customerNumber?.charAt(2) || 'C'}
-                            </span>
+          <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+            <h3 className="text-lg font-semibold text-gray-800">
+              Customer Payments for {formatDisplayDate(selectedDate)}
+            </h3>
+            <p className="text-sm text-gray-600 mt-1">
+              Showing {payments.length} payment{payments.length !== 1 ? 's' : ''} from {Object.keys(groupedPayments).length} customer{Object.keys(groupedPayments).length !== 1 ? 's' : ''}
+            </p>
+          </div>
+
+          {payments.length === 0 ? (
+            <NoDataDisplay selectedDate={selectedDate} />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
+                  <tr>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      Customer Details
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      Payment Details
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      Office & Operator
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {Object.entries(groupedPayments).map(([customerId, customerPayments]) => {
+                    const firstPayment = customerPayments[0];
+                    const customerTotal = calculateCustomerTotal(customerPayments);
+                    
+                    return (
+                      <tr 
+                        key={customerId}
+                        className="hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 transition-all duration-200 group"
+                      >
+                        {/* Customer Details */}
+                        <td className="px-6 py-5 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="flex-shrink-0 h-12 w-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md group-hover:shadow-lg transition-shadow duration-200">
+                              <span className="text-white font-bold text-lg">
+                                {firstPayment.customerName?.charAt(0) || 'C'}
+                              </span>
+                            </div>
+                            <div className="ml-4">
+                              <div className="text-sm font-bold text-gray-900 group-hover:text-blue-700 transition-colors duration-200">
+                                {firstPayment.customerName || 'Unknown Customer'}
+                              </div>
+                              <div className="text-xs text-gray-600">
+                                {firstPayment.customerNumber || 'No Number'}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                Customer ID: {customerId.substring(0, 8)}...
+                              </div>
+                            </div>
                           </div>
-                          <div className="ml-4">
-                            <div className="text-sm font-bold text-gray-900 group-hover:text-blue-700 transition-colors duration-200">
-                              {customer.customerNumber || 'CN0000'}
+                        </td>
+                        
+                        {/* Payment Details */}
+                        <td className="px-6 py-5">
+                          <div className="space-y-2">
+                            {customerPayments.map((payment, index) => (
+                              <div key={payment._id || index} className="flex justify-between items-center">
+                                <div>
+                                  <span className="text-sm font-medium text-gray-900">
+                                    Loan: {payment.loanNumber || 'N/A'}
+                                  </span>
+                                  <span className="text-xs text-gray-500 ml-2">
+                                    EMI: ₹{payment.emiAmount?.toLocaleString('en-IN') || '0'}
+                                  </span>
+                                </div>
+                                <div className="text-sm font-bold text-green-600">
+                                  ₹{(payment.paidAmount || 0).toLocaleString('en-IN')}
+                                </div>
+                              </div>
+                            ))}
+                            <div className="pt-2 border-t border-gray-200">
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm font-semibold text-gray-800">Customer Total:</span>
+                                <span className="text-lg font-bold text-blue-700">
+                                  ₹{customerTotal.toLocaleString('en-IN')}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        
+                        {/* Office & Operator */}
+                        <td className="px-6 py-5 whitespace-nowrap">
+                          <div className="flex flex-col space-y-2">
+                            <span className={`px-3 py-1.5 inline-flex text-sm font-semibold rounded-lg ${
+                              firstPayment.officeCategory === 'Office 1' 
+                                ? 'bg-gradient-to-r from-blue-100 to-blue-50 text-blue-800 border border-blue-200'
+                                : 'bg-gradient-to-r from-purple-100 to-purple-50 text-purple-800 border border-purple-200'
+                            }`}>
+                              {firstPayment.officeCategory || 'Not Assigned'}
+                            </span>
+                            <div className="text-xs text-gray-600">
+                              <span className="font-medium">Operator:</span> {firstPayment.operatorName || currentOperator.name}
                             </div>
                             <div className="text-xs text-gray-500">
-                              ID: {customer._id?.substring(0, 8) || 'N/A'}
+                              <span className="font-medium">Date:</span> {new Date(firstPayment.paymentDate).toLocaleDateString()}
                             </div>
                           </div>
-                        </div>
-                      </td>
-                      
-                      {/* Name */}
-                      <td className="px-8 py-5 whitespace-nowrap">
-                        <div className="text-sm font-semibold text-gray-900 group-hover:text-gray-800">
-                          {customer.name || 'N/A'}
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          <span className="inline-flex items-center">
-                            <span className="mr-1">📱</span>
-                            {Array.isArray(customer.phone) ? customer.phone[0] : customer.phone || 'No Phone'}
-                          </span>
-                        </div>
-                        <div className="text-xs text-gray-400 mt-1">
-                          {customer.area || 'No Area'}
-                        </div>
-                      </td>
-                      
-                      {/* Business */}
-                      <td className="px-8 py-5 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">
-                          {customer.businessName || 'N/A'}
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          {customer.businessType || 'General Business'}
-                        </div>
-                        <div className="mt-2">
-                          <span className={`px-2.5 py-1 inline-flex text-xs leading-4 font-bold rounded-full ${statusColor} shadow-sm`}>
-                            {emiStatus.toUpperCase()}
-                          </span>
-                        </div>
-                      </td>
-                      
-                      {/* Office */}
-                      <td className="px-8 py-5 whitespace-nowrap">
-                        <div className="flex flex-col">
-                          <span className={`px-3 py-1.5 inline-flex text-sm font-semibold rounded-lg ${
-                            customer.officeCategory === 'Office 1' 
-                              ? 'bg-gradient-to-r from-blue-100 to-blue-50 text-blue-800 border border-blue-200'
-                              : 'bg-gradient-to-r from-purple-100 to-purple-50 text-purple-800 border border-purple-200'
-                          }`}>
-                            {customer.officeCategory || 'Not Assigned'}
-                          </span>
-                          <div className="mt-2 text-xs text-gray-500">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded bg-gray-100">
-                              {customer.category || 'C'} Category
-                            </span>
+                        </td>
+                        
+                        {/* Actions */}
+                        <td className="px-6 py-5 whitespace-nowrap">
+                          <div className="flex flex-col space-y-2">
+                            <button
+                              onClick={() => {
+                                console.log('View customer details:', customerId, firstPayment.customerName);
+                                // This would ideally open the customer details modal
+                                // You'll need to pass this function from parent
+                                alert(`View customer: ${firstPayment.customerName}`);
+                              }}
+                              className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-medium rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200 shadow-sm hover:shadow-md transform hover:-translate-y-0.5 flex items-center justify-center gap-2"
+                            >
+                              <span className="text-base">👁️</span>
+                              <span>View Customer</span>
+                            </button>
+                            <button
+                              onClick={onShowUpdateEMI}
+                              className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-green-600 text-white text-sm font-medium rounded-lg hover:from-emerald-600 hover:to-green-700 transition-all duration-200 shadow-sm hover:shadow-md transform hover:-translate-y-0.5 flex items-center justify-center gap-2"
+                            >
+                              <span className="text-base">💰</span>
+                              <span>Add Payment</span>
+                            </button>
                           </div>
-                        </div>
-                      </td>
-                      
-                      {/* Actions */}
-                      <td className="px-8 py-5 whitespace-nowrap">
-                        <div className="flex flex-col space-y-3">
-                          {/* Update EMI Button */}
-                          <button
-                            onClick={() => handleUpdateEMI(customer)}
-                            className="px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-green-600 text-white text-sm font-medium rounded-lg hover:from-emerald-600 hover:to-green-700 transition-all duration-200 shadow-sm hover:shadow-md transform hover:-translate-y-0.5 flex items-center justify-center gap-2 group/action"
-                          >
-                            <span className="text-base">💰</span>
-                            <span>Update EMI</span>
-                          </button>
-                          
-                          {/* View Details Button */}
-                          <button
-                            onClick={() => handleViewDetails(customer)}
-                            className="px-4 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-medium rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200 shadow-sm hover:shadow-md transform hover:-translate-y-0.5 flex items-center justify-center gap-2 group/action"
-                          >
-                            <span className="text-base">👁️</span>
-                            <span>View Details</span>
-                          </button>
-                          
-                          {/* EMI Calendar Button */}
-                          <button
-                            onClick={() => handleViewEMICalendar(customer)}
-                            className="px-4 py-2.5 bg-gradient-to-r from-purple-500 to-violet-600 text-white text-sm font-medium rounded-lg hover:from-purple-600 hover:to-violet-700 transition-all duration-200 shadow-sm hover:shadow-md transform hover:-translate-y-0.5 flex items-center justify-center gap-2 group/action"
-                          >
-                            <span className="text-base">📅</span>
-                            <span>EMI Calendar</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
           
-          {/* Footer with pagination info */}
-          <div className="bg-gray-50 px-8 py-4 border-t border-gray-200">
+          {/* Footer with summary */}
+          <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
             <div className="flex justify-between items-center">
               <div className="text-sm text-gray-600">
-                Page 1 of 1 • Showing {customersToDisplay.length} customers
+                Showing {Object.keys(groupedPayments).length} customer{Object.keys(groupedPayments).length !== 1 ? 's' : ''} • {payments.length} transaction{payments.length !== 1 ? 's' : ''}
               </div>
-              <div className="flex space-x-2">
-                <button
-                  disabled
-                  className="px-4 py-2 text-sm font-medium text-gray-400 bg-gray-100 rounded-lg cursor-not-allowed"
-                >
-                  ← Previous
-                </button>
-                <button
-                  disabled
-                  className="px-4 py-2 text-sm font-medium text-gray-400 bg-gray-100 rounded-lg cursor-not-allowed"
-                >
-                  Next →
-                </button>
+              <div className="text-lg font-bold text-blue-700">
+                Daily Total: ₹{stats.todaysCollection.toLocaleString('en-IN')}
               </div>
             </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

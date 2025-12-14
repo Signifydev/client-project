@@ -9,6 +9,7 @@ export async function GET(request) {
     
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date');
+    const officeCategory = searchParams.get('officeCategory');
     
     if (!date) {
       return NextResponse.json(
@@ -17,164 +18,95 @@ export async function GET(request) {
       );
     }
 
-    console.log('📅 Fetching collection data for date:', date);
+    console.log('📅 Fetching collection data for date:', date, 'office:', officeCategory);
 
-    const collectionCustomers = [];
-    let totalCollection = 0;
-    let office1Collection = 0;
-    let office2Collection = 0;
-
-    // PRIMARY STRATEGY: Get payments from EMIPayment collection
-    console.log('🔍 Checking EMIPayment collection for date:', date);
-    
-    const emiPayments = await EMIPayment.find({
+    // Build query for EMIPayment
+    const paymentQuery = {
       paymentDate: {
         $gte: new Date(date + 'T00:00:00.000Z'),
         $lt: new Date(date + 'T23:59:59.999Z')
       },
       status: { $in: ['Paid', 'Partial'] }
-    }).populate('customerId', 'name customerNumber officeCategory phone businessName area');
+    };
+    
+    // Filter by office category if provided
+    if (officeCategory && officeCategory !== 'all') {
+      paymentQuery.officeCategory = officeCategory;
+    }
+
+    console.log('🔍 Checking EMIPayment collection for date:', date);
+    
+    // Fetch payments with customer details
+    const emiPayments = await EMIPayment.find(paymentQuery)
+      .populate('customerId', 'name customerNumber officeCategory phone businessName area')
+      .sort({ paymentDate: -1 })
+      .lean();
 
     console.log(`💰 Found ${emiPayments.length} EMI payments for ${date}`);
 
-    // Process EMI payments
-    const customerPaymentMap = new Map();
+    // Prepare statistics
+    let totalCollection = 0;
+    let numberOfCustomersPaid = 0;
+    const uniqueCustomerIds = new Set();
+    const paymentsWithDetails = [];
 
-    emiPayments.forEach(payment => {
+    // Process each payment
+    for (const payment of emiPayments) {
       const customerId = payment.customerId?._id?.toString();
       
       if (!customerId) {
         console.log('⚠️ Payment without customer:', payment._id);
-        return;
+        continue;
       }
 
-      if (!customerPaymentMap.has(customerId)) {
-        customerPaymentMap.set(customerId, {
-          customer: payment.customerId,
-          payments: [],
-          totalAmount: 0,
-          loans: new Map()
-        });
-      }
-
-      const customerData = customerPaymentMap.get(customerId);
-      customerData.payments.push(payment);
-      customerData.totalAmount += payment.amount;
-
-      // Track loans
-      const loanKey = payment.loanNumber || 'default';
-      if (!customerData.loans.has(loanKey)) {
-        customerData.loans.set(loanKey, {
-          loanNumber: payment.loanNumber || 'N/A',
-          collectedAmount: 0
-        });
-      }
+      // Add to unique customers set
+      uniqueCustomerIds.add(customerId);
       
-      const loanData = customerData.loans.get(loanKey);
-      loanData.collectedAmount += payment.amount;
-      loanData.emiAmount = payment.amount; // Use payment amount as EMI amount for display
-    });
+      // Add to total collection
+      totalCollection += payment.amount || 0;
 
-    // Convert to collection customers format
-    customerPaymentMap.forEach((customerData, customerId) => {
-      const loanDetails = Array.from(customerData.loans.values());
-      
-      collectionCustomers.push({
+      // Create payment with details
+      const paymentWithDetails = {
+        _id: payment._id,
         customerId: customerId,
-        customerNumber: customerData.customer.customerNumber || `CN${customerId}`,
-        customerName: customerData.customer.name,
-        totalCollection: customerData.totalAmount,
-        officeCategory: customerData.customer.officeCategory || 'Office 1',
-        loans: loanDetails
-      });
+        customerNumber: payment.customerId?.customerNumber || 'N/A',
+        customerName: payment.customerId?.name || 'N/A',
+        loanId: payment.loanId,
+        loanNumber: payment.loanNumber || 'N/A',
+        emiAmount: payment.amount || 0,
+        paidAmount: payment.amount || 0,
+        paymentDate: payment.paymentDate,
+        paymentMethod: payment.paymentMethod || 'Cash',
+        officeCategory: payment.customerId?.officeCategory || payment.officeCategory || 'Office 1',
+        operatorName: payment.operatorName || 'N/A',
+        status: payment.status
+      };
 
-      totalCollection += customerData.totalAmount;
-
-      if (customerData.customer.officeCategory === 'Office 1') {
-        office1Collection += customerData.totalAmount;
-      } else if (customerData.customer.officeCategory === 'Office 2') {
-        office2Collection += customerData.totalAmount;
-      }
-    });
-
-    console.log(`📊 Processed ${collectionCustomers.length} customers from EMI payments`);
-
-    // FALLBACK STRATEGY: If no EMI payments found, check customer loans
-    if (collectionCustomers.length === 0) {
-      console.log('🔄 No EMI payments found, checking customer loans as fallback...');
-      
-      const allCustomers = await Customer.find({
-        status: 'active'
-      }).populate('loans');
-
-      for (const customer of allCustomers) {
-        let customerTotalCollection = 0;
-        const loanDetails = [];
-        
-        if (customer.loans && Array.isArray(customer.loans)) {
-          for (const loan of customer.loans) {
-            if (loan.emiHistory && Array.isArray(loan.emiHistory)) {
-              const datePayments = loan.emiHistory.filter(payment => {
-                const paymentDate = new Date(payment.paymentDate).toISOString().split('T')[0];
-                return paymentDate === date;
-              });
-              
-              if (datePayments.length > 0) {
-                const collectedAmount = datePayments.reduce((sum, payment) => sum + payment.amount, 0);
-                customerTotalCollection += collectedAmount;
-                
-                loanDetails.push({
-                  loanNumber: loan.loanNumber || 'N/A',
-                  emiAmount: loan.emiAmount || 0,
-                  collectedAmount: collectedAmount
-                });
-
-                console.log(`💰 Found payment in customer loans for ${customer.name}:`, {
-                  loanNumber: loan.loanNumber,
-                  amount: collectedAmount
-                });
-              }
-            }
-          }
-        }
-
-        if (customerTotalCollection > 0) {
-          collectionCustomers.push({
-            customerId: customer._id,
-            customerNumber: customer.customerNumber,
-            customerName: customer.name,
-            totalCollection: customerTotalCollection,
-            officeCategory: customer.officeCategory || 'Office 1',
-            loans: loanDetails
-          });
-
-          totalCollection += customerTotalCollection;
-
-          if (customer.officeCategory === 'Office 1') {
-            office1Collection += customerTotalCollection;
-          } else if (customer.officeCategory === 'Office 2') {
-            office2Collection += customerTotalCollection;
-          }
-        }
-      }
+      paymentsWithDetails.push(paymentWithDetails);
     }
+
+    numberOfCustomersPaid = uniqueCustomerIds.size;
 
     const collectionData = {
       date: date,
-      customers: collectionCustomers,
+      payments: paymentsWithDetails,
+      statistics: {
+        todaysCollection: totalCollection,
+        numberOfCustomersPaid: numberOfCustomersPaid,
+        totalCollections: emiPayments.length
+      },
       summary: {
         totalCollection,
-        office1Collection,
-        office2Collection,
-        totalCustomers: collectionCustomers.length
+        numberOfCustomersPaid,
+        totalTransactions: emiPayments.length
       }
     };
 
     console.log('✅ Final collection data:', {
       date,
-      totalCustomers: collectionCustomers.length,
+      numberOfCustomersPaid,
       totalCollection,
-      source: emiPayments.length > 0 ? 'EMIPayment Collection' : 'Customer Loans Fallback'
+      totalTransactions: emiPayments.length
     });
 
     return NextResponse.json({

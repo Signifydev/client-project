@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import type { Customer } from '@/src/types/dataEntry';
+import type { Customer, Loan } from '@/src/types/dataEntry';
 
 interface UseEMIReturn {
   emiCustomers: Customer[];
@@ -11,6 +11,7 @@ interface UseEMIReturn {
     overdueCount: number;
     totalCustomers: number;
     filteredCount: number;
+    totalActiveLoans: number;
   };
 }
 
@@ -42,7 +43,7 @@ export const useEMI = (currentUserOffice?: string): UseEMIReturn => {
       return pendingEMIRequests.get(cacheKey)!;
     }
     
-    // Create new request
+    // Create new request - Use customers endpoint instead of emi-customers
     const requestPromise = (async () => {
       try {
         if (abortControllerRef.current) {
@@ -51,12 +52,20 @@ export const useEMI = (currentUserOffice?: string): UseEMIReturn => {
         
         abortControllerRef.current = new AbortController();
         
-        let url = '/api/data-entry/emi-customers';
-        if (currentUserOffice) {
-          url += `?officeCategory=${encodeURIComponent(currentUserOffice)}`;
+        let url = '/api/data-entry/customers';
+        const params = new URLSearchParams();
+        
+        // Only fetch active customers
+        params.append('status', 'active');
+        
+        if (currentUserOffice && currentUserOffice !== 'all') {
+          params.append('officeCategory', currentUserOffice);
         }
         
-        const response = await fetch(url, {
+        const fullUrl = url + '?' + params.toString();
+        console.log('📡 Fetching EMI customers from:', fullUrl);
+        
+        const response = await fetch(fullUrl, {
           signal: abortControllerRef.current.signal,
           headers: {
             'Cache-Control': 'max-age=120' // 2 minutes cache
@@ -67,17 +76,60 @@ export const useEMI = (currentUserOffice?: string): UseEMIReturn => {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        const data: Customer[] = await response.json();
+        const result = await response.json();
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to fetch customers');
+        }
+        
+        const data: Customer[] = result.data || [];
+        
+        console.log(`📊 Raw data received: ${data.length} customers`);
+        
+        // DEBUG: Log customer data to see what fields are available
+        data.slice(0, 5).forEach((customer, index) => {
+          console.log(`Customer ${index + 1}:`, {
+            name: customer.name,
+            customerNumber: customer.customerNumber,
+            loanAmount: customer.loanAmount,
+            emiAmount: customer.emiAmount,
+            totalLoans: customer.totalLoans,
+            totalLoanAmount: customer.totalLoanAmount,
+            status: customer.status
+          });
+        });
+        
+        // IMPORTANT: Filter for customers who have active loans
+        // Check multiple fields to determine if customer has loans
+        const customersWithLoans = data.filter(customer => {
+          // Check if customer has any loan-related data
+          const hasLoanData = 
+            (customer.totalLoans && customer.totalLoans > 0) ||
+            (customer.totalLoanAmount && customer.totalLoanAmount > 0) ||
+            (customer.loanAmount && customer.loanAmount > 0) ||
+            (customer.activeLoan !== undefined);
+          
+          console.log(`Customer ${customer.name}: hasLoanData = ${hasLoanData}`, {
+            totalLoans: customer.totalLoans,
+            totalLoanAmount: customer.totalLoanAmount,
+            loanAmount: customer.loanAmount,
+            hasActiveLoan: !!customer.activeLoan
+          });
+          
+          return hasLoanData;
+        });
+        
+        console.log(`✅ Found ${customersWithLoans.length} EMI customers out of ${data.length} total customers`);
         
         // Update cache
         emiCache.set(cacheKey, {
-          data,
+          data: customersWithLoans,
           timestamp: Date.now()
         });
         
-        return data;
+        return customersWithLoans;
       } catch (err) {
-        if (err.name === 'AbortError') {
+        if (err instanceof Error && err.name === 'AbortError') {
           console.log('EMI request aborted');
           return [];
         }
@@ -121,11 +173,24 @@ export const useEMI = (currentUserOffice?: string): UseEMIReturn => {
       return diffDays > 7;
     }).length;
     
+    // Calculate total active loans (using totalLoans field)
+    const totalActiveLoans = emiCustomers.reduce((sum, customer) => 
+      sum + (customer.totalLoans || 0), 0
+    );
+    
+    // Calculate total EMI amount
+    const totalEMIAmount = emiCustomers.reduce((sum, customer) => {
+      if (customer.emiAmount) return sum + customer.emiAmount;
+      return sum;
+    }, 0);
+    
     return {
       totalDue,
       overdueCount,
       totalCustomers: emiCustomers.length,
-      filteredCount: emiCustomers.length
+      filteredCount: emiCustomers.length,
+      totalActiveLoans,
+      totalEMIAmount
     };
   }, [emiCustomers]);
 
@@ -147,4 +212,22 @@ export const useEMI = (currentUserOffice?: string): UseEMIReturn => {
     refetch,
     statistics
   };
+};
+
+// Helper function to fetch customer loans
+export const fetchCustomerLoans = async (customerId: string): Promise<Loan[]> => {
+  try {
+    const response = await fetch(`/api/data-entry/customers/${customerId}`);
+    const result = await response.json();
+    
+    if (result.success && result.data && result.data.loans) {
+      return result.data.loans.filter((loan: Loan) => 
+        loan.status === 'active' || loan.status === 'pending'
+      );
+    }
+    return [];
+  } catch (error) {
+    console.error('Error fetching customer loans:', error);
+    return [];
+  }
 };

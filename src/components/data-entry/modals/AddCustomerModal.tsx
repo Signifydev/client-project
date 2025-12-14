@@ -17,7 +17,8 @@ import {
   normalizeCustomerNumber,
   generateCustomerNumberSuggestions,
   findNearestAvailableCustomerNumber,
-  extractNumericPart
+  extractNumericPart,
+  validateCustomerNumberFormat
 } from '@/src/utils/validation';
 import {
   customerCategories,
@@ -79,7 +80,7 @@ export default function AddCustomerModal({
   });
   
   const [step2Data, setStep2Data] = useState<NewCustomerStep2>({
-    loanSelectionType: 'single', // Changed from loanType to loanSelectionType
+    loanSelectionType: 'single',
     loanNumber: '',
     loanDate: getTodayISTDate(),
     amount: '',
@@ -87,7 +88,7 @@ export default function AddCustomerModal({
     loanAmount: '',
     emiAmount: '',
     loanDays: '',
-    loanType: 'Daily', // This is now only for Daily/Weekly/Monthly
+    loanType: 'Daily',
     emiType: 'fixed',
     customEmiAmount: '',
   });
@@ -221,103 +222,126 @@ export default function AddCustomerModal({
   };
 
   const generatePassword = (): void => {
-  // Limited symbols as requested: #,@,$,%,!
   const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const lowercase = 'abcdefghijklmnopqrstuvwxyz';
   const numbers = '0123456789';
-  const specialChars = '#@$%!'; // Limited to specific symbols only
+  const specialChars = '#@$%!';
   
   let password = '';
   
-  // Ensure at least one of each required type
   password += uppercase[Math.floor(Math.random() * uppercase.length)];
   password += lowercase[Math.floor(Math.random() * lowercase.length)];
   password += numbers[Math.floor(Math.random() * numbers.length)];
   password += specialChars[Math.floor(Math.random() * specialChars.length)];
   
-  // Fill remaining characters with random from all allowed characters
   const allChars = uppercase + lowercase + numbers + specialChars;
   for (let i = 0; i < 4; i++) {
     password += allChars[Math.floor(Math.random() * allChars.length)];
   }
   
-  // Shuffle the password
   password = password.split('').sort(() => Math.random() - 0.5).join('');
   
   setStep3Data(prev => ({ ...prev, password, confirmPassword: password }));
 };
 
   const checkCustomerNumberAvailability = async (customerNumber: string): Promise<void> => {
-    if (!customerNumber || extractNumericPart(customerNumber).length < 1) {
-      setCustomerNumberError('');
+  if (!customerNumber || extractNumericPart(customerNumber).length < 1) {
+    setCustomerNumberError('');
+    setCustomerNumberSuccess('');
+    setCustomerNumberSuggestions([]);
+    setShowSuggestions(false);
+    return;
+  }
+
+  const numericInput = extractNumericPart(customerNumber);
+  
+  setIsCheckingCustomerNumber(true);
+  setCustomerNumberError('');
+  setCustomerNumberSuccess('');
+  setCheckAttempts(prev => prev + 1);
+  
+  try {
+    // DEBUG: Log what we're checking
+    console.log('🔍 Checking customer number:', customerNumber);
+    console.log('🔢 Numeric part:', numericInput);
+    console.log('📋 Existing customers count:', existingCustomers.length);
+    console.log('📋 Sample of existing customers:', existingCustomers.slice(0, 3).map(c => ({
+      name: c.name,
+      customerNumber: c.customerNumber,
+      numeric: extractNumericPart(c.customerNumber || '')
+    })));
+    
+    // First, check locally in existingCustomers array
+    let isDuplicateLocal = false;
+    let matchingCustomer: Customer | null = null;
+
+    for (const customer of existingCustomers) {
+      if (!customer.customerNumber) continue;
+      
+      // Normalize the existing customer number
+      const existingNormalized = normalizeCustomerNumber(customer.customerNumber);
+      const existingNumeric = extractNumericPart(customer.customerNumber);
+      const existingNumericValue = parseInt(existingNumeric) || 0;
+      
+      console.log(`Comparing: Input ${numericInput} with ${customer.customerNumber} -> ${existingNumericValue}`);
+      
+      // Compare both numeric values and normalized strings
+      if (existingNumericValue === parseInt(numericInput) || 
+          existingNormalized === normalizeCustomerNumber(customerNumber)) {
+        isDuplicateLocal = true;
+        matchingCustomer = customer;
+        console.log('❌ Found duplicate:', customer);
+        break;
+      }
+    }
+    
+    if (isDuplicateLocal && matchingCustomer) {
+      const normalizedNumber = normalizeCustomerNumber(customerNumber);
+      const errorMsg = `❌ Customer Number "${normalizedNumber}" already exists! (Currently assigned to: ${matchingCustomer.name})`;
+      
+      setCustomerNumberError(errorMsg);
       setCustomerNumberSuccess('');
-      setCustomerNumberSuggestions([]);
-      setShowSuggestions(false);
+
+      // Generate suggestions
+      const suggestions = generateCustomerNumberSuggestions(customerNumber, existingCustomers);
+      setCustomerNumberSuggestions(suggestions);
+      setShowSuggestions(true);
+
+      // Find nearest available number
+      const nearestAvailable = findNearestAvailableCustomerNumber(customerNumber, existingCustomers);
+      if (nearestAvailable) {
+        setCustomerNumberSuggestions(prev => [
+          {
+            number: nearestAvailable,
+            reason: 'Nearest Available',
+            isAvailable: true
+          },
+          ...prev.filter(p => p.number !== nearestAvailable)
+        ]);
+      }
+      
+      console.log('🚨 Duplicate detected:', errorMsg);
+      console.log('💡 Suggestions:', suggestions);
+      
       return;
     }
 
-    const numericInput = extractNumericPart(customerNumber);
-    
-    setIsCheckingCustomerNumber(true);
+    const normalizedNumber = normalizeCustomerNumber(customerNumber);
     setCustomerNumberError('');
-    setCustomerNumberSuccess('');
-    setCheckAttempts(prev => prev + 1);
+    setCustomerNumberSuccess(`✅ Customer Number "${normalizedNumber}" is available!`);
+    setCustomerNumberSuggestions([]);
+    setShowSuggestions(false);
     
-    try {
-      let isDuplicateLocal = false;
-      let matchingCustomer: Customer | null = null;
+    console.log('✅ Customer number is available:', normalizedNumber);
 
-      for (const customer of existingCustomers) {
-        if (!customer.customerNumber) continue;
-        
-        const existingNumeric = extractNumericPart(customer.customerNumber);
-        
-        if (existingNumeric === numericInput) {
-          isDuplicateLocal = true;
-          matchingCustomer = customer;
-          break;
-        }
-      }
-      
-      if (isDuplicateLocal && matchingCustomer) {
-        const normalizedNumber = normalizeCustomerNumber(customerNumber);
-        const errorMsg = `❌ Customer Number "${normalizedNumber}" already exists! (Currently assigned to: ${matchingCustomer.name})`;
-        
-        setCustomerNumberError(errorMsg);
-        setCustomerNumberSuccess('');
-
-        const suggestions = generateCustomerNumberSuggestions(customerNumber, existingCustomers);
-        setCustomerNumberSuggestions(suggestions);
-        setShowSuggestions(true);
-
-        const nearestAvailable = findNearestAvailableCustomerNumber(customerNumber, existingCustomers);
-        if (nearestAvailable) {
-          setCustomerNumberSuggestions(prev => [
-            {
-              number: nearestAvailable,
-              reason: 'Nearest Available',
-              isAvailable: true
-            },
-            ...prev.filter(p => p.number !== nearestAvailable)
-          ]);
-        }
-        return;
-      }
-
-      const normalizedNumber = normalizeCustomerNumber(customerNumber);
-      setCustomerNumberError('');
-      setCustomerNumberSuccess(`✅ Customer Number "${normalizedNumber}" is available!`);
-      setCustomerNumberSuggestions([]);
-      setShowSuggestions(false);
-
-    } catch (error) {
-      console.error('❌ Error checking customer number:', error);
-      setCustomerNumberError('⚠️ Error checking customer number. Please try again.');
-      setCustomerNumberSuccess('');
-    } finally {
-      setIsCheckingCustomerNumber(false);
-    }
-  };
+  } catch (error) {
+    console.error('❌ Error checking customer number:', error);
+    setCustomerNumberError('⚠️ Error checking customer number. Please try again.');
+    setCustomerNumberSuccess('');
+  } finally {
+    setIsCheckingCustomerNumber(false);
+  }
+};
 
   const handleCustomerNumberChange = (value: string): void => {
     const numbersOnly = value.replace(/\D/g, '');
@@ -386,203 +410,192 @@ export default function AddCustomerModal({
   };
 
   const sendApprovalRequest = async (): Promise<{success: boolean, message?: string}> => {
-    try {
-      console.log('📤 Sending approval request as JSON...');
-      
-      const totalLoanAmount = calculateTotalLoanAmount();
-      
-      const preparedStep1Data = {
-        name: step1Data.name.trim(),
-        phone: step1Data.phone.filter(p => p && p.trim() !== ''),
-        whatsappNumber: step1Data.whatsappNumber || '',
-        businessName: step1Data.businessName,
-        area: step1Data.area,
-        customerNumber: step1Data.customerNumber,
-        address: step1Data.address || '',
-        category: step1Data.category,
-        officeCategory: step1Data.officeCategory,
-        hasProfilePicture: !!step1Data.profilePicture,
-        hasFiDocuments: {
-          shop: !!step1Data.fiDocuments.shop,
-          home: !!step1Data.fiDocuments.home
-        }
-      };
-      
-      const preparedStep2Data = {
-        loanSelectionType: step2Data.loanSelectionType, // Changed from loanType
-        loanNumber: step2Data.loanNumber,
-        loanDate: step2Data.loanDate,
-        emiStartDate: step2Data.emiStartDate,
-        loanAmount: parseFloat(step2Data.loanAmount) || totalLoanAmount,
-        emiAmount: parseFloat(step2Data.emiAmount) || 0,
-        loanDays: parseFloat(step2Data.loanDays) || 0,
-        loanType: step2Data.loanType, // This is now only for Daily/Weekly/Monthly
-        emiType: step2Data.emiType,
-        customEmiAmount: step2Data.customEmiAmount ? parseFloat(step2Data.customEmiAmount) : null
-      };
-      
-      const preparedStep3Data = {
-        loginId: step3Data.loginId,
-        password: step3Data.password,
-        confirmPassword: step3Data.confirmPassword
-      };
-      
-      const approvalRequest = {
-        type: 'New Customer',
-        customerName: step1Data.name.trim(),
-        customerNumber: step1Data.customerNumber,
-        step1Data: preparedStep1Data,
-        step2Data: preparedStep2Data,
-        step3Data: preparedStep3Data,
-        requestedData: {
-          customerName: step1Data.name.trim(),
-          customerNumber: step1Data.customerNumber,
-          phone: step1Data.phone.filter(p => p && p.trim() !== ''),
-          whatsappNumber: step1Data.whatsappNumber || '',
-          businessName: step1Data.businessName,
-          area: step1Data.area,
-          address: step1Data.address || '',
-          category: step1Data.category,
-          officeCategory: step1Data.officeCategory,
-          loanSelectionType: step2Data.loanSelectionType, // Changed from loanType
-          loanNumber: step2Data.loanNumber,
-          loanAmount: parseFloat(step2Data.loanAmount) || totalLoanAmount,
-          emiAmount: parseFloat(step2Data.emiAmount) || 0,
-          loanDays: parseFloat(step2Data.loanDays) || 0,
-          loanType: step2Data.loanType, // This is now only for Daily/Weekly/Monthly
-          emiType: step2Data.emiType,
-          customEmiAmount: step2Data.customEmiAmount ? parseFloat(step2Data.customEmiAmount) : null,
-          loginId: step3Data.loginId,
-          password: step3Data.password
-        },
-        description: `New customer registration for ${step1Data.name} - Customer Number: ${step1Data.customerNumber}`,
-        priority: 'High',
-        status: 'Pending',
-        createdBy: currentUserOffice || 'data_entry_operator',
-        createdByRole: 'data_entry',
-        requiresCustomerNotification: true,
-        estimatedImpact: 'High'
-      };
-      
-      console.log('📋 Sending approval request:', {
-        type: approvalRequest.type,
-        customerName: approvalRequest.customerName,
-        customerNumber: approvalRequest.customerNumber,
-        loanSelectionType: approvalRequest.step2Data.loanSelectionType,
-        loanType: approvalRequest.step2Data.loanType,
-        loanNumber: approvalRequest.step2Data.loanNumber
-      });
-      
-      const response = await fetch('/api/data-entry/requests', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(approvalRequest),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('API Error Response:', errorText);
-        throw new Error(`Failed to submit approval request (${response.status})`);
+  try {
+    console.log('📤 Sending approval request as FormData...');
+    console.log('🔍 Loan Selection Type:', step2Data.loanSelectionType);
+    
+    const totalLoanAmount = calculateTotalLoanAmount();
+    
+    // Create FormData instead of JSON
+    const formData = new FormData();
+    
+    // Step 1 data
+    formData.append('name', step1Data.name.trim());
+    step1Data.phone.forEach((phone, index) => {
+      if (phone && phone.trim() !== '') {
+        formData.append(`phone[${index}]`, phone);
       }
-
-      const result = await response.json();
-      
-      if (!result.success) {
-        console.error('API Error Result:', result);
-        throw new Error(result.error || 'Unknown error from API');
+    });
+    formData.append('whatsappNumber', step1Data.whatsappNumber || '');
+    formData.append('businessName', step1Data.businessName);
+    formData.append('area', step1Data.area);
+    formData.append('customerNumber', step1Data.customerNumber);
+    formData.append('address', step1Data.address || '');
+    formData.append('category', step1Data.category);
+    formData.append('officeCategory', step1Data.officeCategory);
+    
+    // CRITICAL FIX: Only append loan fields for Single Loan
+    formData.append('loanSelectionType', step2Data.loanSelectionType);
+    
+    if (step2Data.loanSelectionType === 'single') {
+      console.log('🔍 Appending Single Loan details...');
+      // Step 2 data - ONLY for Single Loan
+      formData.append('loanDate', step2Data.loanDate);
+      formData.append('emiStartDate', step2Data.emiStartDate);
+      formData.append('loanAmount', step2Data.loanAmount || totalLoanAmount.toString());
+      formData.append('emiAmount', step2Data.emiAmount);
+      formData.append('loanDays', step2Data.loanDays);
+      formData.append('loanType', step2Data.loanType);
+      formData.append('emiType', step2Data.emiType);
+      if (step2Data.customEmiAmount) {
+        formData.append('customEmiAmount', step2Data.customEmiAmount);
       }
-
-      return { 
-        success: true, 
-        message: result.message || 'Request submitted successfully' 
-      };
-      
-    } catch (error: any) {
-      console.error('❌ Error in sendApprovalRequest:', error);
-      throw error;
+      formData.append('loanNumber', step2Data.loanNumber);
+    } else {
+      console.log('🔍 Multiple Loan selected - skipping loan fields');
+      // For Multiple Loans, don't send loan fields or send empty/default values
+      formData.append('loanDate', '');
+      formData.append('emiStartDate', '');
+      formData.append('loanAmount', '0');
+      formData.append('emiAmount', '0');
+      formData.append('loanDays', '0');
+      formData.append('loanType', '');
+      formData.append('emiType', 'fixed');
+      formData.append('loanNumber', '');
     }
-  };
+    
+    // Step 3 data
+    formData.append('loginId', step3Data.loginId);
+    formData.append('password', step3Data.password);
+    formData.append('confirmPassword', step3Data.confirmPassword);
+    formData.append('createdBy', currentUserOffice || 'data_entry_operator');
+    
+    // Add files if they exist
+    if (step1Data.profilePicture) {
+      formData.append('profilePicture', step1Data.profilePicture);
+    }
+    if (step1Data.fiDocuments.shop) {
+      formData.append('fiDocumentShop', step1Data.fiDocuments.shop);
+    }
+    if (step1Data.fiDocuments.home) {
+      formData.append('fiDocumentHome', step1Data.fiDocuments.home);
+    }
+    
+    // Log FormData contents
+    console.log('📋 FormData entries:');
+    for (const [key, value] of formData.entries()) {
+      if (key === 'password' || key === 'confirmPassword') {
+        console.log(`  ${key}: [HIDDEN]`);
+      } else if (value instanceof File) {
+        console.log(`  ${key}: File - ${value.name} (${value.size} bytes)`);
+      } else {
+        console.log(`  ${key}:`, value);
+      }
+    }
+    
+    const response = await fetch('/api/data-entry/customers', {
+      method: 'POST',
+      body: formData,
+      // Don't set Content-Type header for FormData - browser will set it automatically
+    });
+
+    console.log('📊 Response status:', response.status);
+    console.log('📊 Response status text:', response.statusText);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ API Error Response:', errorText);
+      throw new Error(`Failed to submit approval request (${response.status}): ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ API Success Response:', result);
+    
+    return { 
+      success: true, 
+      message: result.message || 'Request submitted successfully' 
+    };
+    
+  } catch (error: any) {
+    console.error('❌ Error in sendApprovalRequest:', error);
+    throw error;
+  }
+};
 
   const handleStep1Next = (): void => {
     console.log('Step 1 Next - Validating customer number:', step1Data.customerNumber);
     
-    if (step1Data.customerNumber) {
-      const numericInput = extractNumericPart(step1Data.customerNumber);
-      
-      if (!numericInput) {
-        setCustomerNumberError('Please enter a valid customer number with digits');
-        setTimeout(() => {
-          const errorElement = document.getElementById('error-customerNumber');
-          if (errorElement) {
-            errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }
-        }, 100);
-        return;
-      }
-
-      const matchingCustomer = existingCustomers.find(customer => {
-        if (!customer.customerNumber) return false;
-        const existingNumeric = extractNumericPart(customer.customerNumber);
-        return existingNumeric === numericInput;
-      });
-
-      if (matchingCustomer) {
-        const normalizedNumber = normalizeCustomerNumber(step1Data.customerNumber);
-        setCustomerNumberError(`❌ Customer Number "${normalizedNumber}" already exists! (Assigned to: ${matchingCustomer.name})`);
-        setCustomerNumberSuccess('');
-        
-        setTimeout(() => {
-          const errorElement = document.getElementById('error-customerNumber');
-          if (errorElement) {
-            errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }
-        }, 100);
-        return;
-      }
-
-      if (customerNumberError && customerNumberError.includes('already exists')) {
-        setTimeout(() => {
-          const errorElement = document.getElementById('error-customerNumber');
-          if (errorElement) {
-            errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }
-        }, 100);
-        return;
-      }
-
-      if (!customerNumberSuccess && !isCheckingCustomerNumber) {
-        setCustomerNumberError('⚠️ Please wait for customer number validation to complete');
-        setTimeout(() => {
-          const errorElement = document.getElementById('error-customerNumber');
-          if (errorElement) {
-            errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }
-        }, 100);
-        return;
-      }
+    // Validate customer number format first
+    const formatValidation = validateCustomerNumberFormat(step1Data.customerNumber);
+    if (!formatValidation.isValid) {
+      setCustomerNumberError(formatValidation.message || 'Invalid customer number');
+      setTimeout(() => {
+        const errorElement = document.getElementById('error-customerNumber');
+        if (errorElement) {
+          errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+      return;
     }
     
+    // Check for duplicates immediately
+    const isDuplicate = isCustomerNumberExists(step1Data.customerNumber, existingCustomers);
+    if (isDuplicate) {
+      // Find the matching customer for better error message
+      const numericInput = extractNumericPart(step1Data.customerNumber);
+      const matchingCustomer = existingCustomers.find(customer => {
+        const existingNumeric = extractNumericPart(customer.customerNumber || '');
+        return existingNumeric === numericInput;
+      });
+      
+      const errorMsg = matchingCustomer 
+        ? `❌ Customer Number "${step1Data.customerNumber}" already exists! (Assigned to: ${matchingCustomer.name})`
+        : `❌ Customer Number "${step1Data.customerNumber}" already exists!`;
+      
+      setCustomerNumberError(errorMsg);
+      setCustomerNumberSuccess('');
+      
+      setTimeout(() => {
+        const errorElement = document.getElementById('error-customerNumber');
+        if (errorElement) {
+          errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+      return;
+    }
+    
+    // If async validation hasn't completed, wait for it
+    if (isCheckingCustomerNumber) {
+      setCustomerNumberError('⚠️ Please wait for customer number validation to complete');
+      setTimeout(() => {
+        const errorElement = document.getElementById('error-customerNumber');
+        if (errorElement) {
+          errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+      return;
+    }
+    
+    // If there's an error from async validation, block
+    if (customerNumberError && !customerNumberError.includes('already exists')) {
+      setTimeout(() => {
+        const errorElement = document.getElementById('error-customerNumber');
+        if (errorElement) {
+          errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+      return;
+    }
+    
+    // Validate other fields
     const errors = validateStep1(step1Data, existingCustomers);
     setStep1Errors(errors);
     
     if (Object.keys(errors).length === 0) {
-      if (step1Data.customerNumber && (customerNumberError || !customerNumberSuccess)) {
-        setCustomerNumberError('⚠️ Please fix customer number issues before proceeding');
-        setTimeout(() => {
-          const errorElement = document.getElementById('error-customerNumber');
-          if (errorElement) {
-            errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }
-        }, 100);
-        return;
-      }
-      
       console.log('✅ Step 1 validation passed');
       setCurrentStep(2);
     } else {
-      console.log('❌ Step 1 validation failed');
+      console.log('❌ Step 1 validation failed:', errors);
       setTimeout(() => {
         const firstErrorElement = document.querySelector('[id^="error-"]');
         if (firstErrorElement) {
@@ -646,7 +659,7 @@ export default function AddCustomerModal({
       }
     });
     setStep2Data({
-      loanSelectionType: 'single', // Changed from loanType
+      loanSelectionType: 'single',
       loanNumber: '',
       loanDate: getTodayISTDate(),
       amount: '',
@@ -675,11 +688,18 @@ export default function AddCustomerModal({
   };
 
   const handleSubmit = async (): Promise<void> => {
+    console.log('🟢 handleSubmit called - Starting submission process');
+    
+    // Log all step data
+    console.log('📋 Step 1 Data:', step1Data);
+    console.log('📋 Step 2 Data:', step2Data);
+    console.log('📋 Step 3 Data:', step3Data);
+    
     const errors = validateStep3(step3Data);
     setStep3Errors(errors);
     
     if (Object.keys(errors).length > 0) {
-      console.log('Step 3 validation errors:', errors);
+      console.log('❌ Step 3 validation errors:', errors);
       return;
     }
 
@@ -687,12 +707,14 @@ export default function AddCustomerModal({
     const isDuplicate = isCustomerNumberExists(normalizedCustomerNumber, existingCustomers);
     
     if (isDuplicate) {
+      console.log('❌ Customer number already exists:', normalizedCustomerNumber);
       alert('Customer number already exists. Please choose a different number.');
       setCurrentStep(1);
       return;
     }
 
     const totalLoanAmount = calculateTotalLoanAmount();
+    console.log('💰 Calculated total loan amount:', totalLoanAmount);
     
     setIsLoading(true);
     try {
@@ -1082,7 +1104,7 @@ export default function AddCustomerModal({
                 {/* Address */}
                 <div className="md:col-span-2">
   <label className="block text-sm font-medium text-gray-700 mb-2">
-    Address {/* Removed asterisk */}
+    Address
   </label>
   <textarea
     className={`w-full px-3 py-2 border ${step1Errors.address ? 'border-red-300' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
@@ -1295,7 +1317,7 @@ export default function AddCustomerModal({
                   </p>
                   <ul className="text-sm text-gray-500 space-y-1">
                     <li>• Create loan with this customer</li>
-                    <li>• Loan number required (LN prefix)</li>
+                    <li>• Loan number required (L prefix)</li>
                     <li>• All loan details required</li>
                     <li>• Single loan entry</li>
                   </ul>
@@ -1342,7 +1364,7 @@ export default function AddCustomerModal({
                       <div className="ml-3">
                         <h3 className="text-sm font-medium text-yellow-800">Single Loan Details</h3>
                         <p className="text-sm text-yellow-700 mt-1">
-                          Enter loan details for the single loan. Loan number with "LN" prefix is required.
+                          Enter loan details for the single loan. Loan number with "L" prefix is required.
                         </p>
                       </div>
                     </div>
@@ -1355,8 +1377,8 @@ export default function AddCustomerModal({
     Loan Number *
     <span className="text-xs font-normal text-gray-500 ml-2">
       {step2Data.loanSelectionType === 'single' 
-        ? 'Select from available loan numbers (LN1-LN15)' 
-        : '(Enter manually with LN prefix, e.g., LN01, LN02)'}
+        ? 'Select from available loan numbers (L1-L15)' 
+        : '(Enter manually with L prefix, e.g., L1, L2)'}
     </span>
   </label>
   {step2Data.loanSelectionType === 'single' ? (
@@ -1377,7 +1399,7 @@ export default function AddCustomerModal({
       >
         <option value="">Select Loan Number</option>
         {Array.from({ length: 15 }, (_, i) => {
-          const loanNum = `LN${i + 1}`;
+          const loanNum = `L${i + 1}`;
           return (
             <option key={loanNum} value={loanNum}>
               {loanNum} {i === 0 ? '(First loan for customer)' : ''}
@@ -1385,11 +1407,11 @@ export default function AddCustomerModal({
           );
         })}
       </select>
-      {step2Data.loanNumber === 'LN1' && (
+      {step2Data.loanNumber === 'L1' && (
         <div className="bg-blue-50 border border-blue-200 rounded-md p-2">
           <p className="text-sm text-blue-700 flex items-center">
             <span className="mr-2">ℹ️</span>
-            This is the first loan for the customer. Loan number should be LN1.
+            This is the first loan for the customer. Loan number should be L1.
           </p>
         </div>
       )}
@@ -1397,23 +1419,23 @@ export default function AddCustomerModal({
   ) : (
     <div className="relative">
       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-        <span className="text-gray-500 font-medium">LN</span>
+        <span className="text-gray-500 font-medium">L</span>
       </div>
       <input
         type="text"
-        className={`w-full pl-10 px-3 py-2 border ${step2Errors.loanNumber ? 'border-red-300' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
-        value={step2Data.loanNumber.replace('LN', '').replace(/^ln/gi, '')}
+        className={`w-full pl-8 px-3 py-2 border ${step2Errors.loanNumber ? 'border-red-300' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+        value={step2Data.loanNumber.replace('L', '').replace(/^l/gi, '')}
         onChange={(e) => {
           const numbersOnly = e.target.value.replace(/\D/g, '');
           setStep2Data(prev => ({ 
             ...prev, 
-            loanNumber: numbersOnly ? `LN${numbersOnly}` : '' 
+            loanNumber: numbersOnly ? `L${numbersOnly}` : '' 
           }));
           if (step2Errors.loanNumber) {
             setStep2Errors(prev => ({ ...prev, loanNumber: '' }));
           }
         }}
-        placeholder="Enter numbers (e.g., 01, 02)"
+        placeholder="Enter numbers (e.g., 1, 2)"
         id="error-loanNumber"
       />
     </div>

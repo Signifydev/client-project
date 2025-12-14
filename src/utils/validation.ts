@@ -356,18 +356,18 @@ export const validateStep2 = (step2Data: NewCustomerStep2): { [key: string]: str
   // Only validate if it's a single loan - UPDATED to check loanSelectionType
   if (step2Data.loanSelectionType === 'single') { // Changed from loanType to loanSelectionType
     // Loan number validation - Updated for dropdown selection
-    if (!step2Data.loanNumber || !step2Data.loanNumber.trim()) {
-      errors.loanNumber = 'Loan number is required for single loan';
-    } else if (!step2Data.loanNumber.startsWith('LN')) {
-      errors.loanNumber = 'Loan number must start with "LN" prefix';
-    } else {
-      // Validate it's one of the allowed values (LN1 to LN15)
-      const loanNum = step2Data.loanNumber.replace('LN', '');
-      const loanNumValue = parseInt(loanNum);
-      if (isNaN(loanNumValue) || loanNumValue < 1 || loanNumValue > 15) {
-        errors.loanNumber = 'Please select a valid loan number between LN1 and LN15';
-      }
-    }
+if (!step2Data.loanNumber || !step2Data.loanNumber.trim()) {
+  errors.loanNumber = 'Loan number is required for single loan';
+} else if (!step2Data.loanNumber.toUpperCase().startsWith('L')) {
+  errors.loanNumber = 'Loan number must start with "L" prefix';
+} else {
+  // Validate it's one of the allowed values (L1 to L15)
+  const loanNum = step2Data.loanNumber.replace('L', '').replace(/^l/gi, '');
+  const loanNumValue = parseInt(loanNum);
+  if (isNaN(loanNumValue) || loanNumValue < 1 || loanNumValue > 15) {
+    errors.loanNumber = 'Please select a valid loan number between L1 and L15';
+  }
+}
     
     // Loan date
     if (!step2Data.loanDate) {
@@ -696,13 +696,19 @@ export const validateLoanNumber = (loanNumber: string): { isValid: boolean; mess
     return { isValid: false, message: 'Loan number is required' };
   }
   
-  if (!loanNumber.startsWith('LN')) {
-    return { isValid: false, message: 'Loan number must start with "LN" prefix' };
+  // UPDATED: Changed from 'LN' to 'L' prefix
+  if (!loanNumber.toUpperCase().startsWith('L')) {
+    return { isValid: false, message: 'Loan number must start with "L" prefix' };
   }
   
-  const numericPart = loanNumber.replace('LN', '').replace(/^ln/gi, '');
+  const numericPart = loanNumber.substring(1);
   if (!numericPart || !/^\d+$/.test(numericPart)) {
-    return { isValid: false, message: 'Loan number must contain digits after "LN" prefix' };
+    return { isValid: false, message: 'Loan number must contain digits after "L" prefix' };
+  }
+  
+  const loanNumValue = parseInt(numericPart);
+  if (loanNumValue < 1 || loanNumValue > 99) {
+    return { isValid: false, message: 'Loan number must be between L1 and L99' };
   }
   
   return { isValid: true };

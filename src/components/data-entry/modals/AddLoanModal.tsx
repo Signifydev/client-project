@@ -25,8 +25,8 @@ interface NewLoanData {
   amount: string;
 }
 
-// Available loan numbers (LN1 to LN15)
-const ALL_LOAN_NUMBERS = Array.from({ length: 15 }, (_, i) => `LN${i + 1}`);
+// Available loan numbers (L1 to L15)
+const ALL_LOAN_NUMBERS = Array.from({ length: 15 }, (_, i) => `L${i + 1}`);
 
 export default function AddLoanModal({
   isOpen,
@@ -56,6 +56,7 @@ export default function AddLoanModal({
   useEffect(() => {
     if (existingLoans && existingLoans.length > 0) {
       const numbers = existingLoans.map(loan => loan.loanNumber);
+      console.log('📋 Existing loan numbers for customer:', numbers);
       setExistingLoanNumbers(numbers);
       
       // Create status map for each loan number
@@ -64,6 +65,10 @@ export default function AddLoanModal({
         statusMap[loan.loanNumber] = loan.status || 'active';
       });
       setExistingLoanStatus(statusMap);
+    } else {
+      console.log('📋 No existing loans for this customer');
+      setExistingLoanNumbers([]);
+      setExistingLoanStatus({});
     }
   }, [existingLoans]);
 
@@ -72,10 +77,10 @@ export default function AddLoanModal({
       return 'Loan number is required';
     }
     
-    const loanNum = loanNumber.replace('LN', '');
+    const loanNum = loanNumber.replace('L', '');
     const loanNumValue = parseInt(loanNum);
-    if (!loanNumber.startsWith('LN') || isNaN(loanNumValue) || loanNumValue < 1 || loanNumValue > 15) {
-      return 'Loan number must be between LN1 and LN15';
+    if (!loanNumber.startsWith('L') || isNaN(loanNumValue) || loanNumValue < 1 || loanNumValue > 15) {
+      return 'Loan number must be between L1 and L15';
     }
     
     const duplicateInNewLoans = newLoans.some((loan, i) => 
@@ -86,8 +91,9 @@ export default function AddLoanModal({
       return 'Duplicate loan number in this request';
     }
     
-    if (existingLoanNumbers.includes(loanNumber.trim().toUpperCase())) {
-      const status = existingLoanStatus[loanNumber];
+    const normalizedLoanNumber = loanNumber.trim().toUpperCase();
+    if (existingLoanNumbers.includes(normalizedLoanNumber)) {
+      const status = existingLoanStatus[normalizedLoanNumber];
       return `Loan number already ${status === 'active' ? 'in use' : status} for this customer`;
     }
     
@@ -237,142 +243,124 @@ export default function AddLoanModal({
   try {
     console.log('🟡 Starting loan submission to /api/admin/approve-request');
     
-    // For each loan, create a "Loan Addition" request
-    const submissionPromises = newLoans.map(async (loan, index) => {
+    // Prepare all loans data in an array
+    const allLoansData = newLoans.map((loan, index) => {
       const totalAmount = calculateTotalLoanAmount(loan);
       
-      // Prepare the request data - NO 'action' field means CREATE request
-      const requestData = {
-        // IMPORTANT: No 'action' field = This is a CREATE request
-        type: 'Loan Addition',
+      return {
+        loanNumber: loan.loanNumber.trim().toUpperCase(),
+        loanAmount: totalAmount.toString(),
+        amount: loan.amount || totalAmount.toString(),
+        emiAmount: loan.emiAmount,
+        loanType: loan.loanType,
+        dateApplied: loan.loanDate,
+        loanDays: loan.loanDays,
+        emiStartDate: loan.emiStartDate || loan.loanDate,
+        emiType: loan.emiType,
+        customEmiAmount: loan.customEmiAmount || null,
+        totalLoanAmount: totalAmount
+      };
+    });
+
+    console.log('📦 Prepared loans data:', allLoansData);
+
+    // Prepare the SINGLE request data with ALL loans
+    const requestData = {
+      type: 'Loan Addition',
+      customerId: customerDetails._id,
+      customerName: customerDetails.name,
+      customerNumber: customerDetails.customerNumber,
+      customerPhone: customerDetails.phone?.[0] || '',
+      requestedData: {
+        multipleLoans: true,
+        loans: allLoansData,
         customerId: customerDetails._id,
         customerName: customerDetails.name,
-        customerNumber: customerDetails.customerNumber,
-        customerPhone: customerDetails.phone?.[0] || '',
-        requestedData: {
-          loanNumber: loan.loanNumber.trim().toUpperCase(),
-          loanAmount: totalAmount.toString(),
-          amount: loan.amount || totalAmount.toString(),
-          emiAmount: loan.emiAmount,
-          loanType: loan.loanType,
-          dateApplied: loan.loanDate,
-          loanDays: loan.loanDays,
-          emiStartDate: loan.emiStartDate,
-          emiType: loan.emiType,
-          customEmiAmount: loan.customEmiAmount || null,
-          customerId: customerDetails._id
+        customerNumber: customerDetails.customerNumber
+      },
+      createdBy: 'data_entry_operator',
+      currentData: null,
+      description: `Add ${allLoansData.length} new loan${allLoansData.length !== 1 ? 's' : ''} (${allLoansData.map(l => l.loanNumber).join(', ')}) for customer ${customerDetails.name}`,
+      priority: 'Medium',
+      // CRITICAL: Set step data to null for non-New Customer requests
+      step1Data: null,
+      step2Data: null,
+      step3Data: null
+    };
+
+    console.log('📤 Submitting single request with multiple loans:', {
+      customer: customerDetails.name,
+      loanCount: allLoansData.length,
+      loanNumbers: allLoansData.map(l => l.loanNumber)
+    });
+
+    try {
+      // Submit SINGLE request with all loans
+      const response = await fetch('/api/admin/approve-request', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-        createdBy: 'data_entry_operator'
-      };
+        body: JSON.stringify(requestData),
+      });
 
-      console.log(`🟡 Creating Loan Addition request for ${loan.loanNumber}`);
+      const responseText = await response.text();
+      console.log('🔍 Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        textPreview: responseText.substring(0, 300)
+      });
       
+      // Check if response is HTML error page
+      if (responseText.includes('<!DOCTYPE html>') || responseText.includes('<html')) {
+        throw new Error(`Server returned HTML error page. Check API route.`);
+      }
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      let data;
       try {
-        // Submit to the SINGLE endpoint
-        const response = await fetch('/api/admin/approve-request', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestData),
-        });
-
-        const responseText = await response.text();
-        console.log(`🔍 Response for ${loan.loanNumber}:`, {
-          status: response.status,
-          statusText: response.statusText,
-          textPreview: responseText.substring(0, 300)
-        });
-        
-        // Check if response is HTML error page
-        if (responseText.includes('<!DOCTYPE html>') || responseText.includes('<html')) {
-          throw new Error(`Server returned HTML error page. Check API route.`);
-        }
-        
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        let data;
-        try {
-          data = JSON.parse(responseText);
-        } catch (parseError) {
-          console.error('❌ JSON parse error:', parseError);
-          console.error('Raw response:', responseText);
-          throw new Error(`Invalid JSON response from server`);
-        }
-        
-        if (!data.success) {
-          throw new Error(data.error || `Request creation failed`);
-        }
-        
-        console.log(`✅ Request created for ${loan.loanNumber}:`, data.data?.requestId);
-        return { success: true, data, loanNumber: loan.loanNumber };
-        
-      } catch (error: any) {
-        console.error(`❌ Error creating request for ${loan.loanNumber}:`, error);
-        throw new Error(`Loan ${loan.loanNumber}: ${error.message}`);
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('❌ JSON parse error:', parseError);
+        console.error('Raw response:', responseText);
+        throw new Error(`Invalid JSON response from server`);
       }
-    });
-
-    // Wait for all submissions
-    const results = await Promise.allSettled(submissionPromises);
-    
-    // Type guard functions
-    const isFulfilled = <T,>(
-      result: PromiseSettledResult<T>
-    ): result is PromiseFulfilledResult<T> => result.status === 'fulfilled';
-    
-    const isRejected = <T,>(
-      result: PromiseSettledResult<T>
-    ): result is PromiseRejectedResult => result.status === 'rejected';
-    
-    // Check results with proper typing
-    const successful = results.filter(isFulfilled).filter(r => r.value?.success);
-    const failed = results.filter(isRejected);
-    
-    console.log('📊 Final submission results:', {
-      total: results.length,
-      successful: successful.length,
-      failed: failed.length,
-      successfulLoans: successful.map(r => r.value?.loanNumber),
-      failedErrors: failed.map(r => r.reason?.message)
-    });
-
-    if (failed.length > 0) {
-      const errors = failed.map(f => f.reason?.message || 'Unknown error');
       
-      if (successful.length === 0) {
-        // All failed
-        throw new Error(`Failed to submit all loans:\n${errors.join('\n')}`);
-      } else {
-        // Some succeeded
-        const successLoanNumbers = successful.map(s => s.value?.loanNumber).filter(Boolean);
-        alert(`${successful.length} loan(s) submitted, ${failed.length} failed.\n\nSuccessful: ${successLoanNumbers.join(', ')}\nFailed: ${errors.join('; ')}`);
+      if (!data.success) {
+        throw new Error(data.error || `Request creation failed`);
       }
-    } else {
-      // All successful
-      alert(`${newLoans.length} loan addition request${newLoans.length !== 1 ? 's' : ''} submitted successfully! Waiting for admin approval.`);
-    }
+      
+      console.log(`✅ Single request created for ${allLoansData.length} loans:`, data.data?.requestId);
+      
+      // Success - show success message
+      alert(`${allLoansData.length} loan addition request${allLoansData.length !== 1 ? 's' : ''} submitted successfully in a single request! Waiting for admin approval.`);
 
-    // Success - close modal and refresh
-    onSuccess?.();
-    onClose();
-    
-    // Reset form
-    setNewLoans([{
-      loanNumber: '',
-      loanAmount: '',
-      amount: '',
-      loanDate: new Date().toISOString().split('T')[0],
-      emiStartDate: new Date().toISOString().split('T')[0],
-      emiAmount: '',
-      loanType: 'Monthly',
-      loanDays: '30',
-      emiType: 'fixed',
-      customEmiAmount: ''
-    }]);
-    setLoanNumberErrors({});
+      // Success - close modal and refresh
+      onSuccess?.();
+      onClose();
+      
+      // Reset form
+      setNewLoans([{
+        loanNumber: '',
+        loanAmount: '',
+        amount: '',
+        loanDate: new Date().toISOString().split('T')[0],
+        emiStartDate: new Date().toISOString().split('T')[0],
+        emiAmount: '',
+        loanType: 'Monthly',
+        loanDays: '30',
+        emiType: 'fixed',
+        customEmiAmount: ''
+      }]);
+      setLoanNumberErrors({});
+      
+    } catch (error: any) {
+      console.error('❌ Error creating request:', error);
+      alert('Error submitting loans:\n' + error.message);
+    }
     
   } catch (error: any) {
     console.error('❌ Error in handleSubmit:', error);
@@ -384,11 +372,13 @@ export default function AddLoanModal({
 
   // Helper function to get loan number status
   const getLoanNumberStatus = (loanNumber: string): string => {
-    if (existingLoanNumbers.includes(loanNumber)) {
-      const status = existingLoanStatus[loanNumber];
+    const normalizedLoanNumber = loanNumber.toUpperCase();
+    if (existingLoanNumbers.includes(normalizedLoanNumber)) {
+      const status = existingLoanStatus[normalizedLoanNumber];
       if (status === 'active') return 'taken';
       if (status === 'pending_approval' || status === 'Pending') return 'pending';
       if (status === 'rejected' || status === 'Rejected') return 'rejected';
+      if (status === 'renewed') return 'renewed';
       return 'taken';
     }
     return 'available';
@@ -404,6 +394,8 @@ export default function AddLoanModal({
       return 'bg-yellow-100 text-yellow-800 border-yellow-300';
     } else if (status === 'rejected') {
       return 'bg-gray-100 text-gray-500 border-gray-300';
+    } else if (status === 'renewed') {
+      return 'bg-purple-100 text-purple-800 border-purple-300';
     } else {
       return 'bg-green-50 text-green-800 border-green-200';
     }
@@ -416,6 +408,7 @@ export default function AddLoanModal({
     if (status === 'taken') return '(Already Taken)';
     if (status === 'pending') return '(Pending Approval)';
     if (status === 'rejected') return '(Previously Rejected)';
+    if (status === 'renewed') return '(Renewed)';
     return '(Available)';
   };
 
@@ -437,6 +430,9 @@ export default function AddLoanModal({
                 </h3>
                 <p className="text-xs text-gray-500 mt-1">
                   Customer: {customerDetails?.customerNumber}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Existing Loans: {existingLoanNumbers.join(', ') || 'None'}
                 </p>
               </div>
             </div>
@@ -485,6 +481,10 @@ export default function AddLoanModal({
                   <div className="flex items-center">
                     <div className="w-3 h-3 rounded-full bg-gray-400 mr-2"></div>
                     <span className="text-xs text-gray-700">Previously Rejected</span>
+                  </div>
+                  <div className="flex items-center">
+                    <div className="w-3 h-3 rounded-full bg-purple-500 mr-2"></div>
+                    <span className="text-xs text-gray-700">Renewed</span>
                   </div>
                 </div>
               </div>
@@ -543,6 +543,7 @@ export default function AddLoanModal({
                           <option value="">Select Loan Number</option>
                           {ALL_LOAN_NUMBERS.map((loanNum) => {
                             const status = getLoanNumberStatus(loanNum);
+                            const isTaken = status === 'taken';
                             const bgColor = getOptionBackgroundColor(loanNum);
                             const statusText = getStatusText(loanNum);
                             
@@ -550,19 +551,19 @@ export default function AddLoanModal({
                               <option 
                                 key={loanNum} 
                                 value={loanNum}
-                                className={`${bgColor} ${status === 'taken' ? 'cursor-not-allowed opacity-70' : ''}`}
-                                disabled={status === 'taken'}
+                                className={`${bgColor} ${isTaken ? 'cursor-not-allowed opacity-70' : ''}`}
+                                disabled={isTaken}
                               >
-                                {loanNum} {statusText} {loanNum === 'LN1' && status === 'available' ? '(First loan)' : ''}
+                                {loanNum} {statusText} {loanNum === 'L1' && status === 'available' ? '(First loan)' : ''}
                               </option>
                             );
                           })}
                         </select>
-                        {loan.loanNumber === 'LN1' && (
+                        {loan.loanNumber === 'L1' && getLoanNumberStatus('L1') === 'available' && (
                           <div className="bg-blue-50 border border-blue-200 rounded-md p-2">
                             <p className="text-sm text-blue-700 flex items-center">
                               <span className="mr-2">ℹ️</span>
-                              This is the first loan for the customer. Loan number should be LN1.
+                              This is the first loan for the customer. Loan number should be L1.
                             </p>
                           </div>
                         )}
@@ -570,19 +571,23 @@ export default function AddLoanModal({
                       {loanNumberErrors[index] && (
                         <p className="text-red-500 text-xs mt-1">{loanNumberErrors[index]}</p>
                       )}
-                      <div className="mt-2 flex items-center">
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
                         <span className="text-xs text-gray-500 mr-2">Status Legend:</span>
-                        <div className="flex items-center mr-3">
+                        <div className="flex items-center">
                           <div className="w-2 h-2 rounded-full bg-green-500 mr-1"></div>
                           <span className="text-xs text-gray-600">Available</span>
                         </div>
-                        <div className="flex items-center mr-3">
+                        <div className="flex items-center">
                           <div className="w-2 h-2 rounded-full bg-red-500 mr-1"></div>
                           <span className="text-xs text-gray-600">Taken</span>
                         </div>
                         <div className="flex items-center">
                           <div className="w-2 h-2 rounded-full bg-yellow-500 mr-1"></div>
                           <span className="text-xs text-gray-600">Pending</span>
+                        </div>
+                        <div className="flex items-center">
+                          <div className="w-2 h-2 rounded-full bg-purple-500 mr-1"></div>
+                          <span className="text-xs text-gray-600">Renewed</span>
                         </div>
                       </div>
                     </div>
@@ -845,10 +850,11 @@ export default function AddLoanModal({
             <div className="flex justify-center">
               <button
                 onClick={addNewLoanEntry}
-                className="px-4 py-2 bg-blue-50 text-blue-700 border-2 border-dashed border-blue-300 rounded-lg hover:bg-blue-100 flex items-center transition-colors duration-200"
+                disabled={newLoans.length >= 5}
+                className="px-4 py-2 bg-blue-50 text-blue-700 border-2 border-dashed border-blue-300 rounded-lg hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center transition-colors duration-200"
               >
                 <span className="mr-2">➕</span>
-                Add Another Loan
+                Add Another Loan (Max 5)
               </button>
             </div>
           </div>
@@ -863,6 +869,9 @@ export default function AddLoanModal({
               </p>
               <p className="text-sm font-medium text-gray-700 mt-1">
                 New Loans to Add: <span className="text-blue-600">{newLoans.length}</span>
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                Existing Loans: <span className="font-medium">{existingLoanNumbers.length}</span>
               </p>
             </div>
             <div className="flex space-x-3">

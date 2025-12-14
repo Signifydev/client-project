@@ -166,7 +166,8 @@ async function handleApproveReject(body) {
   console.log('🔍 Found request:', {
     type: requestDoc.type,
     customerName: requestDoc.customerName,
-    status: requestDoc.status
+    status: requestDoc.status,
+    loanSelectionType: requestDoc.step2Data?.loanSelectionType || 'single'
   });
 
   if (action === 'approve') {
@@ -292,7 +293,10 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     console.log('📊 Loan data:', {
       loanSelectionType,
       loanType,
-      loanNumber: step2Data.loanNumber
+      loanNumber: step2Data.loanNumber,
+      loanAmount: step2Data.loanAmount,
+      emiAmount: step2Data.emiAmount,
+      loanDays: step2Data.loanDays
     });
 
     // Validate required fields with specific error messages
@@ -303,27 +307,55 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
       throw new Error(`Missing required customer fields: ${missingStep1Fields.join(', ')}`);
     }
 
-    const requiredStep2Fields = ['loanAmount', 'emiAmount', 'loanType', 'loanDays'];
-    const missingStep2Fields = requiredStep2Fields.filter(field => !step2Data[field]);
-    
-    if (missingStep2Fields.length > 0) {
-      throw new Error(`Missing required loan fields: ${missingStep2Fields.join(', ')}`);
-    }
-
-    // Validate loan number for single loans (LN1-LN15)
+    // CRITICAL FIX: Only validate loan fields for single loans
     if (loanSelectionType === 'single') {
+      console.log('🔍 Validating Single Loan details...');
+      
+      const requiredStep2Fields = ['loanNumber', 'loanAmount', 'emiAmount', 'loanType', 'loanDays'];
+      const missingStep2Fields = requiredStep2Fields.filter(field => {
+        // Check if field is missing or has invalid value
+        const value = step2Data[field];
+        return value === undefined || value === null || value === '' || 
+               (typeof value === 'number' && isNaN(value)) ||
+               (typeof value === 'string' && value.trim() === '');
+      });
+      
+      if (missingStep2Fields.length > 0) {
+        throw new Error(`Missing required loan fields for single loan: ${missingStep2Fields.join(', ')}`);
+      }
+
+      // FIXED: More flexible loan number validation
       if (!step2Data.loanNumber || !step2Data.loanNumber.trim()) {
         throw new Error('Loan number is required for single loan');
       }
       
-      // Validate LN1-LN15 range
-      const loanNum = step2Data.loanNumber.replace('LN', '');
+      // FIXED: Allow "L1" format (not just "LN1")
+      // Remove any "L" or "LN" prefix to get the number
+      const loanNum = step2Data.loanNumber.replace(/^L(N)?/i, '');
       const loanNumValue = parseInt(loanNum);
-      if (!step2Data.loanNumber.startsWith('LN') || isNaN(loanNumValue) || loanNumValue < 1 || loanNumValue > 15) {
-        throw new Error('Loan number must be between LN1 and LN15 for single loans');
-      }
       
-      console.log(`✅ Valid loan number: ${step2Data.loanNumber}`);
+      console.log('🔢 Loan number validation:', {
+        original: step2Data.loanNumber,
+        cleaned: loanNum,
+        numericValue: loanNumValue,
+        isValid: !isNaN(loanNumValue) && loanNumValue >= 1 && loanNumValue <= 15
+      });
+      
+      if (isNaN(loanNumValue) || loanNumValue < 1 || loanNumValue > 15) {
+        throw new Error('Loan number must be between 1 and 15 for single loans (formats: L1, L2, LN1, LN2, etc.)');
+      }
+
+      console.log(`✅ Valid loan number for single loan: ${step2Data.loanNumber}`);
+    } else {
+      // For multiple loans, set default values or ensure they exist but don't validate them as required
+      console.log('ℹ️ Multiple loan selected - no loan validation required');
+      
+      // Set default values to prevent validation errors
+      step2Data.loanNumber = '';
+      step2Data.loanAmount = step2Data.loanAmount || 0;
+      step2Data.emiAmount = step2Data.emiAmount || 0;
+      step2Data.loanDays = step2Data.loanDays || 0;
+      step2Data.loanType = step2Data.loanType || '';
     }
 
     const requiredStep3Fields = ['loginId', 'password'];
@@ -392,7 +424,8 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
       name: customerDataToSave.name,
       customerNumber: customerDataToSave.customerNumber,
       businessName: customerDataToSave.businessName,
-      phone: customerDataToSave.phone
+      phone: customerDataToSave.phone,
+      loanSelectionType: loanSelectionType
     });
 
     let customer;
@@ -434,8 +467,10 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     // Only create loan if it's a single loan selection
     if (loanSelectionType === 'single') {
       try {
-        // Use the loan number from the form (LN1-LN15) instead of generating new one
-        const loanNumber = step2Data.loanNumber; // This is LN1, LN2, etc.
+        // Use the loan number from the form (L1-L15)
+        const loanNumber = step2Data.loanNumber;
+        
+        console.log('💰 Creating Single Loan with number:', loanNumber);
         
         // Simple date handling with validation
         const loanDate = step2Data.loanDate ? new Date(step2Data.loanDate) : new Date();
@@ -459,6 +494,17 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
           return date;
         };
 
+        // Calculate total loan amount based on EMI type
+        let totalLoanAmount;
+        if (step2Data.emiType === 'custom' && step2Data.loanType !== 'Daily') {
+          const fixedPeriods = Number(step2Data.loanDays) - 1;
+          const fixedAmount = Number(step2Data.emiAmount) * fixedPeriods;
+          const lastAmount = Number(step2Data.customEmiAmount || step2Data.emiAmount);
+          totalLoanAmount = fixedAmount + lastAmount;
+        } else {
+          totalLoanAmount = Number(step2Data.emiAmount) * Number(step2Data.loanDays);
+        }
+
         const loanData = {
           customerId: customer._id,
           customerName: customer.name,
@@ -479,7 +525,8 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
           totalPaidAmount: 0,
           remainingAmount: parseFloat(step2Data.loanAmount) || 0,
           status: 'active',
-          createdBy: requestDoc.createdBy || 'system'
+          createdBy: requestDoc.createdBy || 'system',
+          totalLoanAmount: totalLoanAmount
         };
 
         await Loan.create(loanData);
@@ -535,14 +582,17 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
   
   const requestedData = requestDoc.requestedData;
   
-  if (!requestedData.loanAmount || !requestedData.emiAmount || !requestedData.loanType) {
-    return NextResponse.json({ 
-      success: false,
-      error: 'Missing required loan data' 
-    }, { status: 400 });
-  }
+  // Check if this is a multiple loans request
+  const isMultipleLoans = requestedData.multipleLoans === true;
+  const loansData = isMultipleLoans ? requestedData.loans : [requestedData];
+  
+  console.log(`🔄 Processing ${isMultipleLoans ? 'multiple' : 'single'} loan addition`, {
+    loanCount: loansData.length,
+    isMultiple: isMultipleLoans,
+    customerName: requestDoc.customerName
+  });
 
-  const customer = await Customer.findById(requestedData.customerId);
+  const customer = await Customer.findById(requestedData.customerId || requestedData.customerId);
   if (!customer || customer.status !== 'active') {
     return NextResponse.json({ 
       success: false,
@@ -550,154 +600,218 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
     }, { status: 404 });
   }
 
-  // For additional loans, we can generate or use provided loan number
-  let loanNumber;
-  
-  // Check if loan number is provided and validate it if it's a specific format
-  if (requestedData.loanNumber && requestedData.loanNumber.startsWith('LN')) {
-    // Validate LN1-LN15 range if it's in that format
-    const loanNum = requestedData.loanNumber.replace('LN', '');
-    const loanNumValue = parseInt(loanNum);
-    if (isNaN(loanNumValue) || loanNumValue < 1 || loanNumValue > 15) {
-      console.log('⚠️ Provided loan number is not in LN1-LN15 range, generating new one');
-      loanNumber = await Loan.generateLoanNumber(customer._id);
-    } else {
-      loanNumber = requestedData.loanNumber;
-      console.log(`✅ Using provided loan number: ${loanNumber}`);
-    }
-  } else {
-    // Generate new loan number
-    loanNumber = await Loan.generateLoanNumber(customer._id);
-    console.log('🔧 Generated loan number for additional loan:', loanNumber);
-  }
+  // Array to store created loans
+  const createdLoans = [];
+  const errors = [];
 
-  const calculateNextEmiDate = (emiStartDate, loanType) => {
-    const date = new Date(emiStartDate || new Date());
-    switch(loanType) {
-      case 'Daily':
-        date.setDate(date.getDate() + 1);
-        break;
-      case 'Weekly':
-        date.setDate(date.getDate() + 7);
-        break;
-      case 'Monthly':
-        date.setMonth(date.getMonth() + 1);
-        break;
-      default:
-        date.setDate(date.getDate() + 1);
-    }
-    return date;
-  };
+  // Process each loan
+  for (const [index, loanData] of loansData.entries()) {
+    try {
+      console.log(`🔄 Processing loan ${index + 1}/${loansData.length}:`, {
+        loanNumber: loanData.loanNumber,
+        loanType: loanData.loanType
+      });
 
-  // FIXED: Enhanced date handling to prevent validation errors
-  let emiStartDate;
-  let loanDate;
-  
-  try {
-    // Handle loan date
-    loanDate = requestedData.dateApplied ? new Date(requestedData.dateApplied) : new Date();
-    if (isNaN(loanDate.getTime())) {
-      loanDate = new Date();
-    }
-    
-    // Handle EMI start date - ensure it's not before loan date
-    emiStartDate = requestedData.emiStartDate ? new Date(requestedData.emiStartDate) : new Date(loanDate);
-    if (isNaN(emiStartDate.getTime())) {
-      emiStartDate = new Date(loanDate);
-    }
-    
-    // FIX: Normalize dates to avoid timezone comparison issues
-    // Set both dates to start of day (00:00:00) for consistent comparison
-    loanDate.setHours(0, 0, 0, 0);
-    emiStartDate.setHours(0, 0, 0, 0);
-    
-    // FIX: If EMI start date is before loan date, set it to loan date
-    if (emiStartDate < loanDate) {
-      console.log('⚠️ Adjusting EMI start date to match loan date');
-      emiStartDate = new Date(loanDate);
-    }
-    
-    console.log('📅 Date validation:', {
-      loanDate: loanDate.toISOString(),
-      emiStartDate: emiStartDate.toISOString(),
-      isValid: emiStartDate >= loanDate
-    });
-    
-  } catch (error) {
-    console.error('❌ Error processing dates:', error);
-    // Fallback to current date
-    loanDate = new Date();
-    emiStartDate = new Date();
-    loanDate.setHours(0, 0, 0, 0);
-    emiStartDate.setHours(0, 0, 0, 0);
-  }
+      if (!loanData.loanAmount || !loanData.emiAmount || !loanData.loanType) {
+        errors.push(`Loan ${index + 1}: Missing required loan data`);
+        continue;
+      }
 
-  // Calculate total loan amount based on EMI type
-  let totalLoanAmount;
-  if (requestedData.emiType === 'custom' && requestedData.loanType !== 'Daily') {
-    const fixedPeriods = Number(requestedData.loanDays) - 1;
-    const fixedAmount = Number(requestedData.emiAmount) * fixedPeriods;
-    const lastAmount = Number(requestedData.customEmiAmount || requestedData.emiAmount);
-    totalLoanAmount = fixedAmount + lastAmount;
-  } else {
-    totalLoanAmount = Number(requestedData.emiAmount) * Number(requestedData.loanDays);
-  }
-
-  const loanData = {
-    customerId: customer._id,
-    customerName: customer.name,
-    customerNumber: customer.customerNumber,
-    loanNumber: loanNumber,
-    amount: Number(requestedData.loanAmount),
-    emiAmount: Number(requestedData.emiAmount),
-    loanType: requestedData.loanType,
-    dateApplied: loanDate,
-    loanDays: Number(requestedData.loanDays) || 30,
-    emiType: requestedData.emiType || 'fixed',
-    customEmiAmount: requestedData.customEmiAmount ? Number(requestedData.customEmiAmount) : null,
-    emiStartDate: emiStartDate,
-    totalEmiCount: Number(requestedData.loanDays) || 30,
-    emiPaidCount: 0,
-    lastEmiDate: null,
-    nextEmiDate: calculateNextEmiDate(emiStartDate, requestedData.loanType),
-    totalPaidAmount: 0,
-    remainingAmount: Number(requestedData.loanAmount),
-    status: 'active',
-    createdBy: requestDoc.createdBy,
-    totalLoanAmount: totalLoanAmount
-  };
-
-  console.log('💾 Creating loan with data:', {
-    loanNumber: loanData.loanNumber,
-    amount: loanData.amount,
-    emiAmount: loanData.emiAmount,
-    loanType: loanData.loanType,
-    dateApplied: loanData.dateApplied.toISOString(),
-    emiStartDate: loanData.emiStartDate.toISOString(),
-    emiType: loanData.emiType,
-    loanDays: loanData.loanDays
-  });
-
-  // FIXED: Define newLoan variable properly
-  let newLoan;
-  try {
-    newLoan = new Loan(loanData);
-    await newLoan.save();
-    console.log('✅ Additional loan created with enhanced details');
-  } catch (error) {
-    console.error('❌ Error creating loan:', error);
-    // If validation still fails, try with adjusted dates
-    if (error.message.includes('EMI start date cannot be before loan date')) {
-      console.log('🔄 Retrying with adjusted dates...');
-      loanData.emiStartDate = new Date(loanData.dateApplied);
-      loanData.emiStartDate.setHours(0, 0, 0, 0);
+      // For additional loans, we can generate or use provided loan number
+      let loanNumber;
       
-      newLoan = new Loan(loanData);
-      await newLoan.save();
-      console.log('✅ Additional loan created with adjusted dates');
-    } else {
-      throw error;
+      // Check if loan number is provided and validate it if it's a specific format
+      if (loanData.loanNumber && loanData.loanNumber.startsWith('L')) {
+        // Validate L1-L15 range if it's in that format
+        const loanNum = loanData.loanNumber.replace(/^L(N)?/i, '');
+        const loanNumValue = parseInt(loanNum);
+        if (isNaN(loanNumValue) || loanNumValue < 1) {
+          console.log('⚠️ Provided loan number is not valid, generating new one');
+          // Generate new loan number based on existing loans
+          const customerLoans = await Loan.find({ customerId: customer._id });
+          const nextNumber = customerLoans.length + 1;
+          loanNumber = `L${nextNumber}`;
+        } else {
+          loanNumber = loanData.loanNumber;
+          console.log(`✅ Using provided loan number: ${loanNumber}`);
+        }
+      } else {
+        // Generate new loan number
+        const customerLoans = await Loan.find({ customerId: customer._id });
+        const nextNumber = customerLoans.length + 1;
+        loanNumber = `L${nextNumber}`;
+        console.log('🔧 Generated loan number for additional loan:', loanNumber);
+      }
+
+      const calculateNextEmiDate = (emiStartDate, loanType) => {
+        const date = new Date(emiStartDate || new Date());
+        switch(loanType) {
+          case 'Daily':
+            date.setDate(date.getDate() + 1);
+            break;
+          case 'Weekly':
+            date.setDate(date.getDate() + 7);
+            break;
+          case 'Monthly':
+            date.setMonth(date.getMonth() + 1);
+            break;
+          default:
+            date.setDate(date.getDate() + 1);
+        }
+        return date;
+      };
+
+      // FIXED: Enhanced date handling to prevent validation errors
+      let emiStartDate;
+      let loanDate;
+      
+      try {
+        // Handle loan date
+        loanDate = loanData.dateApplied ? new Date(loanData.dateApplied) : new Date();
+        if (isNaN(loanDate.getTime())) {
+          loanDate = new Date();
+        }
+        
+        // Handle EMI start date - ensure it's not before loan date
+        emiStartDate = loanData.emiStartDate ? new Date(loanData.emiStartDate) : new Date(loanDate);
+        if (isNaN(emiStartDate.getTime())) {
+          emiStartDate = new Date(loanDate);
+        }
+        
+        // FIX: Normalize dates to avoid timezone comparison issues
+        // Set both dates to start of day (00:00:00) for consistent comparison
+        loanDate.setHours(0, 0, 0, 0);
+        emiStartDate.setHours(0, 0, 0, 0);
+        
+        // FIX: If EMI start date is before loan date, set it to loan date
+        if (emiStartDate < loanDate) {
+          console.log('⚠️ Adjusting EMI start date to match loan date');
+          emiStartDate = new Date(loanDate);
+        }
+        
+        console.log('📅 Date validation:', {
+          loanDate: loanDate.toISOString(),
+          emiStartDate: emiStartDate.toISOString(),
+          isValid: emiStartDate >= loanDate
+        });
+        
+      } catch (error) {
+        console.error('❌ Error processing dates:', error);
+        // Fallback to current date
+        loanDate = new Date();
+        emiStartDate = new Date();
+        loanDate.setHours(0, 0, 0, 0);
+        emiStartDate.setHours(0, 0, 0, 0);
+      }
+
+      // Calculate total loan amount based on EMI type
+      let totalLoanAmount;
+      if (loanData.emiType === 'custom' && loanData.loanType !== 'Daily') {
+        const fixedPeriods = Number(loanData.loanDays) - 1;
+        const fixedAmount = Number(loanData.emiAmount) * fixedPeriods;
+        const lastAmount = Number(loanData.customEmiAmount || loanData.emiAmount);
+        totalLoanAmount = fixedAmount + lastAmount;
+      } else {
+        totalLoanAmount = Number(loanData.emiAmount) * Number(loanData.loanDays);
+      }
+
+      const newLoanData = {
+        customerId: customer._id,
+        customerName: customer.name,
+        customerNumber: customer.customerNumber,
+        loanNumber: loanNumber,
+        amount: Number(loanData.loanAmount),
+        emiAmount: Number(loanData.emiAmount),
+        loanType: loanData.loanType,
+        dateApplied: loanDate,
+        loanDays: Number(loanData.loanDays) || 30,
+        emiType: loanData.emiType || 'fixed',
+        customEmiAmount: loanData.customEmiAmount ? Number(loanData.customEmiAmount) : null,
+        emiStartDate: emiStartDate,
+        totalEmiCount: Number(loanData.loanDays) || 30,
+        emiPaidCount: 0,
+        lastEmiDate: null,
+        nextEmiDate: calculateNextEmiDate(emiStartDate, loanData.loanType),
+        totalPaidAmount: 0,
+        remainingAmount: Number(loanData.loanAmount),
+        status: 'active',
+        createdBy: requestDoc.createdBy,
+        totalLoanAmount: totalLoanAmount
+      };
+
+      console.log('💾 Creating loan with data:', {
+        loanNumber: newLoanData.loanNumber,
+        amount: newLoanData.amount,
+        emiAmount: newLoanData.emiAmount,
+        loanType: newLoanData.loanType,
+        dateApplied: newLoanData.dateApplied.toISOString(),
+        emiStartDate: newLoanData.emiStartDate.toISOString(),
+        emiType: newLoanData.emiType,
+        loanDays: newLoanData.loanDays
+      });
+
+      // FIXED: Define newLoan variable properly
+      let newLoan;
+      try {
+        newLoan = new Loan(newLoanData);
+        await newLoan.save();
+        console.log(`✅ Loan ${index + 1} created successfully:`, loanNumber);
+        createdLoans.push({
+          loanId: newLoan._id,
+          loanNumber: newLoan.loanNumber,
+          amount: newLoan.amount,
+          loanType: newLoan.loanType
+        });
+      } catch (error) {
+        console.error(`❌ Error creating loan ${index + 1}:`, error);
+        // If validation still fails, try with adjusted dates
+        if (error.message.includes('EMI start date cannot be before loan date')) {
+          console.log('🔄 Retrying with adjusted dates...');
+          newLoanData.emiStartDate = new Date(newLoanData.dateApplied);
+          newLoanData.emiStartDate.setHours(0, 0, 0, 0);
+          
+          newLoan = new Loan(newLoanData);
+          await newLoan.save();
+          console.log(`✅ Loan ${index + 1} created with adjusted dates:`, loanNumber);
+          createdLoans.push({
+            loanId: newLoan._id,
+            loanNumber: newLoan.loanNumber,
+            amount: newLoan.amount,
+            loanType: newLoan.loanType
+          });
+        } else {
+          errors.push(`Loan ${index + 1}: ${error.message}`);
+        }
+      }
+    } catch (error) {
+      console.error(`❌ Error processing loan ${index + 1}:`, error);
+      errors.push(`Loan ${index + 1}: ${error.message}`);
     }
+  }
+
+  // Check if any loans were created
+  if (createdLoans.length === 0 && errors.length > 0) {
+    return NextResponse.json({ 
+      success: false,
+      error: `Failed to create any loans: ${errors.join('; ')}`
+    }, { status: 400 });
+  }
+
+  // Prepare success message based on results
+  let successMessage;
+  let actionTaken;
+  
+  if (createdLoans.length === loansData.length) {
+    // All loans created successfully
+    successMessage = `All ${createdLoans.length} loan(s) added successfully!`;
+    actionTaken = `Added ${createdLoans.length} loan(s): ${createdLoans.map(l => l.loanNumber).join(', ')}`;
+  } else {
+    // Some loans created, some failed
+    successMessage = `${createdLoans.length} of ${loansData.length} loan(s) added successfully.`;
+    if (errors.length > 0) {
+      successMessage += ` Failed: ${errors.join('; ')}`;
+    }
+    actionTaken = `Added ${createdLoans.length} loan(s) (${createdLoans.map(l => l.loanNumber).join(', ')})`;
   }
 
   // Update request
@@ -705,7 +819,7 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
   requestDoc.reviewedBy = processedBy;
   requestDoc.reviewedByRole = 'admin';
   requestDoc.reviewNotes = reason || 'Loan addition approved by admin';
-  requestDoc.actionTaken = `Additional loan created: ${loanNumber} with ${requestedData.loanType} EMI`;
+  requestDoc.actionTaken = actionTaken;
   requestDoc.reviewedAt = new Date();
   requestDoc.approvedAt = new Date();
   requestDoc.completedAt = new Date();
@@ -716,14 +830,13 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
 
   return NextResponse.json({ 
     success: true,
-    message: 'Additional loan approved successfully!',
+    message: successMessage,
     data: {
-      loanId: newLoan._id,
-      loanNumber: newLoan.loanNumber,
+      customerId: customer._id,
       customerName: customer.name,
-      loanType: newLoan.loanType,
-      emiType: newLoan.emiType,
-      totalAmount: totalLoanAmount
+      createdLoans: createdLoans,
+      failedCount: errors.length,
+      totalCount: loansData.length
     }
   });
 }

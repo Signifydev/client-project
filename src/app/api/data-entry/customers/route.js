@@ -117,6 +117,10 @@ export async function POST(request) {
     // Extract all form data
     const name = formData.get('name');
     
+    // FIXED: Moved these lines from global scope to here
+    const loanSelectionType = formData.get('loanSelectionType') || 'single';
+    console.log('📊 Loan selection type:', loanSelectionType);
+    
     // Handle phone numbers
     let phone = [];
     const phoneArray = formData.getAll('phone[]');
@@ -186,7 +190,7 @@ export async function POST(request) {
       );
     }
     
-    // Loan details
+    // Loan details - CRITICAL: Only validate for Single Loan
     const loanDate = formData.get('loanDate');
     const emiStartDate = formData.get('emiStartDate');
     const loanAmount = formData.get('loanAmount');
@@ -196,38 +200,54 @@ export async function POST(request) {
     const emiType = formData.get('emiType');
     const customEmiAmount = formData.get('customEmiAmount') || '';
 
-    // Validate loan details
-    if (!loanDate || !emiStartDate || !loanAmount || !loanDays || !loanType || !emiType) {
-      return NextResponse.json(
-        { success: false, error: 'All basic loan details are required' },
-        { status: 400 }
-      );
-    }
-
-    // Validate EMI amounts
-    if (loanType === 'Daily') {
-      if (!emiAmount) {
+    // CRITICAL FIX: Only validate loan details for Single Loan selection
+    if (loanSelectionType === 'single') {
+      console.log('🔍 Validating loan details for Single Loan selection');
+      
+      // Validate loan details
+      if (!loanDate || !emiStartDate || !loanAmount || !loanDays || !loanType || !emiType) {
         return NextResponse.json(
-          { success: false, error: 'EMI Amount is required for Daily loans' },
+          { success: false, error: 'All basic loan details are required for Single Loan' },
+          { status: 400 }
+        );
+      }
+
+      // Validate EMI amounts
+      if (loanType === 'Daily') {
+        if (!emiAmount) {
+          return NextResponse.json(
+            { success: false, error: 'EMI Amount is required for Daily loans' },
+            { status: 400 }
+          );
+        }
+      } else {
+        if (emiType === 'fixed') {
+          if (!emiAmount) {
+            return NextResponse.json(
+              { success: false, error: 'EMI Amount is required for Fixed EMI type' },
+              { status: 400 }
+            );
+          }
+        } else if (emiType === 'custom') {
+          if (!emiAmount || !customEmiAmount) {
+            return NextResponse.json(
+              { success: false, error: 'Both Fixed EMI Amount and Last EMI Amount are required for Custom EMI type' },
+              { status: 400 }
+            );
+          }
+        }
+      }
+
+      const loanNumber = formData.get('loanNumber');
+      if (loanNumber && !loanNumber.toUpperCase().startsWith('L')) {
+        return NextResponse.json(
+          { success: false, error: 'Loan number must start with "L" prefix' },
           { status: 400 }
         );
       }
     } else {
-      if (emiType === 'fixed') {
-        if (!emiAmount) {
-          return NextResponse.json(
-            { success: false, error: 'EMI Amount is required for Fixed EMI type' },
-            { status: 400 }
-          );
-        }
-      } else if (emiType === 'custom') {
-        if (!emiAmount || !customEmiAmount) {
-          return NextResponse.json(
-            { success: false, error: 'Both Fixed EMI Amount and Last EMI Amount are required for Custom EMI type' },
-            { status: 400 }
-          );
-        }
-      }
+      // For Multiple Loans, set default/empty values but don't validate
+      console.log('ℹ️ Multiple Loan selection - skipping loan validation');
     }
 
     // Login credentials
@@ -335,8 +355,9 @@ export async function POST(request) {
       console.log('Uploads directory already exists or cannot be created');
     }
 
-    // Upload profile picture
-    if (profilePicture && profilePicture.size > 0) {
+    // Upload profile picture - ONLY IF A VALID FILE WAS SENT
+    const profilePicture = formData.get('profilePicture');
+    if (profilePicture && profilePicture !== 'null' && profilePicture.size > 0) {
       const bytes = await profilePicture.arrayBuffer();
       const buffer = Buffer.from(bytes);
       const fileName = `profile_${Date.now()}_${profilePicture.name}`;
@@ -344,10 +365,13 @@ export async function POST(request) {
       
       await writeFile(path.join(uploadsDir, fileName), buffer);
       console.log('✅ Profile picture uploaded:', profilePicturePath);
+    } else {
+      console.log('ℹ️ No profile picture provided');
     }
 
-    // Upload FI Shop document
-    if (fiDocumentShop && fiDocumentShop.size > 0) {
+    // Upload FI Shop document - ONLY IF A VALID FILE WAS SENT
+    const fiDocumentShop = formData.get('fiDocumentShop');
+    if (fiDocumentShop && fiDocumentShop !== 'null' && fiDocumentShop.size > 0) {
       const bytes = await fiDocumentShop.arrayBuffer();
       const buffer = Buffer.from(bytes);
       const fileName = `fi_shop_${Date.now()}_${fiDocumentShop.name}`;
@@ -355,10 +379,13 @@ export async function POST(request) {
       
       await writeFile(path.join(uploadsDir, fileName), buffer);
       console.log('✅ FI Shop document uploaded:', fiDocumentShopPath);
+    } else {
+      console.log('ℹ️ No FI Shop document provided');
     }
 
-    // Upload FI Home document
-    if (fiDocumentHome && fiDocumentHome.size > 0) {
+    // Upload FI Home document - ONLY IF A VALID FILE WAS SENT
+    const fiDocumentHome = formData.get('fiDocumentHome');
+    if (fiDocumentHome && fiDocumentHome !== 'null' && fiDocumentHome.size > 0) {
       const bytes = await fiDocumentHome.arrayBuffer();
       const buffer = Buffer.from(bytes);
       const fileName = `fi_home_${Date.now()}_${fiDocumentHome.name}`;
@@ -366,17 +393,21 @@ export async function POST(request) {
       
       await writeFile(path.join(uploadsDir, fileName), buffer);
       console.log('✅ FI Home document uploaded:', fiDocumentHomePath);
+    } else {
+      console.log('ℹ️ No FI Home document provided');
     }
 
-    // Calculate total loan amount
+    // Calculate total loan amount - ONLY for Single Loan
     let totalLoanAmount = 0;
-    if (emiType === 'custom' && loanType !== 'Daily') {
-      const fixedPeriods = parseInt(loanDays) - 1;
-      const fixedAmount = parseFloat(emiAmount) * fixedPeriods;
-      const lastAmount = parseFloat(customEmiAmount) || 0;
-      totalLoanAmount = fixedAmount + lastAmount;
-    } else {
-      totalLoanAmount = parseFloat(emiAmount) * parseInt(loanDays);
+    if (loanSelectionType === 'single') {
+      if (emiType === 'custom' && loanType !== 'Daily') {
+        const fixedPeriods = parseInt(loanDays) - 1;
+        const fixedAmount = parseFloat(emiAmount) * fixedPeriods;
+        const lastAmount = parseFloat(customEmiAmount) || 0;
+        totalLoanAmount = fixedAmount + lastAmount;
+      } else {
+        totalLoanAmount = parseFloat(emiAmount) * parseInt(loanDays);
+      }
     }
 
     // Create request data
@@ -438,15 +469,19 @@ export async function POST(request) {
       },
       
       step2Data: {
-        loanDate,
-        emiStartDate,
-        loanAmount: parseFloat(loanAmount),
-        emiAmount: parseFloat(emiAmount),
-        loanDays: parseInt(loanDays),
-        loanType,
-        emiType,
-        customEmiAmount: customEmiAmount ? parseFloat(customEmiAmount) : null,
-        totalLoanAmount: totalLoanAmount
+        loanSelectionType: loanSelectionType,
+        // CRITICAL FIX: For Single Loan use actual values; for Multiple Loan use defaults
+        loanDate: loanSelectionType === 'single' ? loanDate : '',
+        emiStartDate: loanSelectionType === 'single' ? emiStartDate : '',
+        loanAmount: loanSelectionType === 'single' ? parseFloat(loanAmount) : 0,
+        emiAmount: loanSelectionType === 'single' ? parseFloat(emiAmount) : 0,
+        loanDays: loanSelectionType === 'single' ? parseInt(loanDays) : 0,
+        loanType: loanSelectionType === 'single' ? loanType : '',
+        emiType: loanSelectionType === 'single' ? emiType : 'fixed',
+        customEmiAmount: loanSelectionType === 'single' && customEmiAmount ? parseFloat(customEmiAmount) : null,
+        totalLoanAmount: totalLoanAmount,
+        // Include loan number only for Single Loan
+        loanNumber: loanSelectionType === 'single' ? formData.get('loanNumber') || '' : ''
       },
       
       step3Data: {
@@ -465,10 +500,9 @@ export async function POST(request) {
       name,
       customerNumber,
       businessName,
-      loanAmount,
-      emiAmount,
-      loanType,
-      emiType
+      loanSelectionType,
+      loanAmount: requestData.step2Data.loanAmount,
+      emiAmount: requestData.step2Data.emiAmount
     });
 
     // Create the request
@@ -483,7 +517,8 @@ export async function POST(request) {
       data: {
         requestId: newRequest._id,
         customerName: name,
-        customerNumber: normalizedCustomerNumber
+        customerNumber: normalizedCustomerNumber,
+        loanSelectionType: loanSelectionType
       }
     });
 
