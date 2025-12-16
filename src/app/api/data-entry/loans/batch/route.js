@@ -81,6 +81,9 @@ export async function POST(request) {
       }, { status: 400 });
     }
 
+
+
+    /*
     // Check for existing pending loan addition request for this customer
     const existingPendingRequest = await Request.findOne({
       customerId: customer._id,
@@ -94,6 +97,8 @@ export async function POST(request) {
         error: 'A pending loan addition request already exists for this customer. Please wait for admin approval.'
       }, { status: 409 });
     }
+
+    */
 
     // Prepare loan data for each loan in the batch
     const loanRequests = batchData.loans.map((loanData, index) => {

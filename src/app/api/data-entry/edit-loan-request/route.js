@@ -32,6 +32,20 @@ export async function POST(request) {
       );
     }
 
+    // Validate loan number is one of the allowed values
+    const validLoanNumbers = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8', 'L9', 'L10', 'L11', 'L12', 'L13', 'L14', 'L15'];
+    if (!validLoanNumbers.includes(requestedData.loanNumber)) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Invalid loan number. Must be one of L1 to L15',
+          field: 'loanNumber'
+        },
+        { status: 400 }
+      );
+    }
+
+    // REMOVE THE DUPLICATE requiredLoanFields declaration
     // Validate requestedData contains all necessary loan information
     const requiredLoanFields = ['amount', 'emiAmount', 'loanType', 'loanDays', 'dateApplied'];
     const missingFields = requiredLoanFields.filter(field => !requestedData[field]);
@@ -215,7 +229,7 @@ function identifyChanges(originalData, requestedData) {
   const changes = [];
   
   const fieldsToCompare = [
-    'amount', 'emiAmount', 'loanType', 'loanDays', 'dateApplied', 
+    'loanNumber', 'amount', 'emiAmount', 'loanType', 'loanDays', 'dateApplied', 
     'emiStartDate', 'emiType', 'customEmiAmount'
   ];
   
@@ -238,7 +252,7 @@ function identifyChanges(originalData, requestedData) {
 
 // Helper function to determine if a change is significant
 function isSignificantChange(field, oldValue, newValue) {
-  const significantFields = ['amount', 'emiAmount', 'loanType', 'loanDays'];
+  const significantFields = ['loanNumber', 'amount', 'emiAmount', 'loanType', 'loanDays'];
   return significantFields.includes(field);
 }
 

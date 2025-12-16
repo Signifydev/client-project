@@ -16,8 +16,7 @@ export async function POST(request) {
       customerName,
       customerNumber,
       loanNumber,
-      originalLoanNumber,
-      originalLoanId,
+      newLoanNumber, // NEW: User-selected loan number for renewal
       renewalDate,
       newLoanAmount,
       newEmiAmount,
@@ -38,8 +37,7 @@ export async function POST(request) {
       customerName,
       customerNumber,
       loanNumber,
-      originalLoanNumber,
-      originalLoanId,
+      newLoanNumber, // NEW
       renewalDate,
       newLoanAmount,
       newEmiAmount,
@@ -53,6 +51,8 @@ export async function POST(request) {
       requestType
     });
 
+    // ==================== VALIDATION SECTION ====================
+    
     // Validate required fields
     const requiredFields = {
       loanId,
@@ -62,11 +62,13 @@ export async function POST(request) {
       newLoanAmount,
       newEmiAmount,
       newLoanDays,
-      newLoanType
+      newLoanType,
+      newLoanNumber // NEW: Make loan number selection mandatory
     };
 
     const missingFields = Object.entries(requiredFields)
       .filter(([key, value]) => !value)
+      .filter(([key]) => !['remarks', 'customEmiAmount', 'requestType'].includes(key))
       .map(([key]) => key);
 
     if (missingFields.length > 0) {
@@ -105,13 +107,197 @@ export async function POST(request) {
       );
     }
 
-    // Generate the next loan number for this customer
-    const nextLoanNumber = await Loan.generateLoanNumber(customerId);
-    console.log('🔢 Generated next loan number:', nextLoanNumber);
-
-    // Use the original loan's loanNumber if not provided
+    // ==================== LOAN NUMBER VALIDATION ====================
+    
+    // Normalize the new loan number (convert to uppercase, trim)
+    const normalizedNewLoanNumber = newLoanNumber.trim().toUpperCase();
+    console.log('🔢 Normalized new loan number:', normalizedNewLoanNumber);
+    
+    // Validate loan number format (must be L1 to L15)
+    const loanNumberRegex = /^L(1[0-5]|[1-9])$/;
+    if (!loanNumberRegex.test(normalizedNewLoanNumber)) {
+      console.error('❌ Invalid loan number format:', normalizedNewLoanNumber);
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Loan number must be between L1 and L15 (e.g., L1, L2, ..., L15)' 
+        },
+        { status: 400 }
+      );
+    }
+    
+    // Check if new loan number is the same as original loan number
+    if (normalizedNewLoanNumber === originalLoan.loanNumber.trim().toUpperCase()) {
+      console.error('❌ Cannot use same loan number for renewal:', normalizedNewLoanNumber);
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Cannot use the same loan number for renewal. Please select a different loan number.' 
+        },
+        { status: 400 }
+      );
+    }
+    
+    // Check if loan number already exists for this customer
+    const existingLoanWithSameNumber = await Loan.findOne({
+      customerId: customerId,
+      loanNumber: normalizedNewLoanNumber,
+      // Exclude loans that are renewed (they might have the same number but are inactive)
+      $or: [
+        { isRenewed: { $ne: true } },
+        { isRenewed: { $exists: false } }
+      ]
+    });
+    
+    if (existingLoanWithSameNumber) {
+      console.error('❌ Loan number already taken:', {
+        requested: normalizedNewLoanNumber,
+        existingLoan: existingLoanWithSameNumber._id,
+        status: existingLoanWithSameNumber.status
+      });
+      
+      let errorMessage = `Loan number "${normalizedNewLoanNumber}" is already in use for this customer`;
+      
+      if (existingLoanWithSameNumber.status === 'active') {
+        errorMessage += ' (Active loan)';
+      } else if (existingLoanWithSameNumber.status === 'pending') {
+        errorMessage += ' (Pending approval)';
+      } else if (existingLoanWithSameNumber.isRenewed) {
+        errorMessage += ' (Renewed loan)';
+      }
+      
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: errorMessage 
+        },
+        { status: 409 }
+      );
+    }
+    
+    // Also check for pending requests with this loan number
+    const pendingRequestWithSameNumber = await Request.findOne({
+      type: { $in: ['Loan Renew', 'New Loan', 'Loan Addition'] },
+      'requestedData.newLoanNumber': normalizedNewLoanNumber,
+      status: 'Pending',
+      customerId: customerId
+    });
+    
+    if (pendingRequestWithSameNumber) {
+      console.error('❌ Pending request with same loan number:', normalizedNewLoanNumber);
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: `Loan number "${normalizedNewLoanNumber}" has a pending request. Please wait for approval or select a different number.` 
+        },
+        { status: 409 }
+      );
+    }
+    
+    console.log('✅ Loan number validation passed:', normalizedNewLoanNumber);
+    
+    // ==================== NUMERIC VALIDATION ====================
+    
+    // Validate numeric fields
+    const numericFields = {
+      newLoanAmount: parseFloat(newLoanAmount),
+      newEmiAmount: parseFloat(newEmiAmount),
+      newLoanDays: parseInt(newLoanDays)
+    };
+    
+    const numericErrors = [];
+    
+    for (const [field, value] of Object.entries(numericFields)) {
+      if (isNaN(value) || value <= 0) {
+        numericErrors.push(`${field} must be a positive number`);
+      }
+    }
+    
+    if (numericErrors.length > 0) {
+      console.error('❌ Numeric validation errors:', numericErrors);
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: `Invalid values: ${numericErrors.join(', ')}` 
+        },
+        { status: 400 }
+      );
+    }
+    
+    // Validate EMI type and custom EMI amount
+    if (emiType === 'custom' && newLoanType !== 'Daily') {
+      if (!customEmiAmount || isNaN(parseFloat(customEmiAmount)) || parseFloat(customEmiAmount) <= 0) {
+        console.error('❌ Custom EMI amount missing or invalid');
+        return NextResponse.json(
+          { 
+            success: false, 
+            error: 'Custom EMI amount is required for custom EMI type with Weekly/Monthly loans' 
+          },
+          { status: 400 }
+        );
+      }
+    }
+    
+    // Validate dates
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const renewalDateObj = new Date(renewalDate);
+    renewalDateObj.setHours(0, 0, 0, 0);
+    
+    if (isNaN(renewalDateObj.getTime())) {
+      console.error('❌ Invalid renewal date:', renewalDate);
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Invalid renewal date format' 
+        },
+        { status: 400 }
+      );
+    }
+    
+    if (renewalDateObj > today) {
+      console.error('❌ Renewal date in future:', renewalDate);
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Renewal date cannot be in the future' 
+        },
+        { status: 400 }
+      );
+    }
+    
+    // Validate EMI start date
+    const emiStartDateObj = new Date(emiStartDate || renewalDate);
+    emiStartDateObj.setHours(0, 0, 0, 0);
+    
+    if (isNaN(emiStartDateObj.getTime())) {
+      console.error('❌ Invalid EMI start date:', emiStartDate);
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Invalid EMI start date format' 
+        },
+        { status: 400 }
+      );
+    }
+    
+    if (emiStartDateObj < renewalDateObj) {
+      console.error('❌ EMI start date before renewal date:', { emiStartDate, renewalDate });
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'EMI start date cannot be before renewal date' 
+        },
+        { status: 400 }
+      );
+    }
+    
+    // ==================== CREATE RENEW REQUEST ====================
+    
+    // Get the actual loan number (use original if not provided in request)
     const actualLoanNumber = loanNumber || originalLoan.loanNumber;
-
+    
     // Create the renew request with ALL necessary data for admin to process
     const renewRequest = new Request({
       type: 'Loan Renew',
@@ -122,17 +308,17 @@ export async function POST(request) {
       loanNumber: actualLoanNumber,
       requestedData: {
         action: 'renew_loan',
-        originalLoanNumber: originalLoanNumber || actualLoanNumber,
-        originalLoanId: originalLoanId || loanId,
-        renewalDate: renewalDate || new Date().toISOString().split('T')[0],
-        newLoanAmount: parseFloat(newLoanAmount),
-        newEmiAmount: parseFloat(newEmiAmount),
-        newLoanDays: parseInt(newLoanDays),
+        originalLoanNumber: actualLoanNumber,
+        originalLoanId: loanId,
+        renewalDate: renewalDate,
+        newLoanAmount: numericFields.newLoanAmount,
+        newEmiAmount: numericFields.newEmiAmount,
+        newLoanDays: numericFields.newLoanDays,
         newLoanType: newLoanType,
-        emiStartDate: emiStartDate || renewalDate || new Date().toISOString().split('T')[0],
+        emiStartDate: emiStartDate || renewalDate,
         emiType: emiType || 'fixed',
         customEmiAmount: customEmiAmount ? parseFloat(customEmiAmount) : null,
-        newLoanNumber: nextLoanNumber,
+        newLoanNumber: normalizedNewLoanNumber, // Use user-selected loan number
         remarks: remarks || `Renewal of loan ${actualLoanNumber}`,
         // Include the original loan data for reference
         originalLoanData: {
@@ -142,13 +328,22 @@ export async function POST(request) {
           loanDays: originalLoan.loanDays,
           status: originalLoan.status,
           emiPaidCount: originalLoan.emiPaidCount,
-          totalPaidAmount: originalLoan.totalPaidAmount
+          totalPaidAmount: originalLoan.totalPaidAmount,
+          loanNumber: originalLoan.loanNumber
+        },
+        // Include validation summary
+        validation: {
+          loanNumberFormatValid: true,
+          loanNumberAvailable: true,
+          loanNumberNotSameAsOriginal: true,
+          datesValid: true,
+          numericFieldsValid: true
         }
       },
-      description: `Loan renewal request for ${customerName} - Renewing ${actualLoanNumber} to ${nextLoanNumber}, New Amount: ₹${newLoanAmount}`,
+      description: `Loan renewal request for ${customerName} - Renewing ${actualLoanNumber} to ${normalizedNewLoanNumber}, New Amount: ₹${newLoanAmount}`,
       priority: 'Medium',
       status: 'Pending',
-      createdBy: requestedBy || 'data_entry_operator_1',
+      createdBy: requestedBy || 'data_entry_operator',
       createdByRole: 'data_entry'
     });
 
@@ -157,8 +352,11 @@ export async function POST(request) {
     console.log('✅ Renew loan request saved successfully:', {
       requestId: renewRequest._id,
       originalLoan: actualLoanNumber,
-      newLoanNumber: nextLoanNumber,
-      customer: customerName
+      newLoanNumber: normalizedNewLoanNumber,
+      customer: customerName,
+      newAmount: `₹${newLoanAmount}`,
+      newEMI: `₹${newEmiAmount}`,
+      newType: newLoanType
     });
 
     return NextResponse.json({
@@ -169,7 +367,10 @@ export async function POST(request) {
         type: 'Loan Renew',
         customerName: customerName,
         originalLoanNumber: actualLoanNumber,
-        newLoanNumber: nextLoanNumber,
+        newLoanNumber: normalizedNewLoanNumber,
+        newLoanAmount: numericFields.newLoanAmount,
+        newEmiAmount: numericFields.newEmiAmount,
+        newLoanType: newLoanType,
         status: 'Pending',
         createdAt: new Date().toISOString()
       }
@@ -180,9 +381,38 @@ export async function POST(request) {
     return NextResponse.json(
       { 
         success: false, 
-        error: 'Failed to submit renew request: ' + error.message 
+        error: 'Failed to submit renew request: ' + error.message,
+        details: error.stack
       },
       { status: 500 }
     );
   }
+}
+
+// Helper function to validate loan number
+function validateLoanNumberFormat(loanNumber) {
+  const normalized = loanNumber.trim().toUpperCase();
+  const regex = /^L(1[0-5]|[1-9])$/;
+  return regex.test(normalized);
+}
+
+// Helper function to get all loan numbers for a customer (for future use)
+export async function getCustomerLoanNumbers(customerId) {
+  await connectDB();
+  
+  const loans = await Loan.find({
+    customerId: customerId,
+    $or: [
+      { status: 'active' },
+      { status: 'pending' },
+      { isRenewed: { $ne: true } }
+    ]
+  }).select('loanNumber status isRenewed');
+  
+  return loans.map(loan => ({
+    loanNumber: loan.loanNumber,
+    status: loan.status,
+    isRenewed: loan.isRenewed || false,
+    isActive: loan.status === 'active' && !loan.isRenewed
+  }));
 }

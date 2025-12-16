@@ -7,22 +7,22 @@ import { useState, useEffect, lazy, Suspense, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
 // Import section components with lazy loading
-const DashboardSection = lazy(() => import('@/src/components/sections/DashboardSection'));
-const CustomersSection = lazy(() => import('@/src/components/sections/CustomersSection'));
-const EMISection = lazy(() => import('@/src/components/sections/EMISection'));
-const CollectionSection = lazy(() => import('@/src/components/sections/CollectionSection'));
-const RequestsSection = lazy(() => import('@/src/components/sections/RequestsSection'));
+const DashboardSection = lazy(() => import('@/src/app/data-entry/components/sections/DashboardSection'));
+const CustomersSection = lazy(() => import('@/src/app/data-entry/components/sections/CustomersSection'));
+const EMISection = lazy(() => import('@/src/app/data-entry/components/sections/EMISection'));
+const CollectionSection = lazy(() => import('@/src/app/data-entry/components/sections/CollectionSection'));
+const RequestsSection = lazy(() => import('@/src/app/data-entry/components/sections/RequestsSection'));
 
 // Import modal components with lazy loading
-import AddCustomerModal from '@/src/components/data-entry/modals/AddCustomerModal';
-const EditCustomerModal = lazy(() => import('@/src/components/data-entry/modals/EditCustomerModal'));
-const AddLoanModal = lazy(() => import('@/src/components/data-entry/modals/AddLoanModal'));
-const EditLoanModal = lazy(() => import('@/src/components/data-entry/modals/EditLoanModal'));
-const RenewLoanModal = lazy(() => import('@/src/components/data-entry/modals/RenewLoanModal'));
-const EMIUpdateModal = lazy(() => import('@/src/components/data-entry/modals/EMIUpdateModal'));
-const EMICalendarModal = lazy(() => import('@/src/components/data-entry/modals/EMICalendarModal'));
-const CustomerDetailsModal = lazy(() => import('@/src/components/data-entry/modals/CustomerDetailsModal'));
-const DeleteConfirmationModal = lazy(() => import('@/src/components/data-entry/modals/DeleteConfirmationModal'));
+import AddCustomerModal from '@/src/app/data-entry/components/data-entry/modals/AddCustomerModal';
+const EditCustomerModal = lazy(() => import('@/src/app/data-entry/components/data-entry/modals/EditCustomerModal'));
+const AddLoanModal = lazy(() => import('@/src/app/data-entry/components/data-entry/modals/AddLoanModal'));
+const EditLoanModal = lazy(() => import('@/src/app/data-entry/components/data-entry/modals/EditLoanModal'));
+const RenewLoanModal = lazy(() => import('@/src/app/data-entry/components/data-entry/modals/RenewLoanModal'));
+const EMIUpdateModal = lazy(() => import('@/src/app/data-entry/components/data-entry/modals/EMIUpdateModal'));
+const EMICalendarModal = lazy(() => import('@/src/app/data-entry/components/data-entry/modals/EMICalendarModal'));
+const CustomerDetailsModal = lazy(() => import('@/src/app/data-entry/components/data-entry/modals/CustomerDetailsModal'));
+const DeleteConfirmationModal = lazy(() => import('@/src/app/data-entry/components/data-entry/modals/DeleteConfirmationModal'));
 
 // Import types
 import type {
@@ -32,7 +32,7 @@ import type {
   EditCustomerData,
   EditLoanData,
   RenewLoanData
-} from '@/src/types/dataEntry';
+} from '@/src/app/data-entry/types/dataEntry';
 
 // Loading fallback component
 const SectionLoader = () => (
@@ -283,37 +283,37 @@ export default function DataEntryDashboard() {
   }, []);
 
   const handleEditLoan = useCallback((loan: Loan) => {
-    console.log('✏️ Editing loan:', loan.loanNumber);
-    
-    setEditLoanData({
-      loanId: loan._id,
-      customerId: loan.customerId,
-      customerName: loan.customerName,
-      customerNumber: loan.customerNumber,
-      loanNumber: loan.loanNumber,
-      amount: loan.amount.toString(),
-      emiAmount: loan.emiAmount.toString(),
+  console.log('✏️ Editing loan:', loan.loanNumber);
+  
+  setEditLoanData({
+    loanId: loan._id,
+    customerId: loan.customerId,
+    customerName: loan.customerName,
+    customerNumber: loan.customerNumber,
+    loanNumber: loan.loanNumber,
+    amount: loan.amount.toString(),
+    emiAmount: loan.emiAmount.toString(),
+    loanType: loan.loanType,
+    dateApplied: loan.dateApplied.split('T')[0],
+    loanDays: loan.loanDays.toString(),
+    emiType: loan.emiType || 'fixed',
+    customEmiAmount: loan.customEmiAmount?.toString() || '',
+    emiStartDate: loan.emiStartDate?.split('T')[0] || loan.dateApplied.split('T')[0],
+    originalData: {
+      amount: loan.amount,
+      emiAmount: loan.emiAmount,
       loanType: loan.loanType,
-      dateApplied: loan.dateApplied.split('T')[0],
-      loanDays: loan.loanDays.toString(),
+      dateApplied: loan.dateApplied,
+      loanDays: loan.loanDays,
       emiType: loan.emiType || 'fixed',
-      customEmiAmount: loan.customEmiAmount?.toString() || '',
-      emiStartDate: loan.emiStartDate?.split('T')[0] || loan.dateApplied.split('T')[0],
-      originalData: {
-        amount: loan.amount,
-        emiAmount: loan.emiAmount,
-        loanType: loan.loanType,
-        dateApplied: loan.dateApplied,
-        loanDays: loan.loanDays,
-        emiType: loan.emiType || 'fixed',
-        customEmiAmount: loan.customEmiAmount || null,
-        emiStartDate: loan.emiStartDate || loan.dateApplied
-      }
-    });
-    
-    // Open edit loan modal without closing customer details
-    setShowEditLoan(true);
-  }, []);
+      customEmiAmount: loan.customEmiAmount || null,
+      emiStartDate: loan.emiStartDate || loan.dateApplied,
+      loanNumber: loan.loanNumber // ← ADD THIS LINE
+    }
+  });
+  
+  setShowEditLoan(true);
+}, []);
 
   const handleRenewLoan = useCallback((loan: Loan) => {
     console.log('🔄 Renewing loan:', loan.loanNumber);
@@ -369,11 +369,9 @@ export default function DataEntryDashboard() {
   const handleAddLoan = useCallback(async (customer: CustomerDetails) => {
   console.log('➕ Adding loan for customer:', customer.name);
   
-  setCustomerDetails(customer);
-  
   // Fetch existing loans for this customer
   try {
-    const response = await fetch(`/api/data-entry/loans?customerId=${customer._id}&status=active`);
+    const response = await fetch(`/api/data-entry/loans?customerId=${customer._id}`);
     const data = await response.json();
     
     if (data.success) {
@@ -381,6 +379,8 @@ export default function DataEntryDashboard() {
         ...customer,
         existingLoans: data.data // Pass existing loans to modal
       });
+    } else {
+      setCustomerDetails(customer);
     }
   } catch (error) {
     console.error('Error fetching existing loans:', error);
@@ -429,9 +429,29 @@ export default function DataEntryDashboard() {
 
   // Function to handle success and close all modals
   const handleModalSuccess = useCallback(() => {
-    handleRefresh();
-    closeAllModals();
-  }, [handleRefresh, closeAllModals]);
+  console.log('✅ Modal action successful, refreshing data...');
+  handleRefresh(); // This should already exist
+  
+  // Force close all modals
+  closeAllModals();
+  
+  // If customer details modal was open, refresh that specific customer
+  if (customerDetails) {
+    const fetchUpdatedCustomer = async () => {
+      try {
+        const response = await fetch(`/api/data-entry/customers/${customerDetails._id}`);
+        const data = await response.json();
+        if (data.success) {
+          setCustomerDetails(data.data);
+          console.log('✅ Updated customer details loaded');
+        }
+      } catch (error) {
+        console.error('Error fetching updated customer:', error);
+      }
+    };
+    fetchUpdatedCustomer();
+  }
+}, [handleRefresh, closeAllModals, customerDetails]);
 
   // Function to handle actual loan deletion after confirmation - UPDATED WITH CORRECT API
   const handleConfirmDeleteLoan = useCallback(async () => {
@@ -753,7 +773,7 @@ export default function DataEntryDashboard() {
         onClose={() => closeModal('addCustomer')}
         onSuccess={handleModalSuccess}
         currentUserOffice={currentUserOffice}
-        existingCustomers={existingCustomers} // ← UPDATED
+        existingCustomers={existingCustomers} // ← Make sure this is passed
       />
     </Suspense>
   </div>
@@ -790,17 +810,18 @@ export default function DataEntryDashboard() {
 
       {/* Edit Loan Modal */}
       {showEditLoan && editLoanData && (
-        <div className="z-[140]">
-          <Suspense fallback={<ModalLoader />}>
-            <EditLoanModal
-              isOpen={showEditLoan}
-              onClose={() => closeModal('editLoan')}
-              loanData={editLoanData}
-              onSuccess={handleModalSuccess}
-            />
-          </Suspense>
-        </div>
-      )}
+  <div className="z-[140]">
+    <Suspense fallback={<ModalLoader />}>
+      <EditLoanModal
+        isOpen={showEditLoan}
+        onClose={() => closeModal('editLoan')}
+        loanData={editLoanData}
+        onSuccess={handleModalSuccess}
+        currentOperator={currentOperator} // ← ADD THIS PROP
+      />
+    </Suspense>
+  </div>
+)}
 
       {/* Renew Loan Modal */}
       {showRenewLoan && renewLoanData && (
