@@ -37,6 +37,73 @@ interface EMIStatusInfo {
   }[];
 }
 
+// NEW: Generate EMI schedule dates for a loan
+const generateEmiSchedule = (loan: Loan, year: number, month: number): Date[] => {
+  const schedule: Date[] = [];
+  if (!loan.emiStartDate || !loan.loanType) return schedule;
+  
+  const startDate = new Date(loan.emiStartDate);
+  startDate.setHours(0, 0, 0, 0);
+  
+  const monthStart = new Date(year, month, 1);
+  const monthEnd = new Date(year, month + 1, 0);
+  
+  let currentDate = new Date(startDate);
+  
+  // Generate dates up to total EMI count or until we exceed reasonable limit
+  const maxDates = 365; // Safety limit
+  
+  for (let i = 0; i < maxDates; i++) {
+    // Skip if before start date
+    if (currentDate < startDate) {
+      // Move to next EMI date
+      switch(loan.loanType) {
+        case 'Daily':
+          currentDate.setDate(currentDate.getDate() + 1);
+          break;
+        case 'Weekly':
+          currentDate.setDate(currentDate.getDate() + 7);
+          break;
+        case 'Monthly':
+          currentDate.setMonth(currentDate.getMonth() + 1);
+          break;
+      }
+      continue;
+    }
+    
+    // Stop if we've passed total EMI count
+    if (loan.totalEmiCount && i >= loan.totalEmiCount) break;
+    
+    // Add date if within current month
+    if (currentDate >= monthStart && currentDate <= monthEnd) {
+      schedule.push(new Date(currentDate));
+    }
+    
+    // Stop if we've passed the month
+    if (currentDate > monthEnd) break;
+    
+    // Move to next EMI date based on loan type
+    switch(loan.loanType) {
+      case 'Daily':
+        currentDate.setDate(currentDate.getDate() + 1);
+        break;
+      case 'Weekly':
+        currentDate.setDate(currentDate.getDate() + 7);
+        break;
+      case 'Monthly':
+        currentDate.setMonth(currentDate.getMonth() + 1);
+        // Handle month rollover (e.g., Jan 31 + 1 month = Mar 3 in JS)
+        // Adjust to same day of month if possible
+        const targetDay = startDate.getDate();
+        const lastDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
+        currentDate.setDate(Math.min(targetDay, lastDayOfMonth));
+        break;
+    }
+  }
+  
+  return schedule;
+};
+
 export default function EMICalendarModal({
   isOpen,
   onClose,
@@ -47,7 +114,7 @@ export default function EMICalendarModal({
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [calendarDays, setCalendarDays] = useState<CalendarDay[]>([]);
   const [customerLoans, setCustomerLoans] = useState<Loan[]>([]);
-  const [selectedLoan, setSelectedLoan] = useState<string>('all'); // 'all', 'L1', 'L2', etc.
+  const [selectedLoan, setSelectedLoan] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(false);
   const [loanOptions, setLoanOptions] = useState<{ value: string; label: string }[]>([
     { value: 'all', label: 'All Loans (Amount Dues Only)' }
@@ -58,15 +125,12 @@ export default function EMICalendarModal({
     if (customer) {
       const loans: Loan[] = [];
       
-      // If customer has loans array
       if ('loans' in customer && Array.isArray(customer.loans)) {
         loans.push(...customer.loans as Loan[]);
       }
       
-      // If customer has loan properties directly (treat as fallback loan)
       const customerData = customer as any;
       if (customerData.loanNumber || customerData.amount) {
-        // Create a loan object from customer data
         const fallbackLoan: Loan = {
           _id: customer._id || `fallback_${Date.now()}`,
           customerId: customer._id || '',
@@ -95,14 +159,12 @@ export default function EMICalendarModal({
         loans.push(fallbackLoan);
       }
       
-      // Filter for active loans only
       const activeLoans = loans.filter(loan => 
         loan.status === 'active' && !loan.isRenewed
       );
       
       setCustomerLoans(activeLoans);
       
-      // Generate loan options for dropdown
       const options = [
         { value: 'all', label: 'All Loans (Amount Dues Only)' }
       ];
@@ -125,7 +187,6 @@ export default function EMICalendarModal({
       return;
     }
 
-    // Filter loans based on selection
     const loansToShow = selectedLoan === 'all' 
       ? customerLoans 
       : customerLoans.filter(loan => loan.loanNumber === selectedLoan);
@@ -133,211 +194,110 @@ export default function EMICalendarModal({
     const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
     const days: CalendarDay[] = [];
 
-    // Get all EMI due dates for the month
-    const emiDueDates = new Set<string>();
+    // For "All Loans" view: Only show total amount due per day
+    // For single loan view: Show detailed status
+    
     const emiStatusMap = new Map<string, EMIStatusInfo>();
 
+    // Get today's date in IST (UTC+5:30)
+    const today = new Date();
+    const todayIST = new Date(today.getTime() + (5.5 * 60 * 60 * 1000));
+    const todayKey = todayIST.toISOString().split('T')[0];
+
     loansToShow.forEach(loan => {
-      if (!loan.nextEmiDate || !loan.loanType || !loan.emiAmount) return;
+      if (!loan.emiStartDate || !loan.loanType || !loan.emiAmount) return;
 
-      // Generate EMI schedule for the month
-      const startDate = new Date(loan.emiStartDate || loan.dateApplied);
-      const today = new Date();
-      const monthStart = new Date(selectedYear, selectedMonth, 1);
-      const monthEnd = new Date(selectedYear, selectedMonth + 1, 0);
-
-      // Calculate daily, weekly, or monthly EMI dates
-      const currentDate = new Date(startDate);
-      const loanNumber = loan.loanNumber || 'L1';
+      // Generate EMI schedule for this loan in the selected month
+      const emiSchedule = generateEmiSchedule(loan, selectedYear, selectedMonth);
       
-      if (loan.loanType === 'Daily') {
-        // Daily EMI - every day
-        while (currentDate <= monthEnd) {
-          if (currentDate >= monthStart && currentDate <= monthEnd) {
-            const dateKey = currentDate.toISOString().split('T')[0];
-            emiDueDates.add(dateKey);
-            
-            // Check if payment was made for this date
-            const payment = loan.emiHistory?.find(p => {
-              if (!p.paymentDate) return false;
-              const paymentDate = new Date(p.paymentDate);
-              return paymentDate.toISOString().split('T')[0] === dateKey;
-            });
-            
-            const existing = emiStatusMap.get(dateKey);
-            
-            if (payment) {
-              // Determine status from payment
-              let status: EMIStatusInfo['status'] = 'due';
-              if (payment.status === 'Paid') {
-                status = 'paid';
-              } else if (payment.status === 'Partial') {
-                status = 'partial';
-              } else if (payment.status === 'Advance') {
-                status = 'advance';
-              }
-              
-              const loanDetail = {
-                loanNumber,
-                amount: payment.amount,
-                status
-              };
-              
-              emiStatusMap.set(dateKey, {
-                status,
-                amount: (existing?.amount || 0) + payment.amount,
-                loanNumbers: [...(existing?.loanNumbers || []), loanNumber],
-                loanDetails: [...(existing?.loanDetails || []), loanDetail]
-              });
-            } else {
-              // No payment found, mark as due or missed
-              const status: EMIStatusInfo['status'] = currentDate < today ? 'missed' : 'due';
-              const loanDetail = {
-                loanNumber,
-                amount: loan.emiAmount,
-                status
-              };
-              
-              emiStatusMap.set(dateKey, {
-                status,
-                amount: existing?.amount || loan.emiAmount,
-                loanNumbers: [...(existing?.loanNumbers || []), loanNumber],
-                loanDetails: [...(existing?.loanDetails || []), loanDetail]
-              });
-            }
-          }
-          currentDate.setDate(currentDate.getDate() + 1);
-        }
-      } else if (loan.loanType === 'Weekly') {
-        // Weekly EMI - every 7 days
-        const weeklyDate = new Date(startDate);
-        while (weeklyDate <= monthEnd) {
-          if (weeklyDate >= monthStart && weeklyDate <= monthEnd) {
-            const dateKey = weeklyDate.toISOString().split('T')[0];
-            emiDueDates.add(dateKey);
-            
-            const payment = loan.emiHistory?.find(p => {
-              if (!p.paymentDate) return false;
-              const paymentDate = new Date(p.paymentDate);
-              return paymentDate.toISOString().split('T')[0] === dateKey;
-            });
-            
-            const existing = emiStatusMap.get(dateKey);
-            
-            if (payment) {
-              let status: EMIStatusInfo['status'] = 'due';
-              if (payment.status === 'Paid') {
-                status = 'paid';
-              } else if (payment.status === 'Partial') {
-                status = 'partial';
-              } else if (payment.status === 'Advance') {
-                status = 'advance';
-              }
-              
-              const loanDetail = {
-                loanNumber,
-                amount: payment.amount,
-                status
-              };
-              
-              emiStatusMap.set(dateKey, {
-                status,
-                amount: (existing?.amount || 0) + payment.amount,
-                loanNumbers: [...(existing?.loanNumbers || []), loanNumber],
-                loanDetails: [...(existing?.loanDetails || []), loanDetail]
-              });
-            } else {
-              const status: EMIStatusInfo['status'] = weeklyDate < today ? 'missed' : 'due';
-              const loanDetail = {
-                loanNumber,
-                amount: loan.emiAmount,
-                status
-              };
-              
-              emiStatusMap.set(dateKey, {
-                status,
-                amount: existing?.amount || loan.emiAmount,
-                loanNumbers: [...(existing?.loanNumbers || []), loanNumber],
-                loanDetails: [...(existing?.loanDetails || []), loanDetail]
-              });
-            }
-          }
-          weeklyDate.setDate(weeklyDate.getDate() + 7);
-        }
-      } else if (loan.loanType === 'Monthly') {
-        // Monthly EMI - same day each month
-        const emiDay = startDate.getDate();
+      emiSchedule.forEach(scheduledDate => {
+        const dateKey = scheduledDate.toISOString().split('T')[0];
+        const existing = emiStatusMap.get(dateKey);
         
-        // Check if this month has the EMI day
-        const emiDate = new Date(selectedYear, selectedMonth, Math.min(emiDay, daysInMonth));
-        if (emiDate >= monthStart && emiDate <= monthEnd) {
-          const dateKey = emiDate.toISOString().split('T')[0];
-          emiDueDates.add(dateKey);
-          
-          const payment = loan.emiHistory?.find(p => {
-            if (!p.paymentDate) return false;
-            const paymentDate = new Date(p.paymentDate);
-            return paymentDate.toISOString().split('T')[0] === dateKey;
+        // Check if there's a payment for this scheduled date
+        let paymentStatus: 'paid' | 'partial' | 'advance' | 'missed' | 'due' = 'due';
+        let paymentAmount = loan.emiAmount;
+        
+        if (loan.emiHistory && loan.emiHistory.length > 0) {
+          // Find payments for this date or advance payments covering this date
+          const relevantPayments = loan.emiHistory.filter(payment => {
+            if (!payment.paymentDate) return false;
+            
+            const paymentDate = new Date(payment.paymentDate);
+            const paymentDateKey = paymentDate.toISOString().split('T')[0];
+            
+            // Exact date match
+            if (paymentDateKey === dateKey) return true;
+            
+            // Check if it's an advance payment covering this date
+            if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.advanceToDate) {
+              const advanceFrom = new Date(payment.advanceFromDate);
+              const advanceTo = new Date(payment.advanceToDate);
+              return scheduledDate >= advanceFrom && scheduledDate <= advanceTo;
+            }
+            
+            return false;
           });
           
-          const existing = emiStatusMap.get(dateKey);
-          
-          if (payment) {
-            let status: EMIStatusInfo['status'] = 'due';
-            if (payment.status === 'Paid') {
-              status = 'paid';
-            } else if (payment.status === 'Partial') {
-              status = 'partial';
-            } else if (payment.status === 'Advance') {
-              status = 'advance';
+          if (relevantPayments.length > 0) {
+            const totalPaid = relevantPayments.reduce((sum, p) => sum + p.amount, 0);
+            
+            if (totalPaid >= loan.emiAmount) {
+              paymentStatus = relevantPayments.some(p => p.status === 'Advance') ? 'advance' : 'paid';
+            } else if (totalPaid > 0) {
+              paymentStatus = 'partial';
+              paymentAmount = totalPaid;
             }
-            
-            const loanDetail = {
-              loanNumber,
-              amount: payment.amount,
-              status
-            };
-            
-            emiStatusMap.set(dateKey, {
-              status,
-              amount: (existing?.amount || 0) + payment.amount,
-              loanNumbers: [...(existing?.loanNumbers || []), loanNumber],
-              loanDetails: [...(existing?.loanDetails || []), loanDetail]
-            });
           } else {
-            const status: EMIStatusInfo['status'] = emiDate < today ? 'missed' : 'due';
-            const loanDetail = {
-              loanNumber,
-              amount: loan.emiAmount,
-              status
-            };
+            // No payment found - check if date is in past
+            const scheduleDateIST = new Date(scheduledDate.getTime() + (5.5 * 60 * 60 * 1000));
+            const scheduleDateKey = scheduleDateIST.toISOString().split('T')[0];
             
-            emiStatusMap.set(dateKey, {
-              status,
-              amount: existing?.amount || loan.emiAmount,
-              loanNumbers: [...(existing?.loanNumbers || []), loanNumber],
-              loanDetails: [...(existing?.loanDetails || []), loanDetail]
-            });
+            if (scheduleDateKey < todayKey) {
+              paymentStatus = 'missed';
+            } else {
+              paymentStatus = 'due';
+            }
+          }
+        } else {
+          // No payment history
+          const scheduleDateIST = new Date(scheduledDate.getTime() + (5.5 * 60 * 60 * 1000));
+          const scheduleDateKey = scheduleDateIST.toISOString().split('T')[0];
+          
+          if (scheduleDateKey < todayKey) {
+            paymentStatus = 'missed';
           }
         }
-      }
+        
+        const loanDetail = {
+          loanNumber: loan.loanNumber || 'L1',
+          amount: paymentAmount,
+          status: paymentStatus
+        };
+        
+        emiStatusMap.set(dateKey, {
+          status: selectedLoan === 'all' ? 'amount-only' : paymentStatus,
+          amount: (existing?.amount || 0) + paymentAmount,
+          loanNumbers: [...new Set([...(existing?.loanNumbers || []), loan.loanNumber || 'L1'])],
+          loanDetails: [...(existing?.loanDetails || []), loanDetail]
+        });
+      });
     });
 
     // Generate calendar days
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(selectedYear, selectedMonth, day);
-      const dateKey = date.toISOString().split('T')[0];
+      const dateIST = new Date(date.getTime() + (5.5 * 60 * 60 * 1000));
+      const dateKey = dateIST.toISOString().split('T')[0];
+      
       const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-      const isToday = date.toDateString() === today.toDateString();
-      const isPast = date < today;
-      const isEmiDue = emiDueDates.has(dateKey);
+      const isToday = dateKey === todayKey;
+      const isPast = dateKey < todayKey;
       
       const emiInfo = emiStatusMap.get(dateKey);
+      const isEmiDue = !!emiInfo;
 
-      // For "All Loans" view, show only amount dues without status colors
+      // For "All Loans" view, show only amount (no status colors)
       const statusForDisplay = selectedLoan === 'all' 
         ? (isEmiDue ? 'amount-only' : undefined)
         : emiInfo?.status;
@@ -444,7 +404,6 @@ export default function EMICalendarModal({
                 {monthNames[selectedMonth]} {selectedYear}
               </h2>
               
-              {/* Loan Selection Dropdown */}
               <div className="mt-2 w-full max-w-xs">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Select Loan to View:
@@ -462,8 +421,8 @@ export default function EMICalendarModal({
                 </select>
                 <p className="text-xs text-gray-500 mt-1">
                   {selectedLoan === 'all' 
-                    ? 'Showing total amount dues for all loans' 
-                    : `Showing detailed EMI history for ${selectedLoan}`}
+                    ? 'Showing total EMI amount due per day for all loans' 
+                    : `Showing detailed EMI schedule for ${selectedLoan}`}
                 </p>
               </div>
             </div>
@@ -521,15 +480,13 @@ export default function EMICalendarModal({
                       {day.isEmiDue && (
                         <div className="mt-auto space-y-1">
                           {selectedLoan === 'all' ? (
-                            // All Loans View: Show only amount
+                            // All Loans View: Show only total amount
                             <div className="text-xs">
-                              <div className="font-medium text-purple-700">Total Due:</div>
+                              <div className="font-medium text-purple-700">Total EMI Due:</div>
                               <div className="text-purple-600 font-bold">₹{day.amount?.toLocaleString() || '0'}</div>
                               {day.loanNumbers && day.loanNumbers.length > 0 && (
                                 <div className="text-gray-500 text-xs mt-1">
-                                  {day.loanNumbers.slice(0, 2).map(loanNo => (
-                                    <div key={loanNo} className="truncate">{loanNo}</div>
-                                  ))}
+                                  <div>Loans: {day.loanNumbers.slice(0, 2).join(', ')}</div>
                                   {day.loanNumbers.length > 2 && (
                                     <div className="text-gray-400">+{day.loanNumbers.length - 2} more</div>
                                   )}
@@ -540,7 +497,7 @@ export default function EMICalendarModal({
                             // Single Loan View: Show detailed status
                             <div className="text-xs">
                               <div className="font-medium text-gray-700">
-                                EMI {getStatusText(day.status)}
+                                {getStatusText(day.status)} EMI
                               </div>
                               <div className={`font-bold ${
                                 day.status === 'paid' ? 'text-green-600' :
@@ -554,20 +511,20 @@ export default function EMICalendarModal({
                               {day.loanDetails && day.loanDetails.length > 0 && (
                                 <div className="mt-1">
                                   {day.loanDetails.map((detail, idx) => (
-                                    <div key={idx} className="flex justify-between items-center">
+                                    <div key={idx} className="flex justify-between items-center text-xs">
                                       <span className="text-gray-600">{detail.loanNumber}</span>
-                                      <span className={`px-1 rounded text-xs ${
+                                      <span className={`px-1 rounded ${
                                         detail.status === 'paid' ? 'bg-green-100 text-green-800' :
                                         detail.status === 'missed' ? 'bg-red-100 text-red-800' :
                                         detail.status === 'partial' ? 'bg-yellow-100 text-yellow-800' :
                                         detail.status === 'advance' ? 'bg-blue-100 text-blue-800' :
                                         'bg-gray-100 text-gray-800'
                                       }`}>
-                                        {detail.status === 'paid' ? '✓' : 
-                                         detail.status === 'missed' ? '✗' : 
-                                         detail.status === 'partial' ? '~' : 
-                                         detail.status === 'advance' ? '↑' : 
-                                         '●'}
+                                        {detail.status === 'paid' ? 'Paid' : 
+                                         detail.status === 'missed' ? 'Missed' : 
+                                         detail.status === 'partial' ? 'Partial' : 
+                                         detail.status === 'advance' ? 'Advance' : 
+                                         'Due'}
                                       </span>
                                     </div>
                                   ))}
@@ -584,18 +541,16 @@ export default function EMICalendarModal({
             </div>
           </div>
 
-          {/* Legend - Dynamic based on selection */}
+          {/* Legend */}
           <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
             <h4 className="text-sm font-medium text-gray-900 mb-2">Legend</h4>
             <div className="flex flex-wrap gap-3">
               {selectedLoan === 'all' ? (
-                // Legend for All Loans view
                 <div className="flex items-center">
                   <div className="w-4 h-4 bg-purple-100 border border-purple-300 rounded mr-2"></div>
-                  <span className="text-sm text-gray-700">Amount Due (Total from all loans)</span>
+                  <span className="text-sm text-gray-700">Total EMI Amount Due (Sum of all loans)</span>
                 </div>
               ) : (
-                // Legend for Single Loan view
                 <>
                   <div className="flex items-center">
                     <div className="w-4 h-4 bg-green-100 border border-green-300 rounded mr-2"></div>
@@ -635,8 +590,8 @@ export default function EMICalendarModal({
           <div className="flex justify-between items-center">
             <div className="text-sm text-gray-600">
               {selectedLoan === 'all' 
-                ? `Showing total amount dues for all loans in ${monthNames[selectedMonth]} ${selectedYear}`
-                : `Showing EMI history for ${selectedLoan} in ${monthNames[selectedMonth]} ${selectedYear}`}
+                ? `Showing total EMI amounts due per day for all loans in ${monthNames[selectedMonth]} ${selectedYear}`
+                : `Showing EMI schedule for ${selectedLoan} in ${monthNames[selectedMonth]} ${selectedYear}`}
             </div>
             <button
               onClick={onClose}

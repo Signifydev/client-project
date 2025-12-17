@@ -327,51 +327,56 @@ const EMISection: React.FC<EMISectionProps> = React.memo(({
 
   // Fetch loans for customers - ENHANCED with error handling
   const fetchCustomerLoansData = useCallback(async (customerId: string) => {
-    if (customerLoans[customerId]?.loans?.length > 0) {
-      return; // Already loaded
-    }
+  if (customerLoans[customerId]?.loans?.length > 0) {
+    return; // Already loaded
+  }
 
-    // Set loading state
+  // Set loading state
+  setCustomerLoans(prev => ({
+    ...prev,
+    [customerId]: { loans: [], loading: true }
+  }));
+
+  try {
+    console.log(`🔍 Fetching loans for customer: ${customerId}`);
+    const loans = await fetchCustomerLoans(customerId);
+    
+    // Validate and sanitize loan data
+    const validatedLoans = (loans || []).map(loan => {
+      const validatedLoan: Loan = {
+        ...loan,
+        // Ensure all required fields have safe defaults
+        amount: loan.amount || loan.loanAmount || 0,
+        emiAmount: loan.emiAmount || 0,
+        loanNumber: loan.loanNumber || 'N/A',
+        loanType: loan.loanType || 'Monthly',
+        status: loan.status || 'active',
+        totalPaidAmount: loan.totalPaidAmount || 0,
+        remainingAmount: loan.remainingAmount || (loan.amount || loan.loanAmount || 0),
+        emiPaidCount: loan.emiPaidCount || 0,
+        totalEmiCount: loan.totalEmiCount || loan.loanDays || 0,
+        // Handle optional fields
+        lastEmiDate: loan.lastEmiDate || loan.lastPaymentDate || undefined,
+        nextEmiDate: loan.nextEmiDate || new Date().toISOString().split('T')[0]
+      };
+      
+      return validatedLoan;
+    });
+    
+    console.log(`✅ Loaded ${validatedLoans.length} loans for customer ${customerId}`);
+    
     setCustomerLoans(prev => ({
       ...prev,
-      [customerId]: { loans: [], loading: true }
+      [customerId]: { loans: validatedLoans, loading: false }
     }));
-
-    try {
-      console.log(`🔍 Fetching loans for customer: ${customerId}`);
-      const loans = await fetchCustomerLoans(customerId);
-      
-      // Validate and sanitize loan data
-      const validatedLoans = (loans || []).map(loan => ({
-  ...loan,
-  // Ensure all required fields have safe defaults
-  amount: loan.amount || loan.loanAmount || 0,
-  emiAmount: loan.emiAmount || 0,
-  loanNumber: loan.loanNumber || 'N/A',
-  loanType: loan.loanType || 'Monthly',
-  status: loan.status || 'active',
-  totalPaidAmount: loan.totalPaidAmount || 0,
-  remainingAmount: loan.remainingAmount || (loan.amount || loan.loanAmount || 0),
-  emiPaidCount: loan.emiPaidCount || 0,
-  totalEmiCount: loan.totalEmiCount || loan.loanDays || 0,
-  // Handle lastEmiDate and lastPaymentDate
-  lastEmiDate: loan.lastEmiDate || loan.lastPaymentDate || null
-}));
-      
-      console.log(`✅ Loaded ${validatedLoans.length} loans for customer ${customerId}`);
-      
-      setCustomerLoans(prev => ({
-        ...prev,
-        [customerId]: { loans: validatedLoans, loading: false }
-      }));
-    } catch (error) {
-      console.error('Error fetching customer loans:', error);
-      setCustomerLoans(prev => ({
-        ...prev,
-        [customerId]: { loans: [], loading: false }
-      }));
-    }
-  }, [customerLoans]);
+  } catch (error) {
+    console.error('Error fetching customer loans:', error);
+    setCustomerLoans(prev => ({
+      ...prev,
+      [customerId]: { loans: [], loading: false }
+    }));
+  }
+}, [customerLoans]);
 
   // Handle customer expansion
   const handleToggleCustomer = useCallback((customerId: string) => {

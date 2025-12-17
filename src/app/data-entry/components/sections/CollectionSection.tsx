@@ -76,7 +76,7 @@ export default function CollectionSection({
     setError(null);
     
     try {
-      // Use the correct API endpoint - IMPORTANT: This should match your API route
+      // Use the correct API endpoint
       let url = `/api/data-entry/collection?date=${selectedDate}`;
       
       if (currentUserOffice && currentUserOffice !== 'all') {
@@ -86,8 +86,7 @@ export default function CollectionSection({
       console.log('📊 Fetching collection data:', { 
         url, 
         selectedDate, 
-        currentUserOffice,
-        fullUrl: url 
+        currentUserOffice
       });
       
       const response = await fetch(url);
@@ -106,85 +105,50 @@ export default function CollectionSection({
         // Check if data has payments array
         if (result.data.payments && Array.isArray(result.data.payments)) {
           paymentsData = result.data.payments;
+          console.log(`✅ Using payments array with ${paymentsData.length} records`);
         } 
-        // Check if data has customers array (old format)
+        // Check if data has customers array
         else if (result.data.customers && Array.isArray(result.data.customers)) {
+          // Flatten customer loans into payments array
           paymentsData = result.data.customers.flatMap((customer: any) => {
-            if (customer.loans && Array.isArray(customer.loans)) {
-              return customer.loans.map((loan: any) => ({
-                _id: `${customer.customerId}_${loan.loanNumber}`,
+            if (customer.payments && Array.isArray(customer.payments)) {
+              return customer.payments.map((payment: any) => ({
+                _id: payment._id || `${customer.customerId}_${Date.now()}`,
                 customerId: customer.customerId,
                 customerNumber: customer.customerNumber,
                 customerName: customer.customerName,
-                loanId: loan.loanId || 'N/A',
-                loanNumber: loan.loanNumber,
-                emiAmount: loan.emiAmount || 0,
-                paidAmount: loan.collectedAmount || loan.emiAmount || 0,
-                paymentDate: selectedDate,
-                paymentMethod: 'Cash',
-                officeCategory: customer.officeCategory,
-                operatorName: currentOperator.name,
-                status: 'Paid'
+                loanId: payment.loanId || 'N/A',
+                loanNumber: payment.loanNumber || 'N/A',
+                emiAmount: payment.emiAmount || 0,
+                paidAmount: payment.paidAmount || 0,
+                paymentDate: payment.paymentDate || selectedDate,
+                paymentMethod: payment.paymentMethod || 'Cash',
+                officeCategory: customer.officeCategory || currentUserOffice,
+                operatorName: payment.operatorName || currentOperator.name,
+                status: payment.status || 'Paid'
               }));
             }
             return [];
           });
+          console.log(`✅ Flattened ${result.data.customers.length} customers into ${paymentsData.length} payments`);
         }
         
-        console.log(`💰 Processed ${paymentsData.length} payment records`);
+        console.log(`💰 Total payment records: ${paymentsData.length}`);
         
         setPayments(paymentsData);
         
-        // FIX: Handle both types of API responses
-        const apiStats = result.data.statistics || result.data.summary;
+        // Calculate statistics
+        const todaysCollection = paymentsData.reduce((sum, payment) => 
+          sum + (payment.paidAmount || 0), 0
+        );
         
-        if (apiStats) {
-          // Handle new format (statistics object)
-          if ('todaysCollection' in apiStats) {
-            const stats = apiStats as { todaysCollection: number; numberOfCustomersPaid: number; totalCollections: number };
-            setStats({
-              todaysCollection: stats.todaysCollection || 0,
-              numberOfCustomersPaid: stats.numberOfCustomersPaid || 0,
-              totalCollections: stats.totalCollections || paymentsData.length
-            });
-          } 
-          // Handle old format (summary object)
-          else if ('totalCollection' in apiStats) {
-            const summary = apiStats as { totalCollection: number; numberOfCustomersPaid?: number; totalTransactions?: number };
-            setStats({
-              todaysCollection: summary.totalCollection || 0,
-              numberOfCustomersPaid: summary.numberOfCustomersPaid || 
-                (result.data.customers ? result.data.customers.length : 0) || 0,
-              totalCollections: summary.totalTransactions || paymentsData.length
-            });
-          } else {
-            // Calculate manually if structure is unknown
-            const todaysCollection = paymentsData.reduce((sum, payment) => 
-              sum + (payment.paidAmount || 0), 0
-            );
-            
-            const uniqueCustomerIds = [...new Set(paymentsData.map(p => p.customerId))];
-            
-            setStats({
-              todaysCollection,
-              numberOfCustomersPaid: uniqueCustomerIds.length,
-              totalCollections: paymentsData.length
-            });
-          }
-        } else {
-          // Calculate manually if no stats from API
-          const todaysCollection = paymentsData.reduce((sum, payment) => 
-            sum + (payment.paidAmount || 0), 0
-          );
-          
-          const uniqueCustomerIds = [...new Set(paymentsData.map(p => p.customerId))];
-          
-          setStats({
-            todaysCollection,
-            numberOfCustomersPaid: uniqueCustomerIds.length,
-            totalCollections: paymentsData.length
-          });
-        }
+        const uniqueCustomerIds = [...new Set(paymentsData.map(p => p.customerId))];
+        
+        setStats({
+          todaysCollection: todaysCollection,
+          numberOfCustomersPaid: uniqueCustomerIds.length,
+          totalCollections: paymentsData.length
+        });
         
       } else {
         const errorMsg = result.error || 'Failed to fetch collection data';
@@ -267,22 +231,21 @@ export default function CollectionSection({
 
   return (
     <div className="px-4 py-6 sm:px-0">
-      {/* Debug button - remove in production */}
-      <div className="mb-4 flex justify-end">
-        <button
-          onClick={() => console.log('Debug info:', { payments, stats, groupedPayments })}
-          className="px-3 py-1 text-xs bg-gray-800 text-white rounded hover:bg-gray-700"
-        >
-          Debug Info
-        </button>
-      </div>
-
       {/* Header */}
       <div className="mb-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Collection Management</h1>
+            <p className="text-gray-600">Track and manage EMI collections</p>
+          </div>
           
-          
-          
+          <button
+            onClick={() => fetchPaymentData()}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+          >
+            <span>🔄</span>
+            Refresh Data
+          </button>
         </div>
 
         {/* Date Selection */}
@@ -486,7 +449,7 @@ export default function CollectionSection({
                                 ? 'bg-gradient-to-r from-blue-100 to-blue-50 text-blue-800 border border-blue-200'
                                 : 'bg-gradient-to-r from-purple-100 to-purple-50 text-purple-800 border border-purple-200'
                             }`}>
-                              {firstPayment.officeCategory || 'Not Assigned'}
+                              {firstPayment.officeCategory || currentUserOffice}
                             </span>
                             <div className="text-xs text-gray-600">
                               <span className="font-medium">Operator:</span> {firstPayment.operatorName || currentOperator.name}
@@ -503,8 +466,6 @@ export default function CollectionSection({
                             <button
                               onClick={() => {
                                 console.log('View customer details:', customerId, firstPayment.customerName);
-                                // This would ideally open the customer details modal
-                                // You'll need to pass this function from parent
                                 alert(`View customer: ${firstPayment.customerName}`);
                               }}
                               className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-medium rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200 shadow-sm hover:shadow-md transform hover:-translate-y-0.5 flex items-center justify-center gap-2"

@@ -1,5 +1,62 @@
 import { Customer, CustomerDetails, Loan, EMIHistory } from '@/src/app/data-entry/types/dataEntry';
-import { calculateNextEmiDateProperly, calculateLastEmiDate } from './dateCalculations';
+
+// NEW: Calculate next scheduled EMI date based on last scheduled EMI date
+export const calculateNextScheduledEmiDate = (
+  lastScheduledEmiDate: string,
+  loanType: string,
+  emiStartDate: string
+): string => {
+  if (!lastScheduledEmiDate) return emiStartDate;
+  
+  const date = new Date(lastScheduledEmiDate);
+  date.setHours(0, 0, 0, 0);
+  
+  switch(loanType) {
+    case 'Daily':
+      date.setDate(date.getDate() + 1);
+      break;
+    case 'Weekly':
+      date.setDate(date.getDate() + 7);
+      break;
+    case 'Monthly':
+      date.setMonth(date.getMonth() + 1);
+      break;
+    default:
+      date.setDate(date.getDate() + 1);
+  }
+  
+  return date.toISOString().split('T')[0];
+};
+
+// NEW: Calculate last scheduled EMI date based on EMI start and count paid
+export const calculateLastScheduledEmiDate = (
+  emiStartDate: string,
+  loanType: string,
+  emiPaidCount: number
+): string => {
+  if (!emiStartDate || emiPaidCount <= 0) return emiStartDate;
+  
+  const startDate = new Date(emiStartDate);
+  startDate.setHours(0, 0, 0, 0);
+  
+  let lastScheduledDate = new Date(startDate);
+  
+  switch(loanType) {
+    case 'Daily':
+      lastScheduledDate.setDate(startDate.getDate() + (emiPaidCount - 1));
+      break;
+    case 'Weekly':
+      lastScheduledDate.setDate(startDate.getDate() + ((emiPaidCount - 1) * 7));
+      break;
+    case 'Monthly':
+      lastScheduledDate.setMonth(startDate.getMonth() + (emiPaidCount - 1));
+      break;
+    default:
+      lastScheduledDate.setDate(startDate.getDate() + (emiPaidCount - 1));
+  }
+  
+  return lastScheduledDate.toISOString().split('T')[0];
+};
 
 export const calculateEMICompletion = (loan: Loan): {
   completionPercentage: number;
@@ -52,10 +109,9 @@ export const calculatePaymentBehavior = (loan: Loan): {
   const onTimePayments = loan.emiHistory?.filter(payment => {
     if (!payment.paymentDate) return false;
     
+    // Calculate the scheduled due date for this payment
     const paymentDate = new Date(payment.paymentDate);
-    // Convert loan.lastEmiDate string to Date object
-    const lastEmiDate = new Date(loan.lastEmiDate);
-    const dueDate = new Date(calculateNextEmiDateProperly(lastEmiDate, loan.loanType));
+    const dueDate = calculateDueDateForPayment(loan, payment);
     return paymentDate <= dueDate;
   }).length || 0;
   
@@ -76,6 +132,38 @@ export const calculatePaymentBehavior = (loan: Loan): {
   };
 };
 
+// NEW: Calculate due date for a specific payment based on EMI schedule
+const calculateDueDateForPayment = (loan: Loan, payment: EMIHistory): Date => {
+  if (!loan.emiStartDate) return new Date(payment.paymentDate);
+  
+  const startDate = new Date(loan.emiStartDate);
+  startDate.setHours(0, 0, 0, 0);
+  
+  // Find which EMI number this payment is for
+  const paymentDate = new Date(payment.paymentDate);
+  const paymentDay = Math.floor((paymentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+  
+  let dueDate = new Date(startDate);
+  
+  switch(loan.loanType) {
+    case 'Daily':
+      dueDate.setDate(startDate.getDate() + Math.floor(paymentDay));
+      break;
+    case 'Weekly':
+      const weekNumber = Math.floor(paymentDay / 7);
+      dueDate.setDate(startDate.getDate() + (weekNumber * 7));
+      break;
+    case 'Monthly':
+      const monthNumber = Math.floor(paymentDay / 30);
+      dueDate.setMonth(startDate.getMonth() + monthNumber);
+      break;
+    default:
+      dueDate.setDate(startDate.getDate() + Math.floor(paymentDay));
+  }
+  
+  return dueDate;
+};
+
 export const calculateTotalLoanAmount = (loan: Loan): number => {
   return loan.emiAmount * loan.totalEmiCount;
 };
@@ -83,14 +171,11 @@ export const calculateTotalLoanAmount = (loan: Loan): number => {
 export const getAllCustomerLoans = (customer: Customer, customerDetails: CustomerDetails | null): Loan[] => {
   const loans: Loan[] = [];
 
-  // Use loans from customerDetails if available
   if (customerDetails?.loans && Array.isArray(customerDetails.loans)) {
     customerDetails.loans.forEach((loan: any, index: number) => {
-      // Only include loans that have valid database IDs
       if (loan._id && loan._id.length === 24 && /^[0-9a-fA-F]{24}$/.test(loan._id.replace(/_default$/, ''))) {
         const cleanLoanId = loan._id.replace(/_default$/, '');
         
-        // Check if EMIs have been paid using ALL indicators
         const hasPaidEMIs = (loan.emiPaidCount > 0) || 
                            (loan.totalPaidAmount > 0) ||
                            (loan.emiHistory && loan.emiHistory.length > 0);
@@ -98,22 +183,23 @@ export const getAllCustomerLoans = (customer: Customer, customerDetails: Custome
         let nextEmiDate;
         
         if (hasPaidEMIs) {
-          // EMIs HAVE been paid - calculate from lastEmiDate + 1 period
-          const actualLastEmiDate = calculateLastEmiDate(loan);
-          if (actualLastEmiDate) {
-            const lastPaymentDate = new Date(actualLastEmiDate);
-            nextEmiDate = calculateNextEmiDateProperly(lastPaymentDate, loan.loanType);
-          } else {
-            // Fallback: Use emiStartDate and add one period
-            const startDate = new Date(loan.emiStartDate || loan.dateApplied);
-            nextEmiDate = calculateNextEmiDateProperly(startDate, loan.loanType);
-          }
+          // CRITICAL FIX: Calculate next EMI date based on schedule, not payment date
+          const lastScheduledEmiDate = calculateLastScheduledEmiDate(
+            loan.emiStartDate || loan.dateApplied,
+            loan.loanType,
+            loan.emiPaidCount || 0
+          );
+          
+          nextEmiDate = calculateNextScheduledEmiDate(
+            lastScheduledEmiDate,
+            loan.loanType,
+            loan.emiStartDate || loan.dateApplied
+          );
         } else {
           // NO EMIs paid - use EMI start date as next EMI date
           nextEmiDate = loan.emiStartDate || loan.dateApplied;
         }
         
-        // Determine loan status - mark renewed loans as inactive
         let loanStatus = loan.status || 'active';
         if (loan.isRenewed || loan.status === 'renewed') {
           loanStatus = 'renewed';
@@ -125,14 +211,18 @@ export const getAllCustomerLoans = (customer: Customer, customerDetails: Custome
           loanNumber: loan.loanNumber || `L${index + 1}`,
           totalEmiCount: loan.totalEmiCount || loan.loanDays || 30,
           emiPaidCount: loan.emiPaidCount || 0,
-          lastEmiDate: loan.lastEmiDate || loan.dateApplied,
+          // IMPORTANT: Store last scheduled EMI date, not last payment date
+          lastEmiDate: calculateLastScheduledEmiDate(
+            loan.emiStartDate || loan.dateApplied,
+            loan.loanType,
+            loan.emiPaidCount || 0
+          ) || loan.dateApplied,
           nextEmiDate: nextEmiDate,
           totalPaidAmount: loan.totalPaidAmount || 0,
           remainingAmount: loan.remainingAmount || loan.amount,
           emiHistory: loan.emiHistory || [],
           status: loanStatus,
           emiStartDate: loan.emiStartDate || loan.dateApplied,
-          // Add renewal tracking properties
           isRenewed: loan.isRenewed || false,
           renewedLoanNumber: loan.renewedLoanNumber || '',
           renewedDate: loan.renewedDate || '',
@@ -144,7 +234,6 @@ export const getAllCustomerLoans = (customer: Customer, customerDetails: Custome
     });
   }
   
-  // Fallback loan creation - if no loans found in customerDetails, create from customer data
   if (loans.length === 0 && (customer.loanAmount || customer.emiAmount) && !customerDetails) {
     const cleanCustomerId = customer._id?.replace?.(/_default$/, '') || customer._id;
     
@@ -177,7 +266,6 @@ export const getAllCustomerLoans = (customer: Customer, customerDetails: Custome
     loans.push(fallbackLoan);
   }
   
-  // Sort loans by loan number (L1, L2, L3, etc.) in ascending order
   const sortedLoans = loans.sort((a, b) => {
     const extractLoanNumber = (loanNumber: string): number => {
       if (!loanNumber) return 0;
@@ -202,14 +290,11 @@ export const getActiveLoans = (loans: Loan[]): Loan[] => {
   });
 };
 
-// Business rule validation for loan types
 export const validateLoanBusinessRules = (loanType: string, emiType: string, customEmiAmount?: string): { isValid: boolean; error?: string } => {
-  // Daily loans only support fixed EMI
   if (loanType === 'Daily' && emiType !== 'fixed') {
     return { isValid: false, error: 'Daily loans only support fixed EMI type' };
   }
   
-  // Custom EMI requires customEmiAmount for Weekly/Monthly loans
   if (emiType === 'custom' && loanType !== 'Daily' && (!customEmiAmount || parseFloat(customEmiAmount) <= 0)) {
     return { isValid: false, error: 'Custom EMI amount is required for custom EMI type with Weekly/Monthly loans' };
   }

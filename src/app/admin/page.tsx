@@ -57,6 +57,7 @@ export default function AdminPage() {
     category: ''
   });
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [showNotifications, setShowNotifications] = useState(false);
 
   // Custom hooks for data fetching
   const { 
@@ -127,6 +128,11 @@ export default function AdminPage() {
   const handleLogout = useCallback(() => {
     router.push('/auth');
   }, [router]);
+
+  const handleNotificationToggle = useCallback(() => {
+    console.log('🔔 Toggling notifications');
+    setShowNotifications(prev => !prev);
+  }, []);
 
   const handleFilterChange = useCallback((key: keyof Filters, value: string) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -298,13 +304,163 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <style jsx>{`
+        @keyframes fade-in {
+          from { opacity: 0; transform: translateY(-10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+          animation: fade-in 0.3s ease-out forwards;
+        }
+      `}</style>
+      
       <Header onLogout={handleLogout} />
-      <Navigation 
-        activeTab={activeTab} 
-        pendingRequestsCount={pendingRequests.length}
-        onTabChange={setActiveTab}
-      />
+      
+      {/* Navigation with matching Data Entry styling */}
+      <div className="bg-white shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <nav className="flex space-x-8 overflow-x-auto">
+            {[
+              { id: 'dashboard', label: 'Dashboard' },
+              { id: 'customers', label: 'Customers' },
+              { id: 'collection', label: 'Collection' },
+              { id: 'requests', label: 'Requests' },
+              { id: 'reports', label: 'Reports' },
+              { id: 'team', label: 'Team' }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`py-5 px-2 border-b-2 font-semibold text-base transition-colors duration-200 whitespace-nowrap ${
+                  activeTab === tab.id
+                    ? 'border-blue-500 text-blue-700'
+                    : 'border-transparent text-gray-600 hover:text-gray-800 hover:border-gray-400'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </div>
+
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        {/* Add Notification Bell to main content header */}
+        <div className="mb-6 flex justify-between items-center px-4 sm:px-0">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-800 capitalize">
+              {activeTab === 'dashboard' ? 'Admin Dashboard' : 
+               activeTab === 'customers' ? 'Customers Management' :
+               activeTab === 'requests' ? 'Pending Requests' :
+               activeTab === 'reports' ? 'Enhanced Reports' :
+               activeTab === 'team' ? 'Team Management' :
+               activeTab === 'collection' ? 'Collection View' :
+               'Admin Panel'}
+            </h2>
+            <p className="text-sm text-gray-600">
+              {activeTab === 'dashboard' ? 'Overview of system operations and statistics' :
+               activeTab === 'customers' ? 'Manage all customer records and information' :
+               activeTab === 'requests' ? 'Review and approve pending requests' :
+               activeTab === 'reports' ? 'Generate and view detailed reports' :
+               activeTab === 'team' ? 'Manage team members and permissions' :
+               activeTab === 'collection' ? 'Monitor collections and payments' :
+               'Administrative controls and settings'}
+            </p>
+          </div>
+          
+          {/* Notification Bell */}
+          <div className="relative notification-container">
+            <button
+              onClick={handleNotificationToggle}
+              className="relative p-2 text-gray-400 hover:text-gray-500 transition-colors duration-200"
+            >
+              <span className="text-2xl">🔔</span>
+              {pendingRequests.length > 0 && (
+                <span className="absolute top-0 right-0 block h-3 w-3 rounded-full bg-red-500 animate-pulse"></span>
+              )}
+            </button>
+            
+            {showNotifications && (
+              <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50 animate-fade-in">
+                <div className="p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-medium text-gray-900">Notifications</h3>
+                    <button className="text-sm text-blue-600 hover:text-blue-800 transition-colors duration-200">
+                      Mark all as read
+                    </button>
+                  </div>
+                  
+                  {pendingRequests.length > 0 ? (
+                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                      {pendingRequests.slice(0, 5).map((request: any) => (
+                        <div key={request._id} className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">
+                                {request.type === 'delete_loan' ? 'Loan Deletion Request' :
+                                 request.type === 'edit_loan' ? 'Loan Edit Request' :
+                                 request.type}
+                              </p>
+                              <p className="text-xs text-gray-600 mt-1">
+                                Customer: {request.customerName}
+                              </p>
+                              <p className="text-xs text-gray-500 mt-1">
+                                Requested by: {request.requestedBy}
+                              </p>
+                            </div>
+                            <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
+                              Pending
+                            </span>
+                          </div>
+                          <div className="mt-2 flex space-x-2">
+                            <button
+                              onClick={() => {
+                                handleApproveRequest(request);
+                                setShowNotifications(false);
+                              }}
+                              className="text-xs bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              onClick={() => {
+                                handleRejectRequest(request);
+                                setShowNotifications(false);
+                              }}
+                              className="text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600"
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {pendingRequests.length > 5 && (
+                        <div className="text-center pt-2 border-t border-gray-200">
+                          <button
+                            onClick={() => {
+                              setActiveTab('requests');
+                              setShowNotifications(false);
+                            }}
+                            className="text-sm text-blue-600 hover:text-blue-800"
+                          >
+                            View all {pendingRequests.length} requests →
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <div className="text-gray-400 text-4xl mb-4">📭</div>
+                      <p className="text-gray-600">No new notifications</p>
+                      <p className="text-sm text-gray-500 mt-1">You're all caught up!</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
         {renderMainContent()}
       </main>
     </div>

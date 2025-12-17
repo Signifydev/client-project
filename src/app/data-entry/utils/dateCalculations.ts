@@ -1,4 +1,4 @@
-import { Loan, EMIHistory, CalendarDay } from '@/src/app/data-entry/types/dataEntry';
+// utils/dateCalculations.ts
 
 // Date formatting utilities
 export const formatDateToDDMMYYYY = (dateString: string): string => {
@@ -25,7 +25,72 @@ export const formatDateForInput = (dateString: string): string => {
   return `${year}-${month}-${day}`;
 };
 
-// EMI Date calculations
+// Calculate next scheduled EMI date (based on schedule, not payment date)
+export const calculateNextScheduledEmiDate = (
+  lastScheduledEmiDate: string,
+  loanType: string,
+  emiStartDate: string
+): string => {
+  if (!lastScheduledEmiDate) return emiStartDate;
+  
+  const date = new Date(lastScheduledEmiDate);
+  date.setHours(0, 0, 0, 0);
+  
+  switch(loanType) {
+    case 'Daily':
+      // For Daily loans, next scheduled EMI is always next calendar day
+      date.setDate(date.getDate() + 1);
+      break;
+    case 'Weekly':
+      // For Weekly loans, next scheduled EMI is exactly 7 days after last scheduled EMI
+      // NOT 7 days after payment date
+      date.setDate(date.getDate() + 7);
+      break;
+    case 'Monthly':
+      // For Monthly loans, same day next month
+      date.setMonth(date.getMonth() + 1);
+      break;
+    default:
+      date.setDate(date.getDate() + 1);
+  }
+  
+  return date.toISOString().split('T')[0];
+};
+
+// Calculate last scheduled EMI date (based on schedule)
+export const calculateLastScheduledEmiDate = (
+  emiStartDate: string,
+  loanType: string,
+  emiPaidCount: number
+): string => {
+  if (!emiStartDate || emiPaidCount <= 0) return emiStartDate;
+  
+  const startDate = new Date(emiStartDate);
+  startDate.setHours(0, 0, 0, 0);
+  
+  let lastScheduledDate = new Date(startDate);
+  
+  switch(loanType) {
+    case 'Daily':
+      // For Daily loans, last scheduled EMI is startDate + (emiPaidCount - 1) days
+      lastScheduledDate.setDate(startDate.getDate() + (emiPaidCount - 1));
+      break;
+    case 'Weekly':
+      // For Weekly loans, last scheduled EMI is startDate + ((emiPaidCount - 1) * 7) days
+      lastScheduledDate.setDate(startDate.getDate() + ((emiPaidCount - 1) * 7));
+      break;
+    case 'Monthly':
+      // For Monthly loans, last scheduled EMI is startDate + (emiPaidCount - 1) months
+      lastScheduledDate.setMonth(startDate.getMonth() + (emiPaidCount - 1));
+      break;
+    default:
+      lastScheduledDate.setDate(startDate.getDate() + (emiPaidCount - 1));
+  }
+  
+  return lastScheduledDate.toISOString().split('T')[0];
+};
+
+// OLD FUNCTION (Keep for backward compatibility - but use the new ones)
 export const calculateNextEmiDate = (currentDate: string, loanType: string): string => {
   const date = new Date(currentDate);
   date.setHours(0, 0, 0, 0);
@@ -65,18 +130,6 @@ export const calculateNextEmiDateProperly = (lastDate: Date, loanType: string): 
   }
   
   return nextDate.toISOString().split('T')[0];
-};
-
-export const calculateLastEmiDate = (loan: any): string => {
-  if (!loan.emiHistory || loan.emiHistory.length === 0) {
-    return loan.emiStartDate || loan.dateApplied;
-  }
-  
-  const sortedPayments = [...loan.emiHistory].sort((a, b) => 
-    new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime()
-  );
-  
-  return sortedPayments[0].paymentDate;
 };
 
 // EMI Count and Amount calculations
@@ -132,200 +185,201 @@ export const isSameDateIST = (date1: Date, date2: Date): boolean => {
 
 export const getTodayIST = (): Date => {
   const now = new Date();
-  return new Date(now.getTime() + (5 * 60 + 30) * 60 * 1000);
+  return new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
 };
 
-// Calendar generation with IST fixes
-export const generateCalendar = (
-  month: Date, 
-  loans: Loan[], 
-  paymentHistory: EMIHistory[], 
-  loanFilter: string = 'all'
-): CalendarDay[] => {
-  const days: CalendarDay[] = [];
-  const year = month.getFullYear();
-  const monthIndex = month.getMonth();
+export const convertToIST = (date: Date): Date => {
+  return new Date(date.getTime() + (5.5 * 60 * 60 * 1000));
+};
+
+export const getISTDateString = (date: Date): string => {
+  const istDate = convertToIST(date);
+  return istDate.toISOString().split('T')[0];
+};
+
+// Calculate days between two dates (IST)
+export const daysBetweenIST = (date1: Date, date2: Date): number => {
+  const istDate1 = convertToIST(date1);
+  const istDate2 = convertToIST(date2);
   
-  const monthIST = new Date(month.getTime() + (5 * 60 + 30) * 60 * 1000);
-  const firstDay = new Date(year, monthIndex, 1);
-  const lastDay = new Date(year, monthIndex + 1, 0);
+  // Set both to start of day
+  istDate1.setHours(0, 0, 0, 0);
+  istDate2.setHours(0, 0, 0, 0);
   
-  const activeLoans = loans.filter(loan => !loan.isRenewed && loan.status === 'active');
-  const filteredLoans = loanFilter === 'all' 
-    ? activeLoans 
-    : activeLoans.filter(loan => loan._id === loanFilter || loan.loanNumber === loanFilter);
+  const diffTime = Math.abs(istDate2.getTime() - istDate1.getTime());
+  return Math.floor(diffTime / (1000 * 60 * 60 * 24));
+};
 
-  const processedPaymentIds = new Set();
-  const startingDayOfWeek = firstDay.getDay();
+// Check if date is weekend
+export const isWeekend = (date: Date): boolean => {
+  const day = date.getDay();
+  return day === 0 || day === 6;
+};
+
+// Generate EMI schedule for a loan
+export const generateEmiSchedule = (
+  emiStartDate: string,
+  loanType: string,
+  totalEmiCount: number,
+  year: number,
+  month: number
+): Date[] => {
+  const schedule: Date[] = [];
+  if (!emiStartDate || !loanType || !totalEmiCount) return schedule;
   
-  // Generate previous month days
-  for (let i = startingDayOfWeek - 1; i >= 0; i--) {
-    const date = new Date(year, monthIndex, -i);
-    days.push({
-      date,
-      isCurrentMonth: false,
-      isToday: false,
-      emiStatus: 'none'
-    });
-  }
+  const startDate = new Date(emiStartDate);
+  startDate.setHours(0, 0, 0, 0);
   
-  // Generate current month days with IST TIMEZONE HANDLING
-  for (let day = 1; day <= lastDay.getDate(); day++) {
-    const date = new Date(year, monthIndex, day);
-    const dateIST = new Date(date.getTime() + (5 * 60 + 30) * 60 * 1000);
-    const todayIST = getTodayIST();
-    
-    const isToday = isSameDateIST(date, todayIST);
-    const dateStr = dateIST.toISOString().split('T')[0];
-    
-    let emiStatus: CalendarDay['emiStatus'] = 'none';
-    let emiAmount = 0;
-    const loanNumbers: string[] = [];
-    const datePayments: EMIHistory[] = [];
-
-    // Check each filtered loan for this date
-    filteredLoans.forEach(loan => {
-      const loanEmiAmount = loan.emiAmount || 0;
-      
-      // Check if there's a payment for this loan on this date
-      const loanPayments = paymentHistory.filter(payment => {
-        const paymentDate = new Date(payment.paymentDate);
-        const paymentDateIST = new Date(paymentDate.getTime() + (5 * 60 + 30) * 60 * 1000);
-        
-        const datesMatch = isSameDateIST(paymentDateIST, dateIST);
-        
-        if (!datesMatch) return false;
-        
-        const paymentBelongsToLoan = payment.loanId === loan._id || payment.loanNumber === loan.loanNumber;
-        
-        // For advance payments, also check if this date is within the advance period
-        if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.advanceToDate) {
-          const advanceFrom = new Date(payment.advanceFromDate);
-          const advanceTo = new Date(payment.advanceToDate);
-          const advanceFromIST = new Date(advanceFrom.getTime() + (5 * 60 + 30) * 60 * 1000);
-          const advanceToIST = new Date(advanceTo.getTime() + (5 * 60 + 30) * 60 * 1000);
-          
-          return paymentBelongsToLoan && dateIST >= advanceFromIST && dateIST <= advanceToIST;
-        }
-        
-        return paymentBelongsToLoan;
-      });
-
-      // Filter out duplicate payments
-      const uniqueLoanPayments = loanPayments.filter(payment => {
-        if (!payment._id) return true;
-        if (processedPaymentIds.has(payment._id)) return false;
-        processedPaymentIds.add(payment._id);
-        return true;
-      });
-
-      // If there are payments for this loan on this date, mark as paid
-      if (uniqueLoanPayments.length > 0) {
-        emiStatus = 'paid';
-        emiAmount += uniqueLoanPayments.reduce((sum: number, payment: EMIHistory) => sum + payment.amount, 0);
-        
-        if (!loanNumbers.includes(loan.loanNumber)) {
-          loanNumbers.push(loan.loanNumber);
-        }
-        
-        datePayments.push(...uniqueLoanPayments);
-      } 
-      // If no payments, check if this date should have an EMI
-      else {
-        const loanStartDate = new Date(loan.emiStartDate || loan.dateApplied);
-        const loanStartDateIST = new Date(loanStartDate.getTime() + (5 * 60 + 30) * 60 * 1000);
-        
-        const loanEndDate = new Date(loanStartDate);
-        const totalPeriods = loan.totalEmiCount || loan.loanDays || 30;
-        
-        // Calculate end date based on loan type
-        switch(loan.loanType) {
-          case 'Daily':
-            loanEndDate.setDate(loanEndDate.getDate() + totalPeriods - 1);
-            break;
-          case 'Weekly':
-            loanEndDate.setDate(loanEndDate.getDate() + (totalPeriods * 7) - 1);
-            break;
-          case 'Monthly':
-            loanEndDate.setMonth(loanEndDate.getMonth() + totalPeriods - 1);
-            break;
-          default:
-            loanEndDate.setDate(loanEndDate.getDate() + totalPeriods - 1);
-        }
-
-        const loanEndDateIST = new Date(loanEndDate.getTime() + (5 * 60 + 30) * 60 * 1000);
-
-        // Check if current date is within loan period and is an EMI date
-        const isWithinLoanPeriod = dateIST >= loanStartDateIST && dateIST <= loanEndDateIST;
-        const isEmiDate = isWithinLoanPeriod && isDateInEMISchedule(dateIST, loanStartDateIST, loan.loanType);
-
-        if (isEmiDate) {
-          emiAmount += loanEmiAmount;
-          
-          if (!loanNumbers.includes(loan.loanNumber)) {
-            loanNumbers.push(loan.loanNumber);
-          }
-
-          // Only set status if not already paid
-          if (emiStatus !== 'paid') {
-            if (dateIST < todayIST) {
-              emiStatus = 'overdue';
-            } else if (isSameDateIST(dateIST, todayIST)) {
-              emiStatus = 'due';
-            } else {
-              emiStatus = 'upcoming';
-            }
-          }
-        }
+  const monthStart = new Date(year, month, 1);
+  const monthEnd = new Date(year, month + 1, 0);
+  
+  let currentDate = new Date(startDate);
+  
+  // Generate dates up to total EMI count
+  for (let i = 0; i < totalEmiCount; i++) {
+    if (i > 0) {
+      // Move to next EMI date based on loan type
+      switch(loanType) {
+        case 'Daily':
+          currentDate.setDate(currentDate.getDate() + 1);
+          break;
+        case 'Weekly':
+          currentDate.setDate(currentDate.getDate() + 7);
+          break;
+        case 'Monthly':
+          currentDate.setMonth(currentDate.getMonth() + 1);
+          break;
+        default:
+          currentDate.setDate(currentDate.getDate() + 1);
       }
-    });
-
-    days.push({
-      date,
-      isCurrentMonth: true,
-      isToday,
-      emiStatus,
-      emiAmount,
-      loanNumbers,
-      paymentHistory: datePayments
-    });
+    }
+    
+    // Check if within current month
+    if (currentDate >= monthStart && currentDate <= monthEnd) {
+      schedule.push(new Date(currentDate));
+    }
+    
+    // Stop if we've passed the month
+    if (currentDate > monthEnd) break;
   }
-
-  // Generate next month days
-  const endingDayOfWeek = lastDay.getDay();
-  for (let i = 1; i < 7 - endingDayOfWeek; i++) {
-    const date = new Date(year, monthIndex + 1, i);
-    days.push({
-      date,
-      isCurrentMonth: false,
-      isToday: false,
-      emiStatus: 'none'
-    });
-  }
-
-  return days;
+  
+  return schedule;
 };
 
-// Helper function to check if a date is in EMI schedule
-const isDateInEMISchedule = (date: Date, startDate: Date, loanType: string): boolean => {
-  const currentDate = new Date(date);
-  currentDate.setHours(0, 0, 0, 0);
+// Check if a specific date is an EMI date for a loan
+export const isEmiDate = (
+  date: Date,
+  emiStartDate: string,
+  loanType: string,
+  totalEmiCount: number
+): boolean => {
+  if (!emiStartDate || !loanType) return false;
   
-  const loanStart = new Date(startDate);
-  loanStart.setHours(0, 0, 0, 0);
-
-  if (currentDate < loanStart) return false;
-
+  const startDate = new Date(emiStartDate);
+  startDate.setHours(0, 0, 0, 0);
+  
+  const checkDate = new Date(date);
+  checkDate.setHours(0, 0, 0, 0);
+  
+  // Check if date is within loan period
+  const lastEmiDate = calculateLastScheduledEmiDate(emiStartDate, loanType, totalEmiCount);
+  const lastDate = new Date(lastEmiDate);
+  
+  if (checkDate < startDate || checkDate > lastDate) {
+    return false;
+  }
+  
+  // Check if date matches EMI schedule
   switch(loanType) {
     case 'Daily':
+      // For Daily loans, every day is an EMI date
       return true;
     case 'Weekly':
-      const diffTime = currentDate.getTime() - loanStart.getTime();
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      return diffDays % 7 === 0;
+      // For Weekly loans, check if it's exactly 7-day intervals from start
+      const daysFromStart = Math.floor((checkDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      return daysFromStart % 7 === 0;
     case 'Monthly':
-      return currentDate.getDate() === loanStart.getDate();
+      // For Monthly loans, check if same day of month
+      return checkDate.getDate() === startDate.getDate();
     default:
       return true;
   }
+};
+
+// Get next EMI date from today (for display purposes)
+export const getNextEmiDateFromToday = (
+  emiStartDate: string,
+  loanType: string,
+  emiPaidCount: number,
+  totalEmiCount: number
+): string => {
+  if (emiPaidCount >= totalEmiCount) {
+    return 'Loan Completed';
+  }
+  
+  const lastScheduledEmiDate = calculateLastScheduledEmiDate(
+    emiStartDate,
+    loanType,
+    emiPaidCount
+  );
+  
+  return calculateNextScheduledEmiDate(
+    lastScheduledEmiDate,
+    loanType,
+    emiStartDate
+  );
+};
+
+// Check if payment is overdue
+export const isPaymentOverdue = (
+  emiDate: string,
+  loanType: string
+): boolean => {
+  const emiDueDate = new Date(emiDate);
+  const todayIST = getTodayIST();
+  
+  return emiDueDate < todayIST;
+};
+
+// Calculate number of overdue EMIs
+export const calculateOverdueEmis = (
+  emiStartDate: string,
+  loanType: string,
+  emiPaidCount: number,
+  totalEmiCount: number
+): number => {
+  if (emiPaidCount >= totalEmiCount) return 0;
+  
+  const todayIST = getTodayIST();
+  const startDate = new Date(emiStartDate);
+  
+  let overdueCount = 0;
+  let currentDate = new Date(startDate);
+  
+  // Check each scheduled EMI date up to today
+  for (let i = 0; i < totalEmiCount; i++) {
+    if (i > 0) {
+      switch(loanType) {
+        case 'Daily':
+          currentDate.setDate(currentDate.getDate() + 1);
+          break;
+        case 'Weekly':
+          currentDate.setDate(currentDate.getDate() + 7);
+          break;
+        case 'Monthly':
+          currentDate.setMonth(currentDate.getMonth() + 1);
+          break;
+      }
+    }
+    
+    // Stop if we've passed today or checked all EMIs
+    if (currentDate > todayIST || i >= emiPaidCount) break;
+    
+    // Count as overdue if EMI is due and not paid yet (i >= emiPaidCount)
+    if (currentDate < todayIST && i >= emiPaidCount) {
+      overdueCount++;
+    }
+  }
+  
+  return overdueCount;
 };

@@ -137,7 +137,7 @@ export interface Loan {
   createdAt?: string;
   totalEmiCount: number;
   emiPaidCount: number;
-  lastEmiDate: string;
+  lastEmiDate?: string;
   nextEmiDate: string;
   totalPaidAmount: number;
   remainingAmount: number;

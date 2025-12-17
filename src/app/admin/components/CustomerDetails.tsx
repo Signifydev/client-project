@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Customer } from '../types';
 
 interface CustomerDetailsProps {
@@ -9,9 +9,105 @@ interface CustomerDetailsProps {
   onDelete: (customerId: string) => void;
 }
 
+interface EMIPayment {
+  _id: string;
+  paymentDate: string;
+  amount: number;
+  status: string;
+  collectedBy: string;
+  loanId?: string;
+  loanNumber?: string;
+  notes?: string;
+  paymentMethod?: string;
+  paymentType?: 'single' | 'advance';
+  advanceFromDate?: string;
+  advanceToDate?: string;
+  advanceEmiCount?: number;
+  advanceTotalAmount?: number;
+  isAdvancePayment?: boolean;
+}
+
+interface LoanPaymentSummary {
+  loanNumber: string;
+  loanId: string;
+  totalPaid: number;
+  paymentCount: number;
+  lastPaymentDate?: string;
+  emiAmount?: number;
+  loanAmount?: number;
+  loanType?: string;
+}
+
 export default function CustomerDetails({ customer, onBack, onDelete }: CustomerDetailsProps) {
   const [activeTab, setActiveTab] = useState('loan-details');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [selectedLoanFilter, setSelectedLoanFilter] = useState<string>('all');
+  const [emiPayments, setEmiPayments] = useState<EMIPayment[]>([]);
+  const [loadingPayments, setLoadingPayments] = useState(false);
+  const [loanPaymentSummaries, setLoanPaymentSummaries] = useState<LoanPaymentSummary[]>([]);
+
+  const fetchEmiPayments = useCallback(async () => {
+    if (!customer._id) return;
+    
+    setLoadingPayments(true);
+    try {
+      const response = await fetch(`/api/data-entry/emi-payments?customerId=${customer._id}&limit=500`);
+      const data = await response.json();
+      
+      if (data.success && data.data.payments) {
+        const payments = data.data.payments;
+        setEmiPayments(payments);
+        
+        // Calculate loan-wise payment summaries
+        const loanMap = new Map<string, LoanPaymentSummary>();
+        
+        payments.forEach((payment: EMIPayment) => {
+          const loanKey = payment.loanId || 'unknown';
+          const loanNumber = payment.loanNumber || 'Unknown Loan';
+          
+          if (!loanMap.has(loanKey)) {
+            loanMap.set(loanKey, {
+              loanNumber,
+              loanId: loanKey,
+              totalPaid: 0,
+              paymentCount: 0
+            });
+          }
+          
+          const summary = loanMap.get(loanKey)!;
+          summary.totalPaid += payment.amount;
+          summary.paymentCount++;
+          
+          if (!summary.lastPaymentDate || new Date(payment.paymentDate) > new Date(summary.lastPaymentDate)) {
+            summary.lastPaymentDate = payment.paymentDate;
+          }
+        });
+        
+        // Get loan details from customer data
+        const customerLoans = getCustomerLoans();
+        customerLoans.forEach(loan => {
+          const summary = loanMap.get(loan.loanId || '');
+          if (summary) {
+            summary.emiAmount = loan.emiAmount;
+            summary.loanAmount = loan.loanAmount;
+            summary.loanType = loan.loanType;
+          }
+        });
+        
+        setLoanPaymentSummaries(Array.from(loanMap.values()));
+      }
+    } catch (error) {
+      console.error('Error fetching EMI payments:', error);
+    } finally {
+      setLoadingPayments(false);
+    }
+  }, [customer._id]);
+
+  useEffect(() => {
+    if (activeTab === 'transaction-history') {
+      fetchEmiPayments();
+    }
+  }, [activeTab, fetchEmiPayments]);
 
   const handleDeleteClick = () => {
     setShowDeleteConfirm(true);
@@ -66,20 +162,37 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
     };
   };
 
-  const safeFormatDate = (dateString: string) => {
+  const safeFormatDate = (dateString: string | Date) => {
     if (!dateString) return 'N/A';
     try {
       return new Date(dateString).toLocaleDateString('en-IN');
     } catch (error) {
-      return dateString;
+      return String(dateString);
+    }
+  };
+
+  const safeFormatDateTime = (dateString: string | Date) => {
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (error) {
+      return String(dateString);
     }
   };
 
   const getCustomerLoans = () => {
-    const loans = [];
+    const loans: any[] = [];
     
     if (customer.loanNumber || customer.loanAmount) {
       loans.push({
+        loanId: customer._id + '_primary',
         loanNumber: customer.loanNumber,
         loanAmount: customer.loanAmount,
         emiAmount: customer.emiAmount,
@@ -89,14 +202,14 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
         status: customer.status || 'active',
         totalCollection: customer.totalCollection || 0,
         emiPaidCount: customer.emiPaidCount || 0,
-        nextEmiDate: customer.nextEmiDate,
-        emiHistory: customer.transactions || []
+        nextEmiDate: customer.nextEmiDate
       });
     }
     
     if (customer.additionalLoans && Array.isArray(customer.additionalLoans)) {
       customer.additionalLoans.forEach((loan: any, index: number) => {
         loans.push({
+          loanId: loan._id || `additional_${index}`,
           loanNumber: loan.loanNumber,
           loanAmount: loan.loanAmount,
           emiAmount: loan.emiAmount,
@@ -106,8 +219,7 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
           status: loan.status || 'active',
           totalCollection: loan.totalCollection || 0,
           emiPaidCount: loan.emiPaidCount || 0,
-          nextEmiDate: loan.nextEmiDate,
-          emiHistory: loan.transactions || []
+          nextEmiDate: loan.nextEmiDate
         });
       });
     }
@@ -116,6 +228,26 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
   };
 
   const customerLoans = getCustomerLoans();
+
+  // Filter payments based on selected loan
+  const getFilteredPayments = () => {
+    if (selectedLoanFilter === 'all') {
+      return emiPayments;
+    }
+    
+    if (selectedLoanFilter === 'unknown') {
+      return emiPayments.filter(payment => !payment.loanId || payment.loanId === 'unknown');
+    }
+    
+    return emiPayments.filter(payment => payment.loanId === selectedLoanFilter);
+  };
+
+  const filteredPayments = getFilteredPayments();
+
+  // Calculate payment statistics
+  const totalPaidAmount = emiPayments.reduce((sum, payment) => sum + payment.amount, 0);
+  const advancePayments = emiPayments.filter(p => p.isAdvancePayment);
+  const singlePayments = emiPayments.filter(p => !p.isAdvancePayment);
 
   return (
     <div className="space-y-6">
@@ -141,6 +273,8 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
                 <p className="text-blue-100">{customer.businessName}</p>
                 <span className="text-blue-200">•</span>
                 <p className="text-blue-100">{customer.area}</p>
+                <span className="text-blue-200">•</span>
+                <p className="text-blue-100">{customer.phone}</p>
               </div>
             </div>
           </div>
@@ -425,56 +559,6 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
                             </p>
                           </div>
                         </div>
-
-                        {/* EMI History */}
-                        {loan.emiHistory && loan.emiHistory.length > 0 && (
-                          <div className="mt-4">
-                            <details className="group">
-                              <summary className="flex justify-between items-center cursor-pointer list-none text-sm font-semibold text-blue-700 hover:text-blue-800 p-2 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors">
-                                <span>View EMI History ({loan.emiHistory.length} payments)</span>
-                                <span className="transition-transform group-open:rotate-180 text-xs">▼</span>
-                              </summary>
-                              <div className="mt-2 border border-gray-200 rounded-lg overflow-hidden">
-                                <table className="min-w-full divide-y divide-gray-200">
-                                  <thead className="bg-gray-50">
-                                    <tr>
-                                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Date</th>
-                                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Amount</th>
-                                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Status</th>
-                                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Collected By</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="bg-white divide-y divide-gray-200">
-                                    {loan.emiHistory.slice(0, 5).map((payment: any, idx: number) => (
-                                      <tr key={idx}>
-                                        <td className="px-3 py-2 text-xs">{safeFormatDate(payment.date)}</td>
-                                        <td className="px-3 py-2 text-xs font-medium">₹{payment.amount}</td>
-                                        <td className="px-3 py-2 text-xs">
-                                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                                            payment.status === 'Paid' ? 'bg-green-100 text-green-800' :
-                                            payment.status === 'Partial' ? 'bg-yellow-100 text-yellow-800' :
-                                            payment.status === 'Advance' ? 'bg-blue-100 text-blue-800' :
-                                            'bg-gray-100 text-gray-800'
-                                          }`}>
-                                            {payment.status || 'Paid'}
-                                          </span>
-                                        </td>
-                                        <td className="px-3 py-2 text-xs">{payment.collectedBy || 'System'}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                                {loan.emiHistory.length > 5 && (
-                                  <div className="px-3 py-2 bg-gray-50 text-center">
-                                    <p className="text-xs text-gray-500">
-                                      Showing 5 of {loan.emiHistory.length} payments
-                                    </p>
-                                  </div>
-                                )}
-                              </div>
-                            </details>
-                          </div>
-                        )}
                       </div>
                     );
                   })}
@@ -494,40 +578,315 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
       )}
 
       {activeTab === 'transaction-history' && (
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-900">Transaction History</h3>
+        <div className="space-y-6">
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-gradient-to-r from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center">
+                <div className="bg-blue-100 p-3 rounded-lg mr-4">
+                  <span className="text-blue-600 text-xl">💰</span>
+                </div>
+                <div>
+                  <p className="text-sm text-blue-700 font-medium">Total Paid</p>
+                  <p className="text-2xl font-bold text-blue-800">₹{totalPaidAmount.toLocaleString()}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-gradient-to-r from-green-50 to-green-100 border border-green-200 rounded-lg p-4">
+              <div className="flex items-center">
+                <div className="bg-green-100 p-3 rounded-lg mr-4">
+                  <span className="text-green-600 text-xl">📊</span>
+                </div>
+                <div>
+                  <p className="text-sm text-green-700 font-medium">Total Payments</p>
+                  <p className="text-2xl font-bold text-green-800">{emiPayments.length}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-gradient-to-r from-purple-50 to-purple-100 border border-purple-200 rounded-lg p-4">
+              <div className="flex items-center">
+                <div className="bg-purple-100 p-3 rounded-lg mr-4">
+                  <span className="text-purple-600 text-xl">⚡</span>
+                </div>
+                <div>
+                  <p className="text-sm text-purple-700 font-medium">Single Payments</p>
+                  <p className="text-2xl font-bold text-purple-800">{singlePayments.length}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-gradient-to-r from-amber-50 to-amber-100 border border-amber-200 rounded-lg p-4">
+              <div className="flex items-center">
+                <div className="bg-amber-100 p-3 rounded-lg mr-4">
+                  <span className="text-amber-600 text-xl">📅</span>
+                </div>
+                <div>
+                  <p className="text-sm text-amber-700 font-medium">Advance Payments</p>
+                  <p className="text-2xl font-bold text-amber-800">{advancePayments.length}</p>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="p-6">
-            {customer.transactions && customer.transactions.length > 0 ? (
-              <div className="space-y-4">
-                {customer.transactions.map((transaction: any, index: number) => (
-                  <div key={index} className="border border-gray-200 rounded-lg p-4">
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">EMI Payment</p>
-                        <p className="text-lg font-semibold text-green-600">₹{transaction.amount}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-medium text-gray-600">Date</p>
-                        <p className="text-lg font-semibold text-gray-900">
-                          {new Date(transaction.date).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-                    {transaction.notes && (
-                      <p className="text-sm text-gray-500 mt-2">{transaction.notes}</p>
-                    )}
+
+          {/* Loan Filter Tabs */}
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">Payment History by Loan</h3>
+              <p className="text-sm text-gray-600 mt-1">Click on a loan to filter its payments</p>
+            </div>
+            <div className="p-6">
+              {/* Circle-style Loan Tabs */}
+              <div className="mb-6">
+                <div className="flex flex-wrap gap-3">
+                  {/* All Loans Button */}
+                  <button
+                    onClick={() => setSelectedLoanFilter('all')}
+                    className={`flex flex-col items-center justify-center w-24 h-24 rounded-full transition-all duration-300 ${
+                      selectedLoanFilter === 'all'
+                        ? 'bg-blue-600 text-white transform scale-105 shadow-lg'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    <span className="text-2xl mb-1">📊</span>
+                    <span className="text-sm font-medium">All Loans</span>
+                    <span className="text-xs mt-1">{emiPayments.length} payments</span>
+                  </button>
+
+                  {/* Loan-specific Buttons */}
+                  {loanPaymentSummaries.map((loan) => (
+                    <button
+                      key={loan.loanId}
+                      onClick={() => setSelectedLoanFilter(loan.loanId)}
+                      className={`flex flex-col items-center justify-center w-24 h-24 rounded-full transition-all duration-300 ${
+                        selectedLoanFilter === loan.loanId
+                          ? 'bg-green-600 text-white transform scale-105 shadow-lg'
+                          : 'bg-green-50 text-green-700 hover:bg-green-100'
+                      }`}
+                    >
+                      <span className="text-xl font-bold mb-1">{loan.loanNumber}</span>
+                      <span className="text-xs mb-1">₹{loan.totalPaid.toLocaleString()}</span>
+                      <span className="text-xs bg-white/30 px-2 py-1 rounded-full">
+                        {loan.paymentCount} {loan.paymentCount === 1 ? 'payment' : 'payments'}
+                      </span>
+                    </button>
+                  ))}
+
+                  {/* Unknown Loan Button */}
+                  {emiPayments.some(p => !p.loanId || p.loanId === 'unknown') && (
+                    <button
+                      onClick={() => setSelectedLoanFilter('unknown')}
+                      className={`flex flex-col items-center justify-center w-24 h-24 rounded-full transition-all duration-300 ${
+                        selectedLoanFilter === 'unknown'
+                          ? 'bg-red-600 text-white transform scale-105 shadow-lg'
+                          : 'bg-red-50 text-red-700 hover:bg-red-100'
+                      }`}
+                    >
+                      <span className="text-2xl mb-1">❓</span>
+                      <span className="text-sm font-medium">Unknown</span>
+                      <span className="text-xs mt-1">
+                        {emiPayments.filter(p => !p.loanId || p.loanId === 'unknown').length} payments
+                      </span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Selected Loan Info */}
+                {selectedLoanFilter !== 'all' && selectedLoanFilter !== 'unknown' && (
+                  <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    {loanPaymentSummaries
+                      .filter(loan => loan.loanId === selectedLoanFilter)
+                      .map(loan => (
+                        <div key={loan.loanId} className="flex items-center justify-between">
+                          <div>
+                            <h4 className="font-semibold text-blue-800">Loan {loan.loanNumber}</h4>
+                            <div className="flex items-center space-x-4 mt-2 text-sm">
+                              {loan.loanType && (
+                                <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs">
+                                  {loan.loanType}
+                                </span>
+                              )}
+                              {loan.loanAmount && (
+                                <span className="text-gray-600">
+                                  Amount: <span className="font-semibold">₹{loan.loanAmount.toLocaleString()}</span>
+                                </span>
+                              )}
+                              {loan.emiAmount && (
+                                <span className="text-gray-600">
+                                  EMI: <span className="font-semibold">₹{loan.emiAmount.toLocaleString()}</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm text-gray-600">Last Payment</p>
+                            <p className="font-semibold text-gray-900">
+                              {loan.lastPaymentDate ? safeFormatDate(loan.lastPaymentDate) : 'No payments'}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
                   </div>
-                ))}
+                )}
               </div>
-            ) : (
-              <div className="text-center py-8">
-                <div className="text-gray-400 text-4xl mb-4">📝</div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No transactions found</h3>
-                <p className="text-gray-600">Transaction history will appear here when EMI payments are made.</p>
+
+              {/* Payments Table */}
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                  <div className="flex justify-between items-center">
+                    <h4 className="font-medium text-gray-700">
+                      {selectedLoanFilter === 'all' 
+                        ? 'All Payments' 
+                        : selectedLoanFilter === 'unknown'
+                          ? 'Unassigned Payments'
+                          : `Payments for Loan ${loanPaymentSummaries.find(l => l.loanId === selectedLoanFilter)?.loanNumber}`
+                      }
+                      <span className="ml-2 text-sm text-gray-500">
+                        ({filteredPayments.length} payments)
+                      </span>
+                    </h4>
+                    <button
+                      onClick={fetchEmiPayments}
+                      disabled={loadingPayments}
+                      className="px-3 py-1 bg-blue-100 text-blue-700 text-sm rounded-md hover:bg-blue-200 disabled:opacity-50"
+                    >
+                      {loadingPayments ? 'Refreshing...' : 'Refresh'}
+                    </button>
+                  </div>
+                </div>
+
+                {loadingPayments ? (
+                  <div className="py-12 text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                    <p className="mt-2 text-gray-600">Loading payment history...</p>
+                  </div>
+                ) : filteredPayments.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date & Time</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Loan</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Collected By</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Type</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {filteredPayments.map((payment) => (
+                          <tr key={payment._id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">
+                                {safeFormatDate(payment.paymentDate)}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {safeFormatDateTime(payment.paymentDate).split(', ')[1]}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className="text-sm font-semibold text-green-600">
+                                ₹{payment.amount.toLocaleString()}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                payment.status === 'Paid' ? 'bg-green-100 text-green-800' :
+                                payment.status === 'Partial' ? 'bg-yellow-100 text-yellow-800' :
+                                payment.status === 'Advance' ? 'bg-blue-100 text-blue-800' :
+                                payment.status === 'Due' ? 'bg-orange-100 text-orange-800' :
+                                payment.status === 'Overdue' ? 'bg-red-100 text-red-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {payment.status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              {payment.loanNumber ? (
+                                <span className="text-sm font-medium text-gray-900">
+                                  {payment.loanNumber}
+                                </span>
+                              ) : (
+                                <span className="text-sm text-gray-500">Not assigned</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                              {payment.collectedBy}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="flex flex-col gap-1">
+                                <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
+                                  payment.paymentType === 'advance'
+                                    ? 'bg-purple-100 text-purple-800'
+                                    : 'bg-blue-100 text-blue-800'
+                                }`}>
+                                  {payment.paymentType === 'advance' ? 'Advance' : 'Single'}
+                                </span>
+                                {payment.isAdvancePayment && payment.advanceEmiCount && (
+                                  <span className="text-xs text-gray-600">
+                                    {payment.advanceEmiCount} EMI(s)
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="text-sm text-gray-900 max-w-xs truncate" title={payment.notes}>
+                                {payment.notes || '-'}
+                              </div>
+                              {payment.advanceFromDate && payment.advanceToDate && (
+                                <div className="text-xs text-gray-500 mt-1">
+                                  {safeFormatDate(payment.advanceFromDate)} to {safeFormatDate(payment.advanceToDate)}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="py-12 text-center">
+                    <div className="text-gray-400 text-4xl mb-4">📭</div>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No payments found</h3>
+                    <p className="text-gray-600">
+                      {selectedLoanFilter === 'all'
+                        ? 'No EMI payments recorded for this customer.'
+                        : 'No payments found for the selected loan filter.'}
+                    </p>
+                  </div>
+                )}
               </div>
-            )}
+
+              {/* Payment Statistics */}
+              {filteredPayments.length > 0 && (
+                <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <p className="text-sm font-medium text-gray-600">Total Amount</p>
+                    <p className="text-xl font-bold text-gray-900">
+                      ₹{filteredPayments.reduce((sum, p) => sum + p.amount, 0).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <p className="text-sm font-medium text-gray-600">Average Payment</p>
+                    <p className="text-xl font-bold text-gray-900">
+                      ₹{filteredPayments.length > 0 
+                        ? Math.round(filteredPayments.reduce((sum, p) => sum + p.amount, 0) / filteredPayments.length).toLocaleString()
+                        : '0'}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <p className="text-sm font-medium text-gray-600">Payment Range</p>
+                    <p className="text-xl font-bold text-gray-900">
+                      ₹{filteredPayments.length > 0 
+                        ? `${Math.min(...filteredPayments.map(p => p.amount)).toLocaleString()} - ₹${Math.max(...filteredPayments.map(p => p.amount)).toLocaleString()}`
+                        : '0'}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -546,13 +905,13 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
                   <p className="text-gray-600 mb-4">Shop Field Investigation Document</p>
                   <div className="flex justify-center space-x-3">
                     <button 
-                      onClick={() => handleDownload(customer.fiDocuments?.shop, 'Shop_FI')}
+                      onClick={() => handleDownload(customer.fiDocuments?.shop || '', 'Shop_FI')}
                       className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
                     >
                       Download
                     </button>
                     <button 
-                      onClick={() => handleShareWhatsApp(customer.fiDocuments?.shop, 'Shop FI Document')}
+                      onClick={() => handleShareWhatsApp(customer.fiDocuments?.shop || '', 'Shop FI Document')}
                       className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors flex items-center space-x-2"
                     >
                       <span>WhatsApp</span>
@@ -573,13 +932,13 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
                   <p className="text-gray-600 mb-4">Home Field Investigation Document</p>
                   <div className="flex justify-center space-x-3">
                     <button 
-                      onClick={() => handleDownload(customer.fiDocuments?.home, 'Home_FI')}
+                      onClick={() => handleDownload(customer.fiDocuments?.home || '', 'Home_FI')}
                       className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
                     >
                       Download
                     </button>
                     <button 
-                      onClick={() => handleShareWhatsApp(customer.fiDocuments?.home, 'Home FI Document')}
+                      onClick={() => handleShareWhatsApp(customer.fiDocuments?.home || '', 'Home FI Document')}
                       className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors flex items-center space-x-2"
                     >
                       <span>WhatsApp</span>
