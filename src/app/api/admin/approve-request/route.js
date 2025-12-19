@@ -1349,14 +1349,20 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
   try {
     console.log('🔄 Processing Loan Renew request...');
 
-    const requestedData = requestDoc.requestedData || requestDoc;
+    const requestedData = requestDoc.requestedData || {};
+    
+    // Debug: Log the requested data structure
+    console.log('📋 Requested Data for renewal:', JSON.stringify(requestedData, null, 2));
     
     // Validate required fields
-    if (!requestedData.newLoanAmount || !requestedData.newEmiAmount || !requestedData.newLoanType) {
-      throw new Error('Missing required renewal data: newLoanAmount, newEmiAmount, newLoanType');
+    const requiredFields = ['newLoanAmount', 'newEmiAmount', 'newLoanType', 'newLoanNumber', 'newLoanDays'];
+    const missingFields = requiredFields.filter(field => !requestedData[field]);
+    
+    if (missingFields.length > 0) {
+      throw new Error(`Missing required renewal data: ${missingFields.join(', ')}`);
     }
 
-    const originalLoanId = requestDoc.loanId || requestedData.originalLoanId || requestedData.loanId;
+    const originalLoanId = requestDoc.loanId || requestedData.originalLoanId;
     
     if (!originalLoanId) {
       throw new Error('Original loan ID not found in request');
@@ -1396,26 +1402,27 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
       status: customer.status
     });
 
-    // **CRITICAL FIX: Use the built-in generateLoanNumber method**
-    // This will find the next available loan number for this customer
-    let newLoanNumber;
+    // **FIXED: Use the loan number from the request (user selected)**
+    const newLoanNumber = requestedData.newLoanNumber.trim().toUpperCase();
     
-    try {
-      // Use the static method from your Loan model
-      newLoanNumber = await Loan.generateLoanNumber(customerId);
-      console.log('🔧 Generated loan number for renewal:', newLoanNumber);
-    } catch (error) {
-      console.error('Error generating loan number:', error);
-      throw new Error('Failed to generate unique loan number for renewal');
-    }
+    console.log('🔧 Using loan number for renewal:', newLoanNumber);
 
     // **VALIDATE: Check for duplicates before proceeding**
     const duplicateCheck = await Loan.findOne({
       customerId: customerId,
-      loanNumber: newLoanNumber
+      loanNumber: newLoanNumber,
+      $or: [
+        { isRenewed: { $ne: true } },
+        { isRenewed: { $exists: false } }
+      ]
     });
     
     if (duplicateCheck) {
+      console.error('❌ Duplicate loan found:', {
+        requested: newLoanNumber,
+        existingId: duplicateCheck._id,
+        existingStatus: duplicateCheck.status
+      });
       throw new Error(`Cannot create renewed loan: Loan number ${newLoanNumber} already exists for this customer`);
     }
 
@@ -1442,28 +1449,56 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
 
     // Process dates
     let emiStartDate;
+    let renewalDate;
+    
     try {
-      emiStartDate = requestedData.emiStartDate ? new Date(requestedData.emiStartDate) : new Date();
-      if (isNaN(emiStartDate.getTime())) {
-        emiStartDate = new Date();
+      renewalDate = requestedData.renewalDate ? new Date(requestedData.renewalDate) : new Date();
+      emiStartDate = requestedData.emiStartDate ? new Date(requestedData.emiStartDate) : new Date(renewalDate);
+      
+      if (isNaN(renewalDate.getTime())) renewalDate = new Date();
+      if (isNaN(emiStartDate.getTime())) emiStartDate = new Date(renewalDate);
+      
+      // Ensure emiStartDate is not before renewalDate
+      if (emiStartDate < renewalDate) {
+        console.log('⚠️ Adjusting EMI start date to match renewal date');
+        emiStartDate = new Date(renewalDate);
       }
+      
+      // Normalize dates to start of day
+      renewalDate.setHours(0, 0, 0, 0);
+      emiStartDate.setHours(0, 0, 0, 0);
+      
     } catch (error) {
+      console.error('❌ Error processing dates:', error);
+      renewalDate = new Date();
       emiStartDate = new Date();
+      renewalDate.setHours(0, 0, 0, 0);
+      emiStartDate.setHours(0, 0, 0, 0);
     }
 
-    // Parse numeric values
+    // **FIXED: Parse numeric values from requestedData - NO FALLBACK to defaults!**
     const newLoanAmount = parseFloat(requestedData.newLoanAmount);
     const newEmiAmount = parseFloat(requestedData.newEmiAmount);
-    const newLoanDays = parseInt(requestedData.newLoanDays) || 30;
+    const newLoanDays = parseInt(requestedData.newLoanDays);
     
+    console.log('💰 Parsed renewal values:', {
+      newLoanAmount,
+      newEmiAmount,
+      newLoanDays,
+      newLoanType: requestedData.newLoanType,
+      emiType: requestedData.emiType,
+      customEmiAmount: requestedData.customEmiAmount
+    });
+    
+    // **FIXED: Validate numeric values properly**
     if (isNaN(newLoanAmount) || newLoanAmount <= 0) {
-      throw new Error('Invalid new loan amount');
+      throw new Error('Invalid new loan amount. Must be a positive number');
     }
     if (isNaN(newEmiAmount) || newEmiAmount <= 0) {
-      throw new Error('Invalid new EMI amount');
+      throw new Error('Invalid new EMI amount. Must be a positive number');
     }
-    if (newLoanDays <= 0) {
-      throw new Error('Invalid loan days');
+    if (isNaN(newLoanDays) || newLoanDays <= 0) {
+      throw new Error('Invalid loan days. Must be a positive number greater than 0');
     }
 
     // Calculate total loan amount based on EMI type
@@ -1482,114 +1517,148 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
       loanType: requestedData.newLoanType,
       totalLoanAmount: totalLoanAmount,
       emiAmount: newEmiAmount,
-      loanDays: newLoanDays
-    });
-
-    // Create new loan data - SIMPLIFIED VERSION
-    // Use the Loan model's static method to handle renewal properly
-    const newLoanData = {
-      customerId: customerId,
-      customerName: customer.name,
-      customerNumber: customer.customerNumber,
-      loanNumber: newLoanNumber,
-      amount: newLoanAmount,
-      emiAmount: newEmiAmount,
-      loanType: requestedData.newLoanType,
-      dateApplied: requestedData.renewalDate ? new Date(requestedData.renewalDate) : new Date(),
       loanDays: newLoanDays,
-      emiType: requestedData.emiType || 'fixed',
-      customEmiAmount: requestedData.customEmiAmount ? parseFloat(requestedData.customEmiAmount) : null,
-      emiStartDate: emiStartDate,
-      status: 'active',
-      createdBy: requestDoc.createdBy,
-      // Track the original loan
-      originalLoanNumber: originalLoan.loanNumber
-    };
-
-    console.log('💾 Creating renewed loan with data:', {
-      customerId: newLoanData.customerId,
-      loanNumber: newLoanData.loanNumber,
-      amount: newLoanData.amount,
-      emiAmount: newLoanData.emiAmount,
-      originalLoanNumber: newLoanData.originalLoanNumber
+      customEmiAmount: requestedData.customEmiAmount
     });
 
-    // **OPTION 1: Use the static renewLoan method from Loan model (RECOMMENDED)**
-    let newLoan;
-    try {
-      const result = await Loan.renewLoan(originalLoanId, newLoanData, requestDoc.createdBy);
-      newLoan = result.newLoan;
-      console.log('✅ Loan renewed using static method:', newLoanNumber);
-    } catch (renewError) {
-      console.error('❌ Error using static renewLoan method:', renewError);
-      
-      // **OPTION 2: Fallback to manual creation**
-      console.log('🔄 Falling back to manual renewal process...');
-      
-      // Start a session for transaction
-      const session = await mongoose.startSession();
-      
-      try {
-        session.startTransaction();
-        
-        // Create new loan - skip validation to avoid middleware issues
-        newLoan = new Loan(newLoanData);
-        await newLoan.save({ session, validateBeforeSave: false });
-        
-        // Mark original loan as renewed
-        originalLoan.isRenewed = true;
-        originalLoan.status = 'renewed';
-        originalLoan.renewedLoanNumber = newLoanNumber;
-        originalLoan.renewedDate = new Date();
-        await originalLoan.save({ session, validateBeforeSave: false });
-        
-        await session.commitTransaction();
-        console.log('✅ Manual renewal completed:', newLoanNumber);
-        
-      } catch (manualError) {
-        await session.abortTransaction();
-        console.error('❌ Manual renewal failed:', manualError);
-        throw new Error(`Manual renewal failed: ${manualError.message}`);
-      } finally {
-        session.endSession();
-      }
-    }
-
-    // Update the request
-    requestDoc.status = 'Approved';
-    requestDoc.reviewedBy = processedBy;
-    requestDoc.reviewedByRole = 'admin';
-    requestDoc.reviewNotes = reason || 'Loan renewal approved by admin';
-    requestDoc.actionTaken = `Loan renewed: ${originalLoan.loanNumber} → ${newLoanNumber}`;
-    requestDoc.reviewedAt = new Date();
-    requestDoc.approvedAt = new Date();
-    requestDoc.completedAt = new Date();
-    requestDoc.updatedAt = new Date();
+    // **FIXED: Create new loan with ALL required fields - NO validateBeforeSave: false!**
+    // Start a session for transaction
+    const session = await mongoose.startSession();
     
-    await requestDoc.save();
+    try {
+      session.startTransaction();
+      
+      // **FIXED: Create new loan with ALL required fields**
+      const newLoan = new Loan({
+        customerId: customerId,
+        customerName: customer.name,
+        customerNumber: customer.customerNumber,
+        loanNumber: newLoanNumber,
+        amount: newLoanAmount,  // Already validated above
+        emiAmount: newEmiAmount, // Already validated above
+        loanType: requestedData.newLoanType,
+        dateApplied: renewalDate,
+        loanDays: newLoanDays,  // Already validated above
+        emiType: requestedData.emiType || 'fixed',
+        customEmiAmount: requestedData.customEmiAmount ? parseFloat(requestedData.customEmiAmount) : null,
+        emiStartDate: emiStartDate,
+        totalEmiCount: newLoanDays,
+        emiPaidCount: 0,
+        lastEmiDate: null,
+        nextEmiDate: calculateNextEmiDate(emiStartDate, requestedData.newLoanType),
+        totalPaidAmount: 0,
+        remainingAmount: newLoanAmount,
+        status: 'active',
+        createdBy: requestDoc.createdBy || 'system',
+        // Track the original loan
+        originalLoanNumber: originalLoan.loanNumber,
+        // Calculate daily EMI for compatibility
+        dailyEMI: requestedData.newLoanType === 'Daily' ? newEmiAmount : 
+                 requestedData.newLoanType === 'Weekly' ? newEmiAmount / 7 :
+                 newEmiAmount / 30,
+        totalLoanAmount: totalLoanAmount,
+        totalEMI: totalLoanAmount,
+        emiPaid: 0,
+        emiPending: totalLoanAmount,
+        totalPaid: 0,
+        tenure: newLoanDays,
+        tenureType: requestedData.newLoanType.toLowerCase(),
+        startDate: renewalDate,
+        endDate: (() => {
+          const end = new Date(renewalDate);
+          end.setDate(end.getDate() + newLoanDays);
+          return end;
+        })(),
+        interestRate: 0,
+        // These fields will be set by pre-save middleware:
+        // remainingAmount, totalEmiCount, etc.
+      });
 
-    console.log('✅ Loan renewal completed successfully');
+      console.log('💾 Creating renewed loan with data:', {
+        loanNumber: newLoan.loanNumber,
+        amount: newLoan.amount,
+        emiAmount: newLoan.emiAmount,
+        loanType: newLoan.loanType,
+        loanDays: newLoan.loanDays,
+        totalLoanAmount: newLoan.totalLoanAmount
+      });
 
-    return NextResponse.json({ 
-      success: true,
-      message: 'Loan renewed successfully!',
-      data: {
-        originalLoan: {
-          loanNumber: originalLoan.loanNumber,
-          isRenewed: true,
-          renewedLoanNumber: newLoanNumber,
-          status: 'renewed'
-        },
-        newLoan: {
-          loanId: newLoan._id,
-          loanNumber: newLoan.loanNumber,
-          customerName: customer.name,
-          newLoanAmount: newLoanAmount,
-          newEmiAmount: newEmiAmount,
-          originalLoanNumber: originalLoan.loanNumber
+      // **FIXED: Save WITH validation - let pre-save middleware set calculated fields**
+      await newLoan.save({ session });
+      
+      // **FIXED: Mark original loan as renewed with proper fields**
+      originalLoan.isRenewed = true;
+      originalLoan.status = 'renewed';
+      originalLoan.renewedLoanNumber = newLoanNumber;
+      originalLoan.renewedDate = new Date();
+      originalLoan.updatedAt = new Date();
+      // Clear future EMI dates since loan is renewed
+      originalLoan.nextEmiDate = null;
+      
+      console.log('🔄 Marking original loan as renewed:', {
+        originalLoan: originalLoan.loanNumber,
+        newLoanNumber: newLoanNumber,
+        isRenewed: originalLoan.isRenewed,
+        status: originalLoan.status
+      });
+      
+      await originalLoan.save({ session });
+      
+      await session.commitTransaction();
+      session.endSession();
+      
+      console.log('✅ Loan renewal completed successfully:', {
+        originalLoan: originalLoan.loanNumber,
+        newLoan: newLoanNumber,
+        newAmount: newLoanAmount,
+        newEMI: newEmiAmount,
+        newType: requestedData.newLoanType,
+        newDays: newLoanDays
+      });
+
+      // Update the request
+      requestDoc.status = 'Approved';
+      requestDoc.reviewedBy = processedBy;
+      requestDoc.reviewedByRole = 'admin';
+      requestDoc.reviewNotes = reason || 'Loan renewal approved by admin';
+      requestDoc.actionTaken = `Loan renewed: ${originalLoan.loanNumber} → ${newLoanNumber} (Amount: ₹${newLoanAmount.toLocaleString()}, EMI: ₹${newEmiAmount.toLocaleString()}, Type: ${requestedData.newLoanType}, Days: ${newLoanDays})`;
+      requestDoc.reviewedAt = new Date();
+      requestDoc.approvedAt = new Date();
+      requestDoc.completedAt = new Date();
+      requestDoc.updatedAt = new Date();
+      
+      await requestDoc.save();
+
+      return NextResponse.json({ 
+        success: true,
+        message: 'Loan renewed successfully!',
+        data: {
+          originalLoan: {
+            loanNumber: originalLoan.loanNumber,
+            isRenewed: true,
+            renewedLoanNumber: newLoanNumber,
+            status: 'renewed'
+          },
+          newLoan: {
+            loanId: newLoan._id,
+            loanNumber: newLoan.loanNumber,
+            customerName: customer.name,
+            amount: newLoanAmount,
+            emiAmount: newEmiAmount,
+            loanType: requestedData.newLoanType,
+            loanDays: newLoanDays,
+            originalLoanNumber: originalLoan.loanNumber,
+            totalLoanAmount: totalLoanAmount
+          }
         }
-      }
-    });
+      });
+
+    } catch (error) {
+      await session.abortTransaction();
+      session.endSession();
+      console.error('❌ Transaction error:', error);
+      throw error;
+    }
 
   } catch (error) {
     console.error('❌ Error in approveLoanRenew:', error);

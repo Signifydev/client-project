@@ -10,6 +10,7 @@ interface RenewLoanModalProps {
   onClose: () => void;
   loanData: RenewLoanData;
   onSuccess?: () => void;
+  currentOperator: { id: string; name: string };
 }
 
 // Available loan numbers (L1 to L15)
@@ -19,7 +20,8 @@ export default function RenewLoanModal({
   isOpen,
   onClose,
   loanData,
-  onSuccess
+  onSuccess,
+  currentOperator
 }: RenewLoanModalProps) {
   const [formData, setFormData] = useState<RenewLoanData>(loanData);
   const [isLoading, setIsLoading] = useState(false);
@@ -119,6 +121,9 @@ export default function RenewLoanModal({
     if (isOpen) {
       console.log('📱 Modal opened, initializing...');
       
+      // Reset form data with current loan data
+      setFormData(loanData);
+      
       // Fetch existing loans
       fetchExistingLoans();
       checkPendingRequests();
@@ -132,8 +137,16 @@ export default function RenewLoanModal({
       setFormData(prev => ({
         ...prev,
         renewalDate: today,
-        emiStartDate: today
+        emiStartDate: today,
+        newLoanNumber: suggestedLoanNumber // Add suggested loan number to form data
       }));
+      
+      console.log('📊 Initial form data:', {
+        ...loanData,
+        renewalDate: today,
+        emiStartDate: today,
+        newLoanNumber: suggestedLoanNumber
+      });
     }
   }, [isOpen]);
 
@@ -252,6 +265,11 @@ export default function RenewLoanModal({
   
   const validateForm = (): boolean => {
     // Validate loan number
+    if (!newLoanNumber || newLoanNumber.trim() === '') {
+      setLoanNumberError('Please select a loan number for the renewed loan');
+      return false;
+    }
+    
     const loanNumberValidation = validateLoanNumber(newLoanNumber);
     if (loanNumberValidation) {
       setLoanNumberError(loanNumberValidation);
@@ -321,11 +339,23 @@ export default function RenewLoanModal({
 
     setIsLoading(true);
     try {
-      // Prepare request data with NEW LOAN NUMBER
+      // Prepare request data with ALL required fields for admin approval
       const requestData = {
         ...formData,
-        newLoanNumber: newLoanNumber.trim().toUpperCase(), // Add the selected loan number
-        requestedBy: 'data_entry_operator' // This should come from user context
+        newLoanNumber: newLoanNumber.trim().toUpperCase(), // User-selected loan number
+        requestedBy: currentOperator.id || 'data_entry_operator',
+        // Ensure these critical fields are included
+        loanId: loanData.loanId,
+        customerId: loanData.customerId,
+        customerName: loanData.customerName,
+        customerNumber: loanData.customerNumber,
+        loanNumber: loanData.loanNumber,
+        originalLoanId: loanData.loanId,
+        // Ensure emiType is included
+        emiType: formData.emiType || 'fixed',
+        // Ensure dates are properly formatted
+        renewalDate: formData.renewalDate,
+        emiStartDate: formData.emiStartDate || formData.renewalDate
       };
       
       console.log('📤 Submitting renewal request with data:', requestData);
@@ -344,6 +374,7 @@ export default function RenewLoanModal({
       try {
         data = JSON.parse(responseText);
       } catch (parseError) {
+        console.error('❌ Failed to parse response:', responseText);
         throw new Error('Server returned invalid response');
       }
 
@@ -388,11 +419,18 @@ export default function RenewLoanModal({
     checkPendingRequests();
   };
 
+  // Handle input changes
+  const handleInputChange = (field: keyof RenewLoanData, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
-      {/* UPDATED: Changed from max-w-2xl to max-w-5xl to match CustomerDetailsModal */}
       <div className="relative bg-white rounded-lg shadow-xl max-w-5xl w-full mx-auto max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white px-8 py-5 border-b border-gray-200 z-10">
           <div className="flex justify-between items-center">
@@ -475,7 +513,7 @@ export default function RenewLoanModal({
             </div>
           </div>
 
-          {/* NEW: Loan Number Selection Section */}
+          {/* Loan Number Selection Section */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
             <h4 className="font-medium text-gray-900 mb-4 flex items-center">
               <span className="mr-2">🔢</span>
@@ -493,8 +531,10 @@ export default function RenewLoanModal({
                   className={`w-full px-3 py-2 border ${loanNumberError ? 'border-red-500' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
                   value={newLoanNumber}
                   onChange={(e) => {
-                    setNewLoanNumber(e.target.value);
-                    const error = validateLoanNumber(e.target.value);
+                    const selectedValue = e.target.value;
+                    setNewLoanNumber(selectedValue);
+                    setFormData(prev => ({ ...prev, newLoanNumber: selectedValue }));
+                    const error = validateLoanNumber(selectedValue);
                     setLoanNumberError(error);
                   }}
                   disabled={isFetchingExistingLoans || hasPendingRequest}
@@ -602,7 +642,7 @@ export default function RenewLoanModal({
                   type="date"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   value={formData.renewalDate}
-                  onChange={(e) => setFormData(prev => ({ ...prev, renewalDate: e.target.value }))}
+                  onChange={(e) => handleInputChange('renewalDate', e.target.value)}
                   disabled={hasPendingRequest}
                 />
               </div>
@@ -620,8 +660,9 @@ export default function RenewLoanModal({
                     type="number"
                     className="w-full pl-10 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     value={formData.newLoanAmount}
-                    onChange={(e) => setFormData(prev => ({ ...prev, newLoanAmount: e.target.value }))}
+                    onChange={(e) => handleInputChange('newLoanAmount', e.target.value)}
                     min="0"
+                    step="0.01"
                     disabled={hasPendingRequest}
                   />
                 </div>
@@ -640,8 +681,9 @@ export default function RenewLoanModal({
                     type="number"
                     className="w-full pl-10 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     value={formData.newEmiAmount}
-                    onChange={(e) => setFormData(prev => ({ ...prev, newEmiAmount: e.target.value }))}
+                    onChange={(e) => handleInputChange('newEmiAmount', e.target.value)}
                     min="0"
+                    step="0.01"
                     disabled={hasPendingRequest}
                   />
                 </div>
@@ -656,7 +698,7 @@ export default function RenewLoanModal({
                   type="number"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   value={formData.newLoanDays}
-                  onChange={(e) => setFormData(prev => ({ ...prev, newLoanDays: e.target.value }))}
+                  onChange={(e) => handleInputChange('newLoanDays', e.target.value)}
                   min="1"
                   disabled={hasPendingRequest}
                 />
@@ -670,7 +712,7 @@ export default function RenewLoanModal({
                 <select
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   value={formData.newLoanType}
-                  onChange={(e) => setFormData(prev => ({ ...prev, newLoanType: e.target.value }))}
+                  onChange={(e) => handleInputChange('newLoanType', e.target.value)}
                   disabled={hasPendingRequest}
                 >
                   {loanTypes.map(type => (
@@ -688,7 +730,7 @@ export default function RenewLoanModal({
                   type="date"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   value={formData.emiStartDate}
-                  onChange={(e) => setFormData(prev => ({ ...prev, emiStartDate: e.target.value }))}
+                  onChange={(e) => handleInputChange('emiStartDate', e.target.value)}
                   disabled={hasPendingRequest}
                 />
               </div>
@@ -696,7 +738,7 @@ export default function RenewLoanModal({
               {/* EMI Type */}
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  EMI Type
+                  EMI Type *
                 </label>
                 <div className="flex space-x-4">
                   <label className="flex items-center">
@@ -704,8 +746,8 @@ export default function RenewLoanModal({
                       type="radio"
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500"
                       checked={formData.emiType === 'fixed'}
-                      onChange={() => setFormData(prev => ({ ...prev, emiType: 'fixed', customEmiAmount: '' }))}
-                      disabled={hasPendingRequest}
+                      onChange={() => handleInputChange('emiType', 'fixed')}
+                      disabled={hasPendingRequest || formData.newLoanType === 'Daily'}
                     />
                     <span className="ml-2 text-sm text-gray-700">Fixed EMI</span>
                   </label>
@@ -714,7 +756,7 @@ export default function RenewLoanModal({
                       type="radio"
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500"
                       checked={formData.emiType === 'custom'}
-                      onChange={() => setFormData(prev => ({ ...prev, emiType: 'custom' }))}
+                      onChange={() => handleInputChange('emiType', 'custom')}
                       disabled={hasPendingRequest || formData.newLoanType === 'Daily'}
                     />
                     <span className="ml-2 text-sm text-gray-700">Custom EMI</span>
@@ -740,12 +782,16 @@ export default function RenewLoanModal({
                     <input
                       type="number"
                       className="w-full pl-10 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      value={formData.customEmiAmount}
-                      onChange={(e) => setFormData(prev => ({ ...prev, customEmiAmount: e.target.value }))}
+                      value={formData.customEmiAmount || ''}
+                      onChange={(e) => handleInputChange('customEmiAmount', e.target.value)}
                       min="0"
+                      step="0.01"
                       disabled={hasPendingRequest}
                     />
                   </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    This amount will be charged for the last EMI of the loan period
+                  </p>
                 </div>
               )}
             </div>
@@ -758,8 +804,8 @@ export default function RenewLoanModal({
               <textarea
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 rows={3}
-                value={formData.remarks}
-                onChange={(e) => setFormData(prev => ({ ...prev, remarks: e.target.value }))}
+                value={formData.remarks || ''}
+                onChange={(e) => handleInputChange('remarks', e.target.value)}
                 placeholder="Add any remarks about this renewal..."
                 disabled={hasPendingRequest}
               />
@@ -803,6 +849,27 @@ export default function RenewLoanModal({
                     <p className="font-semibold text-green-900">{formData.loanNumber}</p>
                   </div>
                 </div>
+                {formData.emiType === 'custom' && formData.newLoanType !== 'Daily' && formData.customEmiAmount && (
+                  <div className="mt-3 pt-3 border-t border-green-200">
+                    <p className="text-xs text-green-700 mb-1">Custom EMI Details:</p>
+                    <div className="text-xs text-green-600">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span>Regular EMI ({parseInt(formData.newLoanDays) - 1} periods):</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-semibold">₹{parseFloat(formData.newEmiAmount).toLocaleString()} each</span>
+                        </div>
+                        <div>
+                          <span>Last EMI (Custom amount):</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-semibold">₹{parseFloat(formData.customEmiAmount).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

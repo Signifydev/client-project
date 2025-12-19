@@ -8,9 +8,10 @@ export interface DashboardStats {
 
 export interface Customer {
   _id: string;
+  id: string;
   customerNumber: string;
   name: string;
-  phone: string;
+  phone: string | string[];
   businessName: string;
   officeCategory: string;
   category: string;
@@ -30,14 +31,48 @@ export interface Customer {
   address?: string;
   transactions?: any[];
   fiDocuments?: {
-    shop?: string;
-    home?: string;
+    shop?: {
+      filename?: string;
+      url?: string;
+      originalName?: string;
+      uploadedAt?: string;
+    } | string;
+    home?: {
+      filename?: string;
+      url?: string;
+      originalName?: string;
+      uploadedAt?: string;
+    } | string;
   };
   additionalLoans?: any[];
-  profilePicture?: string;
+  loans?: any[]; // NEW: For enhanced loan data
+  phoneArray?: string[]; // NEW: For phone number array
+  profilePicture?: string | {
+    filename?: string;
+    url?: string;
+    originalName?: string;
+    uploadedAt?: string;
+  };
   businessType?: string;
   guarantorName?: string;
   guarantorPhone?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  
+  // NEW: Loan summary fields from enhanced API
+  loanSummary?: {
+    totalLoans: number;
+    totalLoanAmount: number;
+    totalPaidAmount: number;
+    totalRemainingAmount: number;
+    activeLoans: number;
+    completedLoans: number;
+    overdueLoans: number;
+    renewedLoans: number;
+  };
+  
+  // NEW: EMI payments for transaction history
+  emiPayments?: EMIPayment[];
 }
 
 export interface TeamMember {
@@ -134,6 +169,7 @@ export interface EMIPayment {
 // Loan Interface
 export interface Loan {
   _id: string;
+  loanId?: string;
   customerId: string;
   customerName: string;
   customerNumber: string;
@@ -151,6 +187,7 @@ export interface Loan {
   lastEmiDate?: string;
   nextEmiDate: string;
   totalPaidAmount: number;
+  totalCollection?: number;
   remainingAmount: number;
   emiHistory?: EMIHistory[];
   status: 'active' | 'completed' | 'overdue' | 'pending' | 'closed' | 'defaulted' | 'renewed';

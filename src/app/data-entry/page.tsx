@@ -91,40 +91,42 @@ export default function DataEntryDashboard() {
   const [requestsInitialized, setRequestsInitialized] = useState(false);
 
   // Function to close specific modal
-  const closeModal = useCallback((modalName: string) => {
-    switch (modalName) {
-      case 'addCustomer':
-        setShowAddCustomer(false);
-        break;
-      case 'updateEMI':
-        setShowUpdateEMI(false);
-        break;
-      case 'addLoan':
-        setShowAddLoanModal(false);
-        break;
-      case 'customerDetails':
-        setShowCustomerDetails(false);
-        setCustomerDetails(null);
-        setSelectedCustomer(null);
-        break;
-      case 'editCustomer':
-        setShowEditCustomer(false);
-        break;
-      case 'editLoan':
-        setShowEditLoan(false);
-        break;
-      case 'renewLoan':
-        setShowRenewLoan(false);
-        break;
-      case 'emiCalendar':
-        setShowEMICalendar(false);
-        setSelectedCustomerForCalendar(null);
-        break;
-      case 'deleteConfirmation':
-        setShowDeleteConfirmation(false);
-        break;
-    }
-  }, []);
+const closeModal = useCallback((modalName: string) => {
+  switch (modalName) {
+    case 'addCustomer':
+      setShowAddCustomer(false);
+      break;
+    case 'updateEMI':
+      setShowUpdateEMI(false);
+      break;
+    case 'addLoan':
+      setShowAddLoanModal(false);
+      break;
+    case 'customerDetails':
+      setShowCustomerDetails(false);
+      setCustomerDetails(null);
+      setSelectedCustomer(null);
+      break;
+    case 'editCustomer':
+      setShowEditCustomer(false);
+      break;
+    case 'editLoan':
+      setShowEditLoan(false);
+      break;
+    case 'renewLoan':
+      setShowRenewLoan(false);
+      break;
+    case 'emiCalendar':
+      setShowEMICalendar(false);
+      setSelectedCustomerForCalendar(null);
+      break;
+    case 'deleteConfirmation':
+      // Only close delete confirmation, not customer details
+      setShowDeleteConfirmation(false);
+      setDeleteLoanData(null);
+      break;
+  }
+}, []);
 
   // Function to close all modals
   const closeAllModals = useCallback(() => {
@@ -252,10 +254,19 @@ export default function DataEntryDashboard() {
 
   // Handler functions - memoized with useCallback
   const handleViewCustomerDetails = useCallback(async (customer: Customer | CustomerDetails) => {
-    console.log('👁️ Viewing customer details:', customer.name);
-    setCustomerDetails(customer as CustomerDetails);
-    setShowCustomerDetails(true);
-  }, []);
+  console.log('👁️ Viewing customer details:', customer.name);
+  
+  // Clear any existing customer details first
+  setCustomerDetails(null);
+  setSelectedCustomer(null);
+  
+  // Set the customer and open modal
+  setCustomerDetails(customer as CustomerDetails);
+  setShowCustomerDetails(true);
+  
+  // Force a small delay to ensure state is updated
+  await new Promise(resolve => setTimeout(resolve, 50));
+}, []);
 
   const handleEditCustomer = useCallback((customer: CustomerDetails) => {
     console.log('✏️ Editing customer:', customer.name);
@@ -340,12 +351,15 @@ export default function DataEntryDashboard() {
   }, []);
 
   const handleDeleteLoan = useCallback((loan: Loan) => {
-    console.log('🗑️ Deleting loan:', loan.loanNumber);
-    setDeleteLoanData(loan);
-    
-    // Open delete confirmation without closing customer details
-    setShowDeleteConfirmation(true);
-  }, []);
+  console.log('🗑️ Deleting loan:', loan.loanNumber);
+  setDeleteLoanData(loan);
+  
+  // Open delete confirmation without closing customer details
+  setShowDeleteConfirmation(true);
+  
+  // IMPORTANT: Don't close customer details modal
+  // Keep showCustomerDetails as true
+}, []);
 
   const handleUpdateEMI = useCallback((customer: Customer, loan?: Loan) => {
     console.log('💰 Updating EMI for customer:', customer.name);
@@ -427,13 +441,26 @@ export default function DataEntryDashboard() {
     setShowAddCustomer(true);
   }, []);
 
-  // Function to handle success and close all modals
-  const handleModalSuccess = useCallback(() => {
+  
+const handleModalSuccess = useCallback((keepCustomerDetailsOpen = false) => {
   console.log('✅ Modal action successful, refreshing data...');
   handleRefresh(); // This should already exist
   
-  // Force close all modals
-  closeAllModals();
+  // Only close all modals if we're not keeping customer details open
+  if (!keepCustomerDetailsOpen) {
+    closeAllModals();
+  } else {
+    // Only close specific modals, keep customer details open
+    setShowAddCustomer(false);
+    setShowUpdateEMI(false);
+    setShowAddLoanModal(false);
+    setShowEditCustomer(false);
+    setShowEditLoan(false);
+    setShowRenewLoan(false);
+    setShowEMICalendar(false);
+    setShowDeleteConfirmation(false);
+    // Don't close customer details
+  }
   
   // If customer details modal was open, refresh that specific customer
   if (customerDetails) {
@@ -454,65 +481,80 @@ export default function DataEntryDashboard() {
 }, [handleRefresh, closeAllModals, customerDetails]);
 
   // Function to handle actual loan deletion after confirmation - UPDATED WITH CORRECT API
-  const handleConfirmDeleteLoan = useCallback(async () => {
-    if (!deleteLoanData) {
-      console.error('❌ No loan data to delete');
-      return;
-    }
+  // Function to handle actual loan deletion after confirmation
+const handleConfirmDeleteLoan = useCallback(async () => {
+  if (!deleteLoanData) {
+    console.error('❌ No loan data to delete');
+    return;
+  }
 
-    console.log('🔍 Current Operator:', currentOperator);
-    console.log('🔍 Delete Loan Data:', deleteLoanData);
+  console.log('🔍 Current Operator:', currentOperator);
+  console.log('🔍 Delete Loan Data:', deleteLoanData);
 
-    try {
-      console.log('🗑️ Submitting loan deletion request for:', deleteLoanData.loanNumber);
-      
-      const requestBody = {
-        loanId: deleteLoanData._id,
-        customerId: deleteLoanData.customerId,
-        customerName: deleteLoanData.customerName,
-        customerNumber: deleteLoanData.customerNumber,
-        loanNumber: deleteLoanData.loanNumber,
-        requestedBy: currentOperator.id || 'data_entry_operator'
-      };
-      
-      console.log('📦 Request Body:', requestBody);
-      
-      const response = await fetch('/api/data-entry/delete-loan-request', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
+  try {
+    console.log('🗑️ Submitting loan deletion request for:', deleteLoanData.loanNumber);
+    
+    const requestBody = {
+      loanId: deleteLoanData._id,
+      customerId: deleteLoanData.customerId,
+      customerName: deleteLoanData.customerName,
+      customerNumber: deleteLoanData.customerNumber,
+      loanNumber: deleteLoanData.loanNumber,
+      requestedBy: currentOperator.id || 'data_entry_operator'
+    };
+    
+    console.log('📦 Request Body:', requestBody);
+    
+    const response = await fetch('/api/data-entry/delete-loan-request', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
 
-      console.log('📊 Response Status:', response.status);
-      
-      const responseData = await response.json();
-      console.log('📊 Response Data:', responseData);
+    console.log('📊 Response Status:', response.status);
+    
+    const responseData = await response.json();
+    console.log('📊 Response Data:', responseData);
 
-      if (response.ok && responseData.success) {
-        console.log('✅ Loan deletion request submitted successfully');
-        alert('Loan deletion request submitted successfully! Waiting for admin approval.');
-        
-        // Close modals
-        setShowDeleteConfirmation(false);
-        setDeleteLoanData(null);
-        
-        // Refresh data
-        handleRefresh();
-        
-        // Optionally close customer details modal
-        // setShowCustomerDetails(false);
-        
-      } else {
-        console.error('❌ Failed to submit delete request:', responseData.error);
-        alert(`Failed to submit delete request: ${responseData.error || 'Unknown error'}`);
+    if (response.ok && responseData.success) {
+      console.log('✅ Loan deletion request submitted successfully');
+      alert('Loan deletion request submitted successfully! Waiting for admin approval.');
+      
+      // Only close delete confirmation modal, keep customer details open
+      setShowDeleteConfirmation(false);
+      setDeleteLoanData(null);
+      
+      // Refresh data but keep customer details open
+      handleRefresh();
+      
+      // Refresh customer details
+      if (customerDetails) {
+        const fetchUpdatedCustomer = async () => {
+          try {
+            const response = await fetch(`/api/data-entry/customers/${customerDetails._id}`);
+            const data = await response.json();
+            if (data.success) {
+              setCustomerDetails(data.data);
+              console.log('✅ Updated customer details loaded');
+            }
+          } catch (error) {
+            console.error('Error fetching updated customer:', error);
+          }
+        };
+        fetchUpdatedCustomer();
       }
-    } catch (error: any) {
-      console.error('❌ Error submitting delete request:', error);
-      alert(`Error submitting delete request: ${error.message || 'Unknown error'}`);
+      
+    } else {
+      console.error('❌ Failed to submit delete request:', responseData.error);
+      alert(`Failed to submit delete request: ${responseData.error || 'Unknown error'}`);
     }
-  }, [deleteLoanData, currentOperator, handleRefresh]);
+  } catch (error: any) {
+    console.error('❌ Error submitting delete request:', error);
+    alert(`Error submitting delete request: ${error.message || 'Unknown error'}`);
+  }
+}, [deleteLoanData, currentOperator, handleRefresh, customerDetails]);
 
   // Render current tab with Suspense - FIXED requests section props
   const renderCurrentTab = useCallback(() => {
@@ -764,7 +806,7 @@ export default function DataEntryDashboard() {
         </div>
       )}
 
-      {/* Add Customer Modal */}
+ {/* Add Customer Modal */}
 {showAddCustomer && (
   <div className="z-[110]">
     <Suspense fallback={<ModalLoader />}>
@@ -773,43 +815,46 @@ export default function DataEntryDashboard() {
         onClose={() => closeModal('addCustomer')}
         onSuccess={handleModalSuccess}
         currentUserOffice={currentUserOffice}
-        existingCustomers={existingCustomers} // ← Make sure this is passed
+        existingCustomers={existingCustomers}
+        currentOperator={currentOperator} // ← ADD THIS LINE
       />
     </Suspense>
   </div>
 )}
 
-      {/* Edit Customer Modal */}
-      {showEditCustomer && editCustomerData && (
-        <div className="z-[120]">
-          <Suspense fallback={<ModalLoader />}>
-            <EditCustomerModal
-              isOpen={showEditCustomer}
-              onClose={() => closeModal('editCustomer')}
-              customerData={editCustomerData}
-              onSuccess={handleModalSuccess}
-              currentUserOffice={currentUserOffice}
-            />
-          </Suspense>
-        </div>
-      )}
+{/* Edit Customer Modal */}
+{showEditCustomer && editCustomerData && (
+  <div className="z-[120]">
+    <Suspense fallback={<ModalLoader />}>
+      <EditCustomerModal
+        isOpen={showEditCustomer}
+        onClose={() => closeModal('editCustomer')}
+        customerData={editCustomerData}
+        onSuccess={handleModalSuccess}
+        currentUserOffice={currentUserOffice}
+        currentOperator={currentOperator} // ← ADD THIS LINE
+      />
+    </Suspense>
+  </div>
+)}
 
-      {/* Add Loan Modal */}
-      {showAddLoanModal && customerDetails && (
-        <div className="z-[130]">
-          <Suspense fallback={<ModalLoader />}>
-            <AddLoanModal
-              isOpen={showAddLoanModal}
-              onClose={() => closeModal('addLoan')}
-              customerDetails={customerDetails}
-              onSuccess={handleModalSuccess}
-            />
-          </Suspense>
-        </div>
-      )}
+{/* Add Loan Modal */}
+{showAddLoanModal && customerDetails && (
+  <div className="z-[130]">
+    <Suspense fallback={<ModalLoader />}>
+      <AddLoanModal
+        isOpen={showAddLoanModal}
+        onClose={() => closeModal('addLoan')}
+        customerDetails={customerDetails}
+        onSuccess={handleModalSuccess}
+        currentOperator={currentOperator} // ← ADD THIS LINE
+      />
+    </Suspense>
+  </div>
+)}
 
-      {/* Edit Loan Modal */}
-      {showEditLoan && editLoanData && (
+{/* Edit Loan Modal */}
+{showEditLoan && editLoanData && (
   <div className="z-[140]">
     <Suspense fallback={<ModalLoader />}>
       <EditLoanModal
@@ -817,25 +862,26 @@ export default function DataEntryDashboard() {
         onClose={() => closeModal('editLoan')}
         loanData={editLoanData}
         onSuccess={handleModalSuccess}
-        currentOperator={currentOperator} // ← ADD THIS PROP
+        currentOperator={currentOperator} // ← ALREADY EXISTS, KEEP IT
       />
     </Suspense>
   </div>
 )}
 
-      {/* Renew Loan Modal */}
-      {showRenewLoan && renewLoanData && (
-        <div className="z-[150]">
-          <Suspense fallback={<ModalLoader />}>
-            <RenewLoanModal
-              isOpen={showRenewLoan}
-              onClose={() => closeModal('renewLoan')}
-              loanData={renewLoanData}
-              onSuccess={handleModalSuccess}
-            />
-          </Suspense>
-        </div>
-      )}
+{/* Renew Loan Modal */}
+{showRenewLoan && renewLoanData && (
+  <div className="z-[150]">
+    <Suspense fallback={<ModalLoader />}>
+      <RenewLoanModal
+        isOpen={showRenewLoan}
+        onClose={() => closeModal('renewLoan')}
+        loanData={renewLoanData}
+        onSuccess={handleModalSuccess}
+        currentOperator={currentOperator} // ← ADD THIS LINE
+      />
+    </Suspense>
+  </div>
+)}
 
       {/* Update EMI Modal */}
       {showUpdateEMI && (
@@ -868,18 +914,24 @@ export default function DataEntryDashboard() {
         </div>
       )}
 
-      {/* Delete Confirmation Modal - Highest priority */}
+      {/* Delete Confirmation Modal - HIGHEST PRIORITY (FIXED) */}
       {showDeleteConfirmation && deleteLoanData && (
-        <Suspense fallback={<ModalLoader />}>
-          <DeleteConfirmationModal
-            isOpen={showDeleteConfirmation}
-            onClose={() => closeModal('deleteConfirmation')}
-            onConfirm={handleConfirmDeleteLoan}
-            title="Delete Loan"
-            message={`Are you sure you want to delete loan ${deleteLoanData.loanNumber}? This action cannot be undone.`}
-          />
-        </Suspense>
-      )}
+  <div className="z-[9999]"> {/* Use highest z-index */}
+    <Suspense fallback={<ModalLoader />}>
+      <DeleteConfirmationModal
+        isOpen={showDeleteConfirmation}
+        onClose={() => closeModal('deleteConfirmation')}
+        onConfirm={() => {
+          handleConfirmDeleteLoan(); // This handles the API call
+          // After delete is confirmed, don't close customer details
+          // We'll handle the modal closing in handleConfirmDeleteLoan
+        }}
+        title="Delete Loan"
+        message={`Are you sure you want to delete loan ${deleteLoanData.loanNumber}? This action cannot be undone.`}
+      />
+    </Suspense>
+  </div>
+)}
 
       {/* Debug overlay - remove in production */}
       <div className="fixed bottom-4 right-4 bg-black bg-opacity-80 text-white text-xs p-2 rounded-md z-50 hidden md:block">

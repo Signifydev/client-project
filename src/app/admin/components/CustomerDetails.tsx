@@ -38,14 +38,74 @@ interface LoanPaymentSummary {
   loanType?: string;
 }
 
+// Extended Customer interface with our enhanced properties
+interface ExtendedCustomer extends Customer {
+  loans?: any[];
+  phoneArray?: string[];
+  emiPayments?: EMIPayment[];
+  loanSummary?: {
+    totalLoans: number;
+    totalLoanAmount: number;
+    totalPaidAmount: number;
+    totalRemainingAmount: number;
+    activeLoans: number;
+    completedLoans: number;
+    overdueLoans: number;
+    renewedLoans: number;
+  };
+}
+
 export default function CustomerDetails({ customer, onBack, onDelete }: CustomerDetailsProps) {
-  const [activeTab, setActiveTab] = useState('loan-details');
+  const [activeTab, setActiveTab] = useState('details');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedLoanFilter, setSelectedLoanFilter] = useState<string>('all');
   const [emiPayments, setEmiPayments] = useState<EMIPayment[]>([]);
   const [loadingPayments, setLoadingPayments] = useState(false);
   const [loanPaymentSummaries, setLoanPaymentSummaries] = useState<LoanPaymentSummary[]>([]);
+  const [detailedCustomer, setDetailedCustomer] = useState<ExtendedCustomer | null>(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
 
+  // Fetch detailed customer data with loans
+  const fetchDetailedCustomer = useCallback(async () => {
+    if (!customer._id) return;
+    
+    setLoadingDetails(true);
+    try {
+      console.log('🔍 Fetching detailed customer data for:', customer._id);
+      
+      // Use the admin customers API with customerId parameter
+      const response = await fetch(`/api/admin/customers?customerId=${customer._id}`);
+      const data = await response.json();
+      
+      if (data.success && data.data) {
+        console.log('✅ Detailed customer data loaded:', {
+          name: data.data.name,
+          loanCount: data.data.loans?.length || 0,
+          hasPrimaryLoan: !!data.data.loanNumber,
+          additionalLoans: data.data.additionalLoans?.length || 0
+        });
+        
+        setDetailedCustomer(data.data as ExtendedCustomer);
+        
+        // Set EMI payments if available
+        if (data.data.emiPayments) {
+          setEmiPayments(data.data.emiPayments);
+          calculateLoanPaymentSummaries(data.data.emiPayments, data.data.loans || []);
+        }
+      } else {
+        console.error('❌ Failed to load detailed customer data:', data.error);
+        // Fallback to original customer data
+        setDetailedCustomer(customer as ExtendedCustomer);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching detailed customer:', error);
+      setDetailedCustomer(customer as ExtendedCustomer);
+    } finally {
+      setLoadingDetails(false);
+    }
+  }, [customer._id]);
+
+  // Fetch EMI payments (fallback if not in customer data)
   const fetchEmiPayments = useCallback(async () => {
     if (!customer._id) return;
     
@@ -59,42 +119,7 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
         setEmiPayments(payments);
         
         // Calculate loan-wise payment summaries
-        const loanMap = new Map<string, LoanPaymentSummary>();
-        
-        payments.forEach((payment: EMIPayment) => {
-          const loanKey = payment.loanId || 'unknown';
-          const loanNumber = payment.loanNumber || 'Unknown Loan';
-          
-          if (!loanMap.has(loanKey)) {
-            loanMap.set(loanKey, {
-              loanNumber,
-              loanId: loanKey,
-              totalPaid: 0,
-              paymentCount: 0
-            });
-          }
-          
-          const summary = loanMap.get(loanKey)!;
-          summary.totalPaid += payment.amount;
-          summary.paymentCount++;
-          
-          if (!summary.lastPaymentDate || new Date(payment.paymentDate) > new Date(summary.lastPaymentDate)) {
-            summary.lastPaymentDate = payment.paymentDate;
-          }
-        });
-        
-        // Get loan details from customer data
-        const customerLoans = getCustomerLoans();
-        customerLoans.forEach(loan => {
-          const summary = loanMap.get(loan.loanId || '');
-          if (summary) {
-            summary.emiAmount = loan.emiAmount;
-            summary.loanAmount = loan.loanAmount;
-            summary.loanType = loan.loanType;
-          }
-        });
-        
-        setLoanPaymentSummaries(Array.from(loanMap.values()));
+        calculateLoanPaymentSummaries(payments, getCustomerLoans());
       }
     } catch (error) {
       console.error('Error fetching EMI payments:', error);
@@ -103,11 +128,54 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
     }
   }, [customer._id]);
 
+  // Calculate loan payment summaries
+  const calculateLoanPaymentSummaries = (payments: EMIPayment[], loans: any[]) => {
+    const loanMap = new Map<string, LoanPaymentSummary>();
+    
+    payments.forEach((payment: EMIPayment) => {
+      const loanKey = payment.loanId || 'unknown';
+      const loanNumber = payment.loanNumber || 'Unknown Loan';
+      
+      if (!loanMap.has(loanKey)) {
+        loanMap.set(loanKey, {
+          loanNumber,
+          loanId: loanKey,
+          totalPaid: 0,
+          paymentCount: 0
+        });
+      }
+      
+      const summary = loanMap.get(loanKey)!;
+      summary.totalPaid += payment.amount;
+      summary.paymentCount++;
+      
+      if (!summary.lastPaymentDate || new Date(payment.paymentDate) > new Date(summary.lastPaymentDate)) {
+        summary.lastPaymentDate = payment.paymentDate;
+      }
+    });
+    
+    // Get loan details from customer data
+    loans.forEach(loan => {
+      const summary = loanMap.get(loan.loanId || '');
+      if (summary) {
+        summary.emiAmount = loan.emiAmount;
+        summary.loanAmount = loan.loanAmount;
+        summary.loanType = loan.loanType;
+      }
+    });
+    
+    setLoanPaymentSummaries(Array.from(loanMap.values()));
+  };
+
   useEffect(() => {
-    if (activeTab === 'transaction-history') {
+    fetchDetailedCustomer();
+  }, [fetchDetailedCustomer]);
+
+  useEffect(() => {
+    if (activeTab === 'transaction-history' && emiPayments.length === 0) {
       fetchEmiPayments();
     }
-  }, [activeTab, fetchEmiPayments]);
+  }, [activeTab, emiPayments.length, fetchEmiPayments]);
 
   const handleDeleteClick = () => {
     setShowDeleteConfirm(true);
@@ -122,10 +190,19 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
     setShowDeleteConfirm(false);
   };
 
-  const handleDownload = (documentUrl: string, documentType: string) => {
-    if (documentUrl) {
+  // Helper function to get document URL safely
+  const getDocumentUrl = (document: any): string => {
+    if (!document) return '';
+    if (typeof document === 'string') return document;
+    if (typeof document === 'object' && document.url) return document.url;
+    return '';
+  };
+
+  const handleDownload = (document: any, documentType: string) => {
+    const url = getDocumentUrl(document);
+    if (url) {
       const link = document.createElement('a');
-      link.href = documentUrl;
+      link.href = url;
       link.download = `${customer.name}_${documentType}.pdf`;
       link.click();
     } else {
@@ -133,10 +210,11 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
     }
   };
 
-  const handleShareWhatsApp = (documentUrl: string, documentType: string) => {
-    if (documentUrl) {
+  const handleShareWhatsApp = (document: any, documentType: string) => {
+    const url = getDocumentUrl(document);
+    if (url) {
       const message = `FI Document for ${customer.name} - ${documentType}`;
-      const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message + ' ' + documentUrl)}`;
+      const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message + ' ' + url)}`;
       window.open(whatsappUrl, '_blank');
     } else {
       alert('Document not available for sharing');
@@ -187,43 +265,81 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
     }
   };
 
+  // UPDATED: Get customer loans from detailed customer data
   const getCustomerLoans = () => {
     const loans: any[] = [];
     
-    if (customer.loanNumber || customer.loanAmount) {
+    // Use detailed customer data if available, otherwise fallback to original customer
+    const customerData = detailedCustomer || customer;
+    
+    // Check for primary loan (flattened structure)
+    if (customerData.loanNumber || customerData.loanAmount) {
       loans.push({
-        loanId: customer._id + '_primary',
-        loanNumber: customer.loanNumber,
-        loanAmount: customer.loanAmount,
-        emiAmount: customer.emiAmount,
-        loanType: customer.loanType,
-        loanDate: customer.loanDate,
-        loanDays: customer.loanDays,
-        status: customer.status || 'active',
-        totalCollection: customer.totalCollection || 0,
-        emiPaidCount: customer.emiPaidCount || 0,
-        nextEmiDate: customer.nextEmiDate
+        loanId: customerData._id + '_primary',
+        loanNumber: customerData.loanNumber,
+        loanAmount: customerData.loanAmount,
+        emiAmount: customerData.emiAmount,
+        loanType: customerData.loanType,
+        loanDate: customerData.loanDate,
+        loanDays: customerData.loanDays,
+        status: customerData.status || 'active',
+        totalCollection: customerData.totalCollection || 0,
+        emiPaidCount: customerData.emiPaidCount || 0,
+        nextEmiDate: customerData.nextEmiDate,
+        emiStartDate: customerData.loanDate,
+        totalEmiCount: customerData.loanDays || 30,
+        remainingAmount: (customerData.loanAmount || 0) - (customerData.totalCollection || 0)
       });
     }
     
-    if (customer.additionalLoans && Array.isArray(customer.additionalLoans)) {
-      customer.additionalLoans.forEach((loan: any, index: number) => {
+    // Check for additionalLoans array
+    if (customerData.additionalLoans && Array.isArray(customerData.additionalLoans)) {
+      customerData.additionalLoans.forEach((loan: any, index: number) => {
         loans.push({
           loanId: loan._id || `additional_${index}`,
           loanNumber: loan.loanNumber,
           loanAmount: loan.loanAmount,
           emiAmount: loan.emiAmount,
-          loanType: loan.loanType || customer.loanType,
-          loanDate: loan.loanDate || customer.loanDate,
-          loanDays: loan.loanDays || customer.loanDays,
+          loanType: loan.loanType || customerData.loanType,
+          loanDate: loan.loanDate || customerData.loanDate,
+          loanDays: loan.loanDays || customerData.loanDays,
           status: loan.status || 'active',
           totalCollection: loan.totalCollection || 0,
           emiPaidCount: loan.emiPaidCount || 0,
-          nextEmiDate: loan.nextEmiDate
+          nextEmiDate: loan.nextEmiDate,
+          emiStartDate: loan.loanDate || customerData.loanDate,
+          totalEmiCount: loan.loanDays || 30,
+          remainingAmount: (loan.loanAmount || 0) - (loan.totalCollection || 0)
         });
       });
     }
     
+    // Check for loans array (new structure from admin API)
+    if ((customerData as ExtendedCustomer).loans && Array.isArray((customerData as ExtendedCustomer).loans)) {
+      // Only add if we haven't already added them
+      if (loans.length === 0) {
+        ((customerData as ExtendedCustomer).loans || []).forEach((loan: any) => {
+          loans.push({
+            loanId: loan._id || loan.loanId,
+            loanNumber: loan.loanNumber,
+            loanAmount: loan.loanAmount,
+            emiAmount: loan.emiAmount,
+            loanType: loan.loanType,
+            loanDate: loan.loanDate,
+            loanDays: loan.loanDays,
+            status: loan.status || 'active',
+            totalCollection: loan.totalCollection || 0,
+            emiPaidCount: loan.emiPaidCount || 0,
+            nextEmiDate: loan.nextEmiDate,
+            emiStartDate: loan.emiStartDate || loan.loanDate,
+            totalEmiCount: loan.totalEmiCount || loan.loanDays || 30,
+            remainingAmount: loan.remainingAmount || ((loan.loanAmount || 0) - (loan.totalCollection || 0))
+          });
+        });
+      }
+    }
+    
+    console.log(`📊 Found ${loans.length} loans for customer ${customerData.name}`);
     return loans;
   };
 
@@ -249,6 +365,37 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
   const advancePayments = emiPayments.filter(p => p.isAdvancePayment);
   const singlePayments = emiPayments.filter(p => !p.isAdvancePayment);
 
+  // Get customer data for display (use detailed if available)
+  const displayCustomer = detailedCustomer || customer;
+
+  // Helper to get phone as string
+  const getPhoneString = (phoneData: string | string[] | undefined): string => {
+    if (!phoneData) return '';
+    if (Array.isArray(phoneData)) return phoneData[0] || '';
+    return phoneData;
+  };
+
+  // Helper to get secondary phone
+  const getSecondaryPhone = (customerData: Customer | ExtendedCustomer): string => {
+    if (customerData.secondaryPhone) return customerData.secondaryPhone;
+    if ((customerData as ExtendedCustomer).phoneArray && Array.isArray((customerData as ExtendedCustomer).phoneArray)) {
+      return ((customerData as ExtendedCustomer).phoneArray || [])[1] || '';
+    }
+    if (Array.isArray(customerData.phone)) {
+      return customerData.phone[1] || '';
+    }
+    return '';
+  };
+
+  if (loadingDetails) {
+    return (
+      <div className="flex justify-center items-center min-h-[400px]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <p className="ml-4 text-gray-600">Loading customer details...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Enhanced Header with Background Color */}
@@ -264,27 +411,32 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
             </button>
             <div>
               <div className="flex items-center space-x-4">
-                <h1 className="text-2xl font-bold">{customer.name}</h1>
+                <h1 className="text-2xl font-bold">{displayCustomer.name}</h1>
                 <span className="bg-blue-500 text-white px-3 py-1 rounded-full text-sm font-medium">
-                  {customer.customerNumber}
+                  {displayCustomer.customerNumber}
+                </span>
+                <span className="bg-green-500 text-white px-2 py-1 rounded text-xs">
+                  {customerLoans.length} Loan{customerLoans.length !== 1 ? 's' : ''}
                 </span>
               </div>
               <div className="flex items-center space-x-4 mt-2">
-                <p className="text-blue-100">{customer.businessName}</p>
+                <p className="text-blue-100">{displayCustomer.businessName}</p>
                 <span className="text-blue-200">•</span>
-                <p className="text-blue-100">{customer.area}</p>
+                <p className="text-blue-100">{displayCustomer.area}</p>
                 <span className="text-blue-200">•</span>
-                <p className="text-blue-100">{customer.phone}</p>
+                <p className="text-blue-100">
+                  {getPhoneString(displayCustomer.phone)}
+                </p>
               </div>
             </div>
           </div>
           <div className="flex items-center space-x-3">
             <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-              customer.status === 'active' 
+              displayCustomer.status === 'active' 
                 ? 'bg-green-500 text-white' 
                 : 'bg-red-500 text-white'
             }`}>
-              {customer.status === 'active' ? 'Active' : 'Inactive'}
+              {displayCustomer.status === 'active' ? 'Active' : 'Inactive'}
             </span>
             <button 
               onClick={handleDeleteClick}
@@ -391,47 +543,55 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
                 <div className="space-y-4">
                   <div>
                     <p className="text-sm font-medium text-gray-600">Customer Name</p>
-                    <p className="text-lg font-semibold text-gray-900">{customer.name}</p>
+                    <p className="text-lg font-semibold text-gray-900">{displayCustomer.name}</p>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-600">Business Name</p>
-                    <p className="text-lg font-semibold text-gray-900">{customer.businessName}</p>
+                    <p className="text-lg font-semibold text-gray-900">{displayCustomer.businessName}</p>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-600">Primary Phone Number</p>
-                    <p className="text-lg font-semibold text-gray-900">{customer.phone}</p>
+                    <p className="text-lg font-semibold text-gray-900">
+                      {getPhoneString(displayCustomer.phone)}
+                    </p>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-600">Secondary Phone Number</p>
-                    <p className="text-lg font-semibold text-gray-900">{customer.secondaryPhone || 'N/A'}</p>
+                    <p className="text-lg font-semibold text-gray-900">
+                      {getSecondaryPhone(displayCustomer) || 'N/A'}
+                    </p>
                   </div>
                 </div>
                 <div className="space-y-4">
                   <div>
                     <p className="text-sm font-medium text-gray-600">WhatsApp Number</p>
-                    <p className="text-lg font-semibold text-gray-900">{customer.whatsappNumber || customer.phone}</p>
+                    <p className="text-lg font-semibold text-gray-900">
+                      {displayCustomer.whatsappNumber || getPhoneString(displayCustomer.phone)}
+                    </p>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-600">Address</p>
-                    <p className="text-lg font-semibold text-gray-900">{customer.address || 'No address provided'}</p>
+                    <p className="text-lg font-semibold text-gray-900">
+                      {displayCustomer.address || 'No address provided'}
+                    </p>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-600">Area</p>
-                    <p className="text-lg font-semibold text-gray-900">{customer.area}</p>
+                    <p className="text-lg font-semibold text-gray-900">{displayCustomer.area}</p>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-600">Office Category & Category</p>
                     <div className="flex space-x-2 mt-1">
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                        {customer.officeCategory || 'N/A'}
+                        {displayCustomer.officeCategory || 'N/A'}
                       </span>
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        customer.category === 'A' ? 'bg-green-100 text-green-800' :
-                        customer.category === 'B' ? 'bg-yellow-100 text-yellow-800' :
-                        customer.category === 'C' ? 'bg-blue-100 text-blue-800' :
+                        displayCustomer.category === 'A' ? 'bg-green-100 text-green-800' :
+                        displayCustomer.category === 'B' ? 'bg-yellow-100 text-yellow-800' :
+                        displayCustomer.category === 'C' ? 'bg-blue-100 text-blue-800' :
                         'bg-gray-100 text-gray-800'
                       }`}>
-                        {customer.category || 'Not specified'}
+                        {displayCustomer.category || 'Not specified'}
                       </span>
                     </div>
                   </div>
@@ -445,9 +605,17 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
             <div className="px-6 py-4 border-b border-gray-200 bg-blue-50">
               <div className="flex justify-between items-center">
                 <h3 className="text-lg font-semibold text-gray-900">Loan Details</h3>
-                <span className="text-sm text-gray-600">
-                  {customerLoans.length} Loan{customerLoans.length !== 1 ? 's' : ''}
-                </span>
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-gray-600">
+                    {customerLoans.length} Loan{customerLoans.length !== 1 ? 's' : ''}
+                  </span>
+                  <button 
+                    onClick={fetchDetailedCustomer}
+                    className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                  >
+                    Refresh
+                  </button>
+                </div>
               </div>
             </div>
             <div className="p-6">
@@ -455,15 +623,20 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
                 <div className="space-y-6">
                   {customerLoans.map((loan: any, index: number) => {
                     const completion = calculateEMICompletion(loan);
-                    const remainingAmount = Math.round((loan.loanAmount || 0) * (1 - completion.completionPercentage/100));
+                    const remainingAmount = Math.max(0, (loan.loanAmount || 0) - (loan.totalCollection || 0));
                     
                     return (
-                      <div key={index} className="border border-gray-300 rounded-xl p-6 hover:shadow-lg transition-all">
+                      <div key={loan.loanId || index} className="border border-gray-300 rounded-xl p-6 hover:shadow-lg transition-all">
                         {/* Loan Header */}
                         <div className="flex justify-between items-start mb-4">
                           <div>
                             <h5 className="font-bold text-gray-900 text-lg mb-2">
                               {loan.loanNumber || `L${index + 1}`}
+                              {index === 0 && customerLoans.length > 1 && (
+                                <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                  Primary
+                                </span>
+                              )}
                             </h5>
                             <div className="flex items-center space-x-2">
                               <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-semibold ${
@@ -905,13 +1078,13 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
                   <p className="text-gray-600 mb-4">Shop Field Investigation Document</p>
                   <div className="flex justify-center space-x-3">
                     <button 
-                      onClick={() => handleDownload(customer.fiDocuments?.shop || '', 'Shop_FI')}
+                      onClick={() => handleDownload(displayCustomer.fiDocuments?.shop, 'Shop_FI')}
                       className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
                     >
                       Download
                     </button>
                     <button 
-                      onClick={() => handleShareWhatsApp(customer.fiDocuments?.shop || '', 'Shop FI Document')}
+                      onClick={() => handleShareWhatsApp(displayCustomer.fiDocuments?.shop, 'Shop FI Document')}
                       className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors flex items-center space-x-2"
                     >
                       <span>WhatsApp</span>
@@ -932,13 +1105,13 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
                   <p className="text-gray-600 mb-4">Home Field Investigation Document</p>
                   <div className="flex justify-center space-x-3">
                     <button 
-                      onClick={() => handleDownload(customer.fiDocuments?.home || '', 'Home_FI')}
+                      onClick={() => handleDownload(displayCustomer.fiDocuments?.home, 'Home_FI')}
                       className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
                     >
                       Download
                     </button>
                     <button 
-                      onClick={() => handleShareWhatsApp(customer.fiDocuments?.home || '', 'Home FI Document')}
+                      onClick={() => handleShareWhatsApp(displayCustomer.fiDocuments?.home, 'Home FI Document')}
                       className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors flex items-center space-x-2"
                     >
                       <span>WhatsApp</span>
@@ -959,17 +1132,17 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
                 <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
                   <span className="text-gray-700">Shop FI Document</span>
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    customer.fiDocuments?.shop ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    getDocumentUrl(displayCustomer.fiDocuments?.shop) ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                   }`}>
-                    {customer.fiDocuments?.shop ? 'Uploaded' : 'Not Uploaded'}
+                    {getDocumentUrl(displayCustomer.fiDocuments?.shop) ? 'Uploaded' : 'Not Uploaded'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
                   <span className="text-gray-700">Home FI Document</span>
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    customer.fiDocuments?.home ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    getDocumentUrl(displayCustomer.fiDocuments?.home) ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                   }`}>
-                    {customer.fiDocuments?.home ? 'Uploaded' : 'Not Uploaded'}
+                    {getDocumentUrl(displayCustomer.fiDocuments?.home) ? 'Uploaded' : 'Not Uploaded'}
                   </span>
                 </div>
               </div>

@@ -34,6 +34,7 @@ interface AddCustomerModalProps {
   onSuccess?: () => void;
   currentUserOffice: string;
   existingCustomers: Customer[];
+  currentOperator: { id: string; name: string }; // ← ADD THIS LINE
 }
 
 interface Step1Errors {
@@ -59,7 +60,8 @@ export default function AddCustomerModal({
   onClose,
   onSuccess,
   currentUserOffice,
-  existingCustomers
+  existingCustomers,
+  currentOperator // ← ADD THIS LINE
 }: AddCustomerModalProps) {
   const [currentStep, setCurrentStep] = useState(1);
   const [step1Data, setStep1Data] = useState<NewCustomerStep1>({
@@ -468,7 +470,7 @@ export default function AddCustomerModal({
     formData.append('loginId', step3Data.loginId);
     formData.append('password', step3Data.password);
     formData.append('confirmPassword', step3Data.confirmPassword);
-    formData.append('createdBy', currentUserOffice || 'data_entry_operator');
+    formData.append('createdBy', currentOperator.id || 'data_entry_operator');
     
     // Add files if they exist
     if (step1Data.profilePicture) {

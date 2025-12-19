@@ -10,6 +10,7 @@ interface AddLoanModalProps {
   customerDetails: CustomerDetails;
   onSuccess?: () => void;
   existingLoans?: Loan[];
+  currentOperator: { id: string; name: string }; // ← ADD THIS LINE
 }
 
 interface NewLoanData {
@@ -33,7 +34,8 @@ export default function AddLoanModal({
   onClose,
   customerDetails,
   onSuccess,
-  existingLoans = []
+  existingLoans = [],
+  currentOperator // ← ADD THIS LINE
 }: AddLoanModalProps) {
   const [newLoans, setNewLoans] = useState<NewLoanData[]>([{
     loanNumber: '',
@@ -405,7 +407,7 @@ export default function AddLoanModal({
       const batchRequestData = {
         customerId: customerDetails._id,
         loans: loans,
-        createdBy: 'data_entry_operator'
+        createdBy: currentOperator.id || 'data_entry_operator'
       };
 
       console.log('📤 Submitting to /api/data-entry/loans/batch:', {

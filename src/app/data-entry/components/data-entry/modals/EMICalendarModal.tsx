@@ -37,27 +37,89 @@ interface EMIStatusInfo {
   }[];
 }
 
-// NEW: Generate EMI schedule dates for a loan
+// DEBUG: Enhanced logging function
+const debugLog = (label: string, data: any) => {
+  console.log(`🔍 [EMICalendar] ${label}:`, data);
+};
+
+// CORRECTED: Generate EMI schedule dates for a loan (SIMPLIFIED FIXED VERSION)
 const generateEmiSchedule = (loan: Loan, year: number, month: number): Date[] => {
+  debugLog('generateEmiSchedule called', {
+    loanNumber: loan.loanNumber,
+    emiStartDate: loan.emiStartDate,
+    loanType: loan.loanType,
+    year,
+    month
+  });
+  
   const schedule: Date[] = [];
-  if (!loan.emiStartDate || !loan.loanType) return schedule;
   
+  // Check for missing data
+  if (!loan.emiStartDate) {
+    debugLog('Missing emiStartDate', loan);
+    return schedule;
+  }
+  
+  if (!loan.loanType) {
+    debugLog('Missing loanType', loan);
+    return schedule;
+  }
+  
+  // Parse the EMI start date
   const startDate = new Date(loan.emiStartDate);
-  startDate.setHours(0, 0, 0, 0);
   
+  // Check if date is valid
+  if (isNaN(startDate.getTime())) {
+    debugLog('Invalid emiStartDate', {
+      raw: loan.emiStartDate,
+      parsed: startDate
+    });
+    return schedule;
+  }
+  
+  // Create a clean date (set to midnight in local time)
+  const cleanStartDate = new Date(
+    startDate.getFullYear(),
+    startDate.getMonth(),
+    startDate.getDate(),
+    0, 0, 0, 0
+  );
+  
+  debugLog('Date details', {
+    original: loan.emiStartDate,
+    parsed: startDate,
+    cleanStartDate: cleanStartDate,
+    cleanDateString: cleanStartDate.toLocaleDateString('en-IN'),
+    cleanISO: cleanStartDate.toISOString()
+  });
+  
+  // Calculate month boundaries
   const monthStart = new Date(year, month, 1);
   const monthEnd = new Date(year, month + 1, 0);
   
-  let currentDate = new Date(startDate);
+  debugLog('Month boundaries', {
+    monthStart: monthStart.toLocaleDateString('en-IN'),
+    monthEnd: monthEnd.toLocaleDateString('en-IN'),
+    monthName: new Date(year, month).toLocaleString('en-IN', { month: 'long' })
+  });
   
-  // Generate dates up to total EMI count or until we exceed reasonable limit
-  const maxDates = 365; // Safety limit
+  // Start with the EMI start date
+  let currentDate = new Date(cleanStartDate);
+  
+  // Determine how many dates to generate
+  const maxDates = loan.totalEmiCount || 30;
+  
+  debugLog('Starting schedule generation', {
+    startDate: cleanStartDate.toLocaleDateString('en-IN'),
+    maxDates,
+    loanType: loan.loanType
+  });
   
   for (let i = 0; i < maxDates; i++) {
-    // Skip if before start date
-    if (currentDate < startDate) {
-      // Move to next EMI date
-      switch(loan.loanType) {
+    // For the first iteration, use the start date
+    if (i > 0) {
+      // Calculate next date based on loan type
+      switch (loan.loanType) {
         case 'Daily':
           currentDate.setDate(currentDate.getDate() + 1);
           break;
@@ -66,40 +128,46 @@ const generateEmiSchedule = (loan: Loan, year: number, month: number): Date[] =>
           break;
         case 'Monthly':
           currentDate.setMonth(currentDate.getMonth() + 1);
+          // Handle month rollover
+          const targetDay = cleanStartDate.getDate();
+          const lastDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
+          currentDate.setDate(Math.min(targetDay, lastDayOfMonth));
           break;
+        default:
+          currentDate.setDate(currentDate.getDate() + 1);
       }
-      continue;
     }
     
-    // Stop if we've passed total EMI count
-    if (loan.totalEmiCount && i >= loan.totalEmiCount) break;
+    debugLog(`Date ${i + 1}`, {
+      date: currentDate.toLocaleDateString('en-IN'),
+      iso: currentDate.toISOString(),
+      monthStart: currentDate.getMonth() === month,
+      inRange: currentDate >= monthStart && currentDate <= monthEnd
+    });
     
-    // Add date if within current month
+    // Check if date is within the requested month
     if (currentDate >= monthStart && currentDate <= monthEnd) {
       schedule.push(new Date(currentDate));
+      debugLog(`Added to schedule`, {
+        index: schedule.length,
+        date: currentDate.toLocaleDateString('en-IN')
+      });
     }
     
-    // Stop if we've passed the month
-    if (currentDate > monthEnd) break;
-    
-    // Move to next EMI date based on loan type
-    switch(loan.loanType) {
-      case 'Daily':
-        currentDate.setDate(currentDate.getDate() + 1);
-        break;
-      case 'Weekly':
-        currentDate.setDate(currentDate.getDate() + 7);
-        break;
-      case 'Monthly':
-        currentDate.setMonth(currentDate.getMonth() + 1);
-        // Handle month rollover (e.g., Jan 31 + 1 month = Mar 3 in JS)
-        // Adjust to same day of month if possible
-        const targetDay = startDate.getDate();
-        const lastDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
-        currentDate.setDate(Math.min(targetDay, lastDayOfMonth));
-        break;
+    // Stop if we've passed the month end
+    if (currentDate > monthEnd) {
+      debugLog('Stopping - passed month end', {
+        currentDate: currentDate.toLocaleDateString('en-IN'),
+        monthEnd: monthEnd.toLocaleDateString('en-IN')
+      });
+      break;
     }
   }
+  
+  debugLog('Schedule complete', {
+    totalDates: schedule.length,
+    dates: schedule.map(d => d.toLocaleDateString('en-IN'))
+  });
   
   return schedule;
 };
@@ -110,6 +178,16 @@ export default function EMICalendarModal({
   customer,
   currentUserOffice
 }: EMICalendarModalProps) {
+  // DEBUG: Log props when component renders
+  useEffect(() => {
+    debugLog('Component mounted with props', {
+      isOpen,
+      customerName: customer?.name,
+      customerId: customer?._id,
+      currentUserOffice
+    });
+  }, [isOpen, customer, currentUserOffice]);
+  
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [calendarDays, setCalendarDays] = useState<CalendarDay[]>([]);
@@ -122,49 +200,86 @@ export default function EMICalendarModal({
 
   // Extract loans from customer
   useEffect(() => {
+    debugLog('Extracting loans from customer', {
+      customer,
+      hasLoans: 'loans' in customer && Array.isArray(customer.loans),
+      loanCount: ('loans' in customer && Array.isArray(customer.loans)) ? customer.loans.length : 0
+    });
+    
     if (customer) {
       const loans: Loan[] = [];
       
+      // Try to get loans from customer object
       if ('loans' in customer && Array.isArray(customer.loans)) {
-        loans.push(...customer.loans as Loan[]);
+        debugLog('Found loans in customer object', customer.loans);
+        loans.push(...(customer.loans as Loan[]));
       }
       
-      const customerData = customer as any;
-      if (customerData.loanNumber || customerData.amount) {
-        const fallbackLoan: Loan = {
-          _id: customer._id || `fallback_${Date.now()}`,
-          customerId: customer._id || '',
-          customerName: customer.name,
-          customerNumber: customer.customerNumber || '',
-          loanNumber: customerData.loanNumber || 'L1',
-          amount: customerData.loanAmount || customerData.amount || 0,
-          emiAmount: customerData.emiAmount || 0,
-          loanType: customerData.loanType || 'Daily',
-          dateApplied: customerData.createdAt || new Date().toISOString(),
-          emiStartDate: customerData.emiStartDate || customerData.createdAt || new Date().toISOString(),
-          loanDays: customerData.loanDays || 30,
-          totalEmiCount: customerData.totalEmiCount || 30,
-          emiPaidCount: customerData.emiPaidCount || 0,
-          lastEmiDate: customerData.lastEmiDate || customerData.createdAt || new Date().toISOString(),
-          nextEmiDate: customerData.nextEmiDate || customerData.createdAt || new Date().toISOString(),
-          totalPaidAmount: customerData.totalPaidAmount || 0,
-          remainingAmount: customerData.remainingAmount || customerData.loanAmount || 0,
-          emiHistory: customerData.emiHistory || [],
-          status: customerData.status || 'active',
-          isRenewed: false,
-          renewedLoanNumber: '',
-          renewedDate: '',
-          originalLoanNumber: ''
-        };
-        loans.push(fallbackLoan);
+      // If no loans array, check for individual loan properties
+      if (loans.length === 0) {
+        debugLog('No loans array found, checking for individual properties', customer);
+        const customerData = customer as any;
+        
+        // Check if customer has loan properties
+        const hasLoanData = customerData.loanNumber || customerData.loanAmount || customerData.emiAmount;
+        
+        if (hasLoanData) {
+          debugLog('Creating fallback loan from customer properties', {
+            loanNumber: customerData.loanNumber,
+            loanAmount: customerData.loanAmount,
+            emiAmount: customerData.emiAmount
+          });
+          
+          const fallbackLoan: Loan = {
+            _id: customer._id || `fallback_${Date.now()}`,
+            customerId: customer._id || '',
+            customerName: customer.name,
+            customerNumber: customer.customerNumber || '',
+            loanNumber: customerData.loanNumber || 'L1',
+            amount: customerData.loanAmount || customerData.amount || 0,
+            emiAmount: customerData.emiAmount || 0,
+            loanType: customerData.loanType || 'Daily',
+            dateApplied: customerData.createdAt || new Date().toISOString(),
+            emiStartDate: customerData.emiStartDate || customerData.createdAt || new Date().toISOString(),
+            loanDays: customerData.loanDays || 30,
+            totalEmiCount: customerData.totalEmiCount || 30,
+            emiPaidCount: customerData.emiPaidCount || 0,
+            lastEmiDate: customerData.lastEmiDate || customerData.createdAt || new Date().toISOString(),
+            nextEmiDate: customerData.nextEmiDate || customerData.createdAt || new Date().toISOString(),
+            totalPaidAmount: customerData.totalPaidAmount || 0,
+            remainingAmount: customerData.remainingAmount || customerData.loanAmount || 0,
+            emiHistory: customerData.emiHistory || [],
+            status: customerData.status || 'active',
+            isRenewed: false,
+            renewedLoanNumber: '',
+            renewedDate: '',
+            originalLoanNumber: ''
+          };
+          
+          loans.push(fallbackLoan);
+        }
       }
       
-      const activeLoans = loans.filter(loan => 
-        loan.status === 'active' && !loan.isRenewed
-      );
+      // Filter active loans
+      const activeLoans = loans.filter(loan => {
+        const isActive = loan.status === 'active' && !loan.isRenewed;
+        debugLog(`Loan ${loan.loanNumber}`, {
+          status: loan.status,
+          isRenewed: loan.isRenewed,
+          isActive
+        });
+        return isActive;
+      });
+      
+      debugLog('Loans processing complete', {
+        totalLoans: loans.length,
+        activeLoans: activeLoans.length,
+        activeLoanNumbers: activeLoans.map(l => l.loanNumber)
+      });
       
       setCustomerLoans(activeLoans);
       
+      // Create loan options for dropdown
       const options = [
         { value: 'all', label: 'All Loans (Amount Dues Only)' }
       ];
@@ -177,12 +292,23 @@ export default function EMICalendarModal({
       });
       
       setLoanOptions(options);
+      debugLog('Loan options set', options);
+    } else {
+      debugLog('No customer provided', { customer });
     }
   }, [customer]);
 
   // Generate calendar days based on selected loan
   useEffect(() => {
+    debugLog('Generating calendar days', {
+      selectedMonth,
+      selectedYear,
+      selectedLoan,
+      customerLoansCount: customerLoans.length
+    });
+    
     if (!customerLoans || customerLoans.length === 0) {
+      debugLog('No customer loans available', { customerLoans });
       setCalendarDays([]);
       return;
     }
@@ -191,35 +317,62 @@ export default function EMICalendarModal({
       ? customerLoans 
       : customerLoans.filter(loan => loan.loanNumber === selectedLoan);
 
+    debugLog('Loans to show', {
+      count: loansToShow.length,
+      loans: loansToShow.map(l => ({
+        loanNumber: l.loanNumber,
+        emiStartDate: l.emiStartDate,
+        loanType: l.loanType,
+        emiAmount: l.emiAmount
+      }))
+    });
+
     const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
     const days: CalendarDay[] = [];
 
-    // For "All Loans" view: Only show total amount due per day
-    // For single loan view: Show detailed status
-    
     const emiStatusMap = new Map<string, EMIStatusInfo>();
 
-    // Get today's date in IST (UTC+5:30)
+    // Get today's date
     const today = new Date();
     const todayIST = new Date(today.getTime() + (5.5 * 60 * 60 * 1000));
     const todayKey = todayIST.toISOString().split('T')[0];
 
-    loansToShow.forEach(loan => {
-      if (!loan.emiStartDate || !loan.loanType || !loan.emiAmount) return;
+    debugLog('Today info', {
+      today: today.toLocaleDateString('en-IN'),
+      todayIST: todayIST.toLocaleDateString('en-IN'),
+      todayKey
+    });
 
-      // Generate EMI schedule for this loan in the selected month
+    // Process each loan
+    loansToShow.forEach(loan => {
+      debugLog(`Processing loan ${loan.loanNumber}`, {
+        emiStartDate: loan.emiStartDate,
+        loanType: loan.loanType,
+        emiAmount: loan.emiAmount
+      });
+
+      if (!loan.emiStartDate || !loan.loanType || !loan.emiAmount) {
+        debugLog(`Skipping loan ${loan.loanNumber} - missing data`, loan);
+        return;
+      }
+
+      // Generate EMI schedule
       const emiSchedule = generateEmiSchedule(loan, selectedYear, selectedMonth);
-      
+      debugLog(`Generated schedule for ${loan.loanNumber}`, {
+        count: emiSchedule.length,
+        dates: emiSchedule.map(d => d.toLocaleDateString('en-IN'))
+      });
+
       emiSchedule.forEach(scheduledDate => {
         const dateKey = scheduledDate.toISOString().split('T')[0];
         const existing = emiStatusMap.get(dateKey);
         
-        // Check if there's a payment for this scheduled date
+        // Determine payment status
         let paymentStatus: 'paid' | 'partial' | 'advance' | 'missed' | 'due' = 'due';
         let paymentAmount = loan.emiAmount;
         
+        // Check payment history if available
         if (loan.emiHistory && loan.emiHistory.length > 0) {
-          // Find payments for this date or advance payments covering this date
           const relevantPayments = loan.emiHistory.filter(payment => {
             if (!payment.paymentDate) return false;
             
@@ -229,7 +382,7 @@ export default function EMICalendarModal({
             // Exact date match
             if (paymentDateKey === dateKey) return true;
             
-            // Check if it's an advance payment covering this date
+            // Check advance payments
             if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.advanceToDate) {
               const advanceFrom = new Date(payment.advanceFromDate);
               const advanceTo = new Date(payment.advanceToDate);
@@ -249,14 +402,12 @@ export default function EMICalendarModal({
               paymentAmount = totalPaid;
             }
           } else {
-            // No payment found - check if date is in past
+            // Check if date is in past
             const scheduleDateIST = new Date(scheduledDate.getTime() + (5.5 * 60 * 60 * 1000));
             const scheduleDateKey = scheduleDateIST.toISOString().split('T')[0];
             
             if (scheduleDateKey < todayKey) {
               paymentStatus = 'missed';
-            } else {
-              paymentStatus = 'due';
             }
           }
         } else {
@@ -284,7 +435,17 @@ export default function EMICalendarModal({
       });
     });
 
-    // Generate calendar days
+    debugLog('EMI Status Map', {
+      size: emiStatusMap.size,
+      entries: Array.from(emiStatusMap.entries()).map(([date, info]) => ({
+        date,
+        amount: info.amount,
+        status: info.status,
+        loans: info.loanNumbers
+      }))
+    });
+
+    // Generate calendar days for the month
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(selectedYear, selectedMonth, day);
       const dateIST = new Date(date.getTime() + (5.5 * 60 * 60 * 1000));
@@ -297,7 +458,6 @@ export default function EMICalendarModal({
       const emiInfo = emiStatusMap.get(dateKey);
       const isEmiDue = !!emiInfo;
 
-      // For "All Loans" view, show only amount (no status colors)
       const statusForDisplay = selectedLoan === 'all' 
         ? (isEmiDue ? 'amount-only' : undefined)
         : emiInfo?.status;
@@ -315,10 +475,19 @@ export default function EMICalendarModal({
       });
     }
 
+    debugLog('Calendar days generated', {
+      totalDays: days.length,
+      daysWithEMI: days.filter(d => d.isEmiDue).length,
+      firstDay: days[0]?.date.toLocaleDateString('en-IN'),
+      lastDay: days[days.length - 1]?.date.toLocaleDateString('en-IN')
+    });
+
     setCalendarDays(days);
   }, [selectedMonth, selectedYear, customerLoans, selectedLoan]);
 
   const navigateMonth = (direction: 'prev' | 'next') => {
+    debugLog('Navigating month', { direction, currentMonth: selectedMonth, currentYear: selectedYear });
+    
     if (direction === 'prev') {
       if (selectedMonth === 0) {
         setSelectedMonth(11);
@@ -353,7 +522,7 @@ export default function EMICalendarModal({
       case 'partial': return 'Partial';
       case 'advance': return 'Advance';
       case 'missed': return 'Missed';
-      case 'amount-only': return 'Amount Due';
+      case 'amount-only': return 'Amount';
       default: return 'Due';
     }
   };
@@ -365,7 +534,18 @@ export default function EMICalendarModal({
 
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-  if (!isOpen) return null;
+  // DEBUG: Log when component renders
+  debugLog('Component render', {
+    isOpen,
+    selectedMonth,
+    selectedYear,
+    calendarDaysCount: calendarDays.length
+  });
+
+  if (!isOpen) {
+    debugLog('Modal not open, returning null', { isOpen });
+    return null;
+  }
 
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center">
@@ -374,10 +554,10 @@ export default function EMICalendarModal({
           <div className="flex justify-between items-center">
             <div>
               <h3 className="text-xl font-semibold text-gray-900">
-                EMI Calendar - {customer.name}
+                EMI Calendar - {customer?.name || 'Unknown Customer'}
               </h3>
               <p className="text-sm text-gray-500 mt-1">
-                Customer Number: {customer.customerNumber} • {customerLoans.length} active loan(s)
+                Customer Number: {customer?.customerNumber || 'N/A'} • {customerLoans.length} active loan(s)
               </p>
             </div>
             <button
@@ -410,7 +590,10 @@ export default function EMICalendarModal({
                 </label>
                 <select
                   value={selectedLoan}
-                  onChange={(e) => setSelectedLoan(e.target.value)}
+                  onChange={(e) => {
+                    debugLog('Loan selection changed', { selectedLoan: e.target.value });
+                    setSelectedLoan(e.target.value);
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
                 >
                   {loanOptions.map(option => (
@@ -421,7 +604,7 @@ export default function EMICalendarModal({
                 </select>
                 <p className="text-xs text-gray-500 mt-1">
                   {selectedLoan === 'all' 
-                    ? 'Showing total EMI amount due per day for all loans' 
+                    ? 'Showing total EMI amount per day for all loans' 
                     : `Showing detailed EMI schedule for ${selectedLoan}`}
                 </p>
               </div>
@@ -435,7 +618,7 @@ export default function EMICalendarModal({
             </button>
           </div>
 
-          {/* Calendar */}
+          {/* Calendar Grid */}
           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
             {/* Day Headers */}
             <div className="grid grid-cols-7 bg-gray-50 border-b border-gray-200">
@@ -480,9 +663,9 @@ export default function EMICalendarModal({
                       {day.isEmiDue && (
                         <div className="mt-auto space-y-1">
                           {selectedLoan === 'all' ? (
-                            // All Loans View: Show only total amount
+                            // All Loans View: Show total EMI amount
                             <div className="text-xs">
-                              <div className="font-medium text-purple-700">Total EMI Due:</div>
+                              <div className="font-medium text-purple-700">Total EMI Amount:</div>
                               <div className="text-purple-600 font-bold">₹{day.amount?.toLocaleString() || '0'}</div>
                               {day.loanNumbers && day.loanNumbers.length > 0 && (
                                 <div className="text-gray-500 text-xs mt-1">
@@ -494,7 +677,7 @@ export default function EMICalendarModal({
                               )}
                             </div>
                           ) : (
-                            // Single Loan View: Show detailed status
+                            // Single Loan View
                             <div className="text-xs">
                               <div className="font-medium text-gray-700">
                                 {getStatusText(day.status)} EMI
@@ -508,28 +691,6 @@ export default function EMICalendarModal({
                               }`}>
                                 ₹{day.amount?.toLocaleString() || '0'}
                               </div>
-                              {day.loanDetails && day.loanDetails.length > 0 && (
-                                <div className="mt-1">
-                                  {day.loanDetails.map((detail, idx) => (
-                                    <div key={idx} className="flex justify-between items-center text-xs">
-                                      <span className="text-gray-600">{detail.loanNumber}</span>
-                                      <span className={`px-1 rounded ${
-                                        detail.status === 'paid' ? 'bg-green-100 text-green-800' :
-                                        detail.status === 'missed' ? 'bg-red-100 text-red-800' :
-                                        detail.status === 'partial' ? 'bg-yellow-100 text-yellow-800' :
-                                        detail.status === 'advance' ? 'bg-blue-100 text-blue-800' :
-                                        'bg-gray-100 text-gray-800'
-                                      }`}>
-                                        {detail.status === 'paid' ? 'Paid' : 
-                                         detail.status === 'missed' ? 'Missed' : 
-                                         detail.status === 'partial' ? 'Partial' : 
-                                         detail.status === 'advance' ? 'Advance' : 
-                                         'Due'}
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
                             </div>
                           )}
                         </div>
@@ -548,7 +709,7 @@ export default function EMICalendarModal({
               {selectedLoan === 'all' ? (
                 <div className="flex items-center">
                   <div className="w-4 h-4 bg-purple-100 border border-purple-300 rounded mr-2"></div>
-                  <span className="text-sm text-gray-700">Total EMI Amount Due (Sum of all loans)</span>
+                  <span className="text-sm text-gray-700">Total EMI Amount (Sum of all loans)</span>
                 </div>
               ) : (
                 <>
@@ -590,7 +751,7 @@ export default function EMICalendarModal({
           <div className="flex justify-between items-center">
             <div className="text-sm text-gray-600">
               {selectedLoan === 'all' 
-                ? `Showing total EMI amounts due per day for all loans in ${monthNames[selectedMonth]} ${selectedYear}`
+                ? `Showing total EMI amounts per day for all loans in ${monthNames[selectedMonth]} ${selectedYear}`
                 : `Showing EMI schedule for ${selectedLoan} in ${monthNames[selectedMonth]} ${selectedYear}`}
             </div>
             <button
