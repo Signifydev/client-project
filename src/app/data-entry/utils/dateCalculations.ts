@@ -236,7 +236,7 @@ export const generateEmiSchedule = (
   const currentDate = new Date(startDate); // FIXED: let → const
   
   // Create a mutable copy for iteration
-  let mutableDate = new Date(currentDate);
+  const mutableDate = new Date(currentDate);
   
   // Generate dates up to total EMI count
   for (let i = 0; i < totalEmiCount; i++) {
@@ -360,7 +360,7 @@ export const calculateOverdueEmis = (
   const currentDate = new Date(startDate); // FIXED: let → const
   
   // Create a mutable copy for iteration
-  let mutableDate = new Date(currentDate);
+  const mutableDate = new Date(currentDate);
   
   // Check each scheduled EMI date up to today
   for (let i = 0; i < totalEmiCount; i++) {
