@@ -43,6 +43,7 @@ const debugLog = (label: string, data: unknown) => {
   console.log(`📅 [EMICalendar] ${label}:`, data);
 };
 
+
 // FIXED: Generate EMI schedule dates for a loan
 const generateEmiSchedule = (loan: Loan, year: number, month: number): Date[] => {
   debugLog('generateEmiSchedule called', {
@@ -100,8 +101,8 @@ const generateEmiSchedule = (loan: Loan, year: number, month: number): Date[] =>
     const monthStart = new Date(year, month, 1);
     const monthEnd = new Date(year, month + 1, 0);
     
-    // Start with the EMI start date - Using let because we mutate it
-    let currentDate = new Date(istStartDate);
+    // Start with the EMI start date - Changed from let to const
+    const currentDate = new Date(istStartDate);
     
     // Determine how many dates to generate
     const maxDates = loan.totalEmiCount || 365;
@@ -114,41 +115,45 @@ const generateEmiSchedule = (loan: Loan, year: number, month: number): Date[] =>
     });
     
     for (let i = 0; i < maxDates; i++) {
+      // Create a new date for each iteration to avoid mutating the original
+      const dateToCheck = new Date(currentDate);
+      
       if (i > 0) {
         // Calculate next date based on loan type
         switch (loan.loanType) {
           case 'Daily':
-            currentDate.setDate(currentDate.getDate() + 1);
+            dateToCheck.setDate(currentDate.getDate() + i);
             break;
           case 'Weekly':
-            currentDate.setDate(currentDate.getDate() + 7);
+            dateToCheck.setDate(currentDate.getDate() + (i * 7));
             break;
           case 'Monthly':
-            currentDate.setMonth(currentDate.getMonth() + 1);
+            // Add months to the start date
+            dateToCheck.setMonth(istStartDate.getMonth() + i);
             // Handle month rollover
             const targetDay = istStartDate.getDate();
-            const lastDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
-            currentDate.setDate(Math.min(targetDay, lastDayOfMonth));
+            const lastDayOfMonth = new Date(dateToCheck.getFullYear(), dateToCheck.getMonth() + 1, 0).getDate();
+            dateToCheck.setDate(Math.min(targetDay, lastDayOfMonth));
             break;
           default:
-            currentDate.setDate(currentDate.getDate() + 1);
+            dateToCheck.setDate(currentDate.getDate() + i);
         }
       }
       
       // Check if date is within the requested month
-      if (currentDate >= monthStart && currentDate <= monthEnd) {
-        schedule.push(new Date(currentDate));
+      if (dateToCheck >= monthStart && dateToCheck <= monthEnd) {
+        schedule.push(new Date(dateToCheck));
         debugLog(`Added date ${i + 1}`, {
-          date: currentDate.toLocaleDateString('en-IN'),
-          dayOfMonth: currentDate.getDate(),
-          monthMatch: currentDate.getMonth() === month
+          date: dateToCheck.toLocaleDateString('en-IN'),
+          dayOfMonth: dateToCheck.getDate(),
+          monthMatch: dateToCheck.getMonth() === month
         });
       }
       
       // Stop if we've passed the month end
-      if (currentDate > monthEnd) {
+      if (dateToCheck > monthEnd) {
         debugLog('Stopping - passed month end', {
-          currentDate: currentDate.toLocaleDateString('en-IN'),
+          currentDate: dateToCheck.toLocaleDateString('en-IN'),
           monthEnd: monthEnd.toLocaleDateString('en-IN')
         });
         break;
