@@ -411,7 +411,8 @@ export default function AddCustomerModal({
     }
   };
 
-  const sendApprovalRequest = async (): Promise<{success: boolean, message?: string}> => {
+  // In sendApprovalRequest function, around line 314
+const sendApprovalRequest = async (): Promise<{success: boolean, message?: string}> => {
   try {
     console.log('📤 Sending approval request as FormData...');
     console.log('🔍 Loan Selection Type:', step2Data.loanSelectionType);
@@ -444,7 +445,9 @@ export default function AddCustomerModal({
       // Step 2 data - ONLY for Single Loan
       formData.append('loanDate', step2Data.loanDate);
       formData.append('emiStartDate', step2Data.emiStartDate);
-      formData.append('loanAmount', step2Data.loanAmount || totalLoanAmount.toString());
+      // FIX: Send BOTH amount (principal) and loanAmount (total)
+      formData.append('amount', step2Data.amount || '0'); // ← ADD THIS LINE (Principal Amount)
+      formData.append('loanAmount', step2Data.loanAmount || totalLoanAmount.toString()); // Total Amount
       formData.append('emiAmount', step2Data.emiAmount);
       formData.append('loanDays', step2Data.loanDays);
       formData.append('loanType', step2Data.loanType);
@@ -458,6 +461,7 @@ export default function AddCustomerModal({
       // For Multiple Loans, don't send loan fields or send empty/default values
       formData.append('loanDate', '');
       formData.append('emiStartDate', '');
+      formData.append('amount', '0'); // ← ADD THIS LINE
       formData.append('loanAmount', '0');
       formData.append('emiAmount', '0');
       formData.append('loanDays', '0');
@@ -495,10 +499,17 @@ export default function AddCustomerModal({
       }
     }
     
+    // Debug: Show amount values
+    console.log('💰 DEBUG - Amount values:', {
+      principalAmount: step2Data.amount,
+      totalLoanAmount: step2Data.loanAmount,
+      calculatedTotal: totalLoanAmount,
+      loanSelectionType: step2Data.loanSelectionType
+    });
+    
     const response = await fetch('/api/data-entry/customers', {
       method: 'POST',
       body: formData,
-      // Don't set Content-Type header for FormData - browser will set it automatically
     });
 
     console.log('📊 Response status:', response.status);

@@ -265,6 +265,31 @@ const checkForDuplicates = async (customerData) => {
   return duplicates.length > 0;
 };
 
+// FIXED: Correct next EMI date calculation for NEW loans
+const getNextEmiDateForNewLoan = (emiStartDate, loanType, emiPaidCount = 0) => {
+  // For NEW loans with NO payments, next EMI date should be the EMI start date itself
+  if (emiPaidCount === 0) {
+    return new Date(emiStartDate); // No increment for first EMI
+  }
+  
+  // For loans with payments, calculate next date based on loan type
+  const date = new Date(emiStartDate);
+  switch(loanType) {
+    case 'Daily':
+      date.setDate(date.getDate() + 1);
+      break;
+    case 'Weekly':
+      date.setDate(date.getDate() + 7);
+      break;
+    case 'Monthly':
+      date.setMonth(date.getMonth() + 1);
+      break;
+    default:
+      date.setDate(date.getDate() + 1);
+  }
+  return date;
+};
+
 async function approveNewCustomer(requestDoc, reason, processedBy) {
   console.log('📝 Creating new customer from multi-step request...');
   
@@ -286,6 +311,16 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
 
     console.log('🔍 Step data validation passed');
 
+    // Debug: Log amount values to verify
+    console.log('💰 DEBUG - Amount fields in step2Data:', {
+      amount: step2Data.amount, // Should be principal amount (e.g., 10000)
+      loanAmount: step2Data.loanAmount, // Should be total amount (e.g., 12000)
+      emiAmount: step2Data.emiAmount,
+      loanDays: step2Data.loanDays,
+      hasAmountField: 'amount' in step2Data,
+      hasLoanAmountField: 'loanAmount' in step2Data
+    });
+
     // Handle loanSelectionType vs loanType
     const loanSelectionType = step2Data.loanSelectionType; // This is "single" or "multiple"
     const loanType = step2Data.loanType; // This is "Daily", "Weekly", or "Monthly"
@@ -294,7 +329,8 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
       loanSelectionType,
       loanType,
       loanNumber: step2Data.loanNumber,
-      loanAmount: step2Data.loanAmount,
+      amount: step2Data.amount, // Principal amount
+      loanAmount: step2Data.loanAmount, // Total amount
       emiAmount: step2Data.emiAmount,
       loanDays: step2Data.loanDays
     });
@@ -311,7 +347,8 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
     if (loanSelectionType === 'single') {
       console.log('🔍 Validating Single Loan details...');
       
-      const requiredStep2Fields = ['loanNumber', 'loanAmount', 'emiAmount', 'loanType', 'loanDays'];
+      // FIX: Validate both amount (principal) and loanAmount (total)
+      const requiredStep2Fields = ['loanNumber', 'amount', 'loanAmount', 'emiAmount', 'loanType', 'loanDays'];
       const missingStep2Fields = requiredStep2Fields.filter(field => {
         // Check if field is missing or has invalid value
         const value = step2Data[field];
@@ -322,6 +359,11 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
       
       if (missingStep2Fields.length > 0) {
         throw new Error(`Missing required loan fields for single loan: ${missingStep2Fields.join(', ')}`);
+      }
+
+      // Validate amount (principal) is positive
+      if (parseFloat(step2Data.amount) <= 0) {
+        throw new Error('Amount (principal) must be greater than 0');
       }
 
       // FIXED: More flexible loan number validation
@@ -352,7 +394,8 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
       
       // Set default values to prevent validation errors
       step2Data.loanNumber = '';
-      step2Data.loanAmount = step2Data.loanAmount || 0;
+      step2Data.amount = step2Data.amount || 0; // Principal amount
+      step2Data.loanAmount = step2Data.loanAmount || 0; // Total amount
       step2Data.emiAmount = step2Data.emiAmount || 0;
       step2Data.loanDays = step2Data.loanDays || 0;
       step2Data.loanType = step2Data.loanType || '';
@@ -482,35 +525,36 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
           emiStartDate = new Date(loanDate);
         }
 
-        // Calculate next EMI date
-        const calculateNextEmiDate = (startDate, loanType) => {
-          const date = new Date(startDate);
-          switch(loanType) {
-            case 'Daily': date.setDate(date.getDate() + 1); break;
-            case 'Weekly': date.setDate(date.getDate() + 7); break;
-            case 'Monthly': date.setMonth(date.getMonth() + 1); break;
-            default: date.setDate(date.getDate() + 1);
-          }
-          return date;
-        };
+        // Normalize dates to start of day
+        loanDate.setHours(0, 0, 0, 0);
+        emiStartDate.setHours(0, 0, 0, 0);
 
         // Calculate total loan amount based on EMI type
         let totalLoanAmount;
         if (step2Data.emiType === 'custom' && step2Data.loanType !== 'Daily') {
-          const fixedPeriods = Number(step2Data.loanDays) - 1;
-          const fixedAmount = Number(step2Data.emiAmount) * fixedPeriods;
-          const lastAmount = Number(step2Data.customEmiAmount || step2Data.emiAmount);
+          const fixedPeriods = parseInt(step2Data.loanDays) - 1;
+          const fixedAmount = parseFloat(step2Data.emiAmount) * fixedPeriods;
+          const lastAmount = parseFloat(step2Data.customEmiAmount || step2Data.emiAmount);
           totalLoanAmount = fixedAmount + lastAmount;
         } else {
-          totalLoanAmount = Number(step2Data.emiAmount) * Number(step2Data.loanDays);
+          totalLoanAmount = parseFloat(step2Data.emiAmount) * parseInt(step2Data.loanDays);
         }
+
+        // DEBUG: Log date calculation for verification
+        console.log('📅 DEBUG - EMI Date calculation:', {
+          emiStartDate: emiStartDate,
+          loanType: step2Data.loanType,
+          emiPaidCount: 0,
+          nextEmiDate: new Date(emiStartDate), // Should be same as emiStartDate
+          shouldBe: 'Same as EMI start date for new loans'
+        });
 
         const loanData = {
           customerId: customer._id,
           customerName: customer.name,
           customerNumber: customer.customerNumber,
           loanNumber: loanNumber,
-          amount: parseFloat(step2Data.loanAmount) || 0,
+          amount: parseFloat(step2Data.amount) || 0, // FIX: Use amount (principal), NOT loanAmount
           emiAmount: parseFloat(step2Data.emiAmount) || 0,
           loanType: step2Data.loanType || 'Daily',
           dateApplied: loanDate,
@@ -521,13 +565,24 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
           totalEmiCount: parseInt(step2Data.loanDays) || 30,
           emiPaidCount: 0,
           lastEmiDate: null,
-          nextEmiDate: calculateNextEmiDate(emiStartDate, step2Data.loanType),
+          // FIXED: For new loans, nextEmiDate should be emiStartDate (no increment)
+          nextEmiDate: new Date(emiStartDate), // No calculation needed for new loans
           totalPaidAmount: 0,
-          remainingAmount: parseFloat(step2Data.loanAmount) || 0,
+          remainingAmount: parseFloat(step2Data.amount) || 0, // FIX: Use amount (principal)
           status: 'active',
           createdBy: requestDoc.createdBy || 'system',
           totalLoanAmount: totalLoanAmount
         };
+
+        console.log('💰 DEBUG - Loan data to create:', {
+          principalAmount: loanData.amount,
+          totalLoanAmount: loanData.totalLoanAmount,
+          emiAmount: loanData.emiAmount,
+          loanDays: loanData.loanDays,
+          nextEmiDate: loanData.nextEmiDate,
+          emiStartDate: loanData.emiStartDate,
+          shouldBeEqual: loanData.nextEmiDate.getTime() === loanData.emiStartDate.getTime()
+        });
 
         await Loan.create(loanData);
         console.log('✅ Loan created with selected number:', loanNumber);
@@ -562,7 +617,9 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
         customerName: customer.name,
         customerNumber: customer.customerNumber,
         loanSelectionType: loanSelectionType,
-        loanNumber: loanSelectionType === 'single' ? step2Data.loanNumber : null
+        loanNumber: loanSelectionType === 'single' ? step2Data.loanNumber : null,
+        principalAmount: loanSelectionType === 'single' ? parseFloat(step2Data.amount) || 0 : null,
+        totalLoanAmount: loanSelectionType === 'single' ? (step2Data.loanAmount || 0) : null
       }
     });
 
@@ -699,24 +756,6 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
       const loanNumber = loanData.loanNumber.trim().toUpperCase();
       console.log(`✅ Using loan number: ${loanNumber} for customer: ${customer.name}`);
 
-      const calculateNextEmiDate = (emiStartDate, loanType) => {
-        const date = new Date(emiStartDate || new Date());
-        switch(loanType) {
-          case 'Daily':
-            date.setDate(date.getDate() + 1);
-            break;
-          case 'Weekly':
-            date.setDate(date.getDate() + 7);
-            break;
-          case 'Monthly':
-            date.setMonth(date.getMonth() + 1);
-            break;
-          default:
-            date.setDate(date.getDate() + 1);
-        }
-        return date;
-      };
-
       // FIXED: Enhanced date handling
       let emiStartDate;
       let loanDate;
@@ -757,10 +796,10 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
       let totalLoanAmount;
       
       if (loanData.amount && !isNaN(parseFloat(loanData.amount))) {
-        // Use provided amount if available
+        // Use provided amount if available (principal amount)
         loanAmount = parseFloat(loanData.amount);
       } else if (loanData.loanAmount && !isNaN(parseFloat(loanData.loanAmount))) {
-        // Use loanAmount if amount is not available
+        // Use loanAmount if amount is not available (fallback to total amount)
         loanAmount = parseFloat(loanData.loanAmount);
       } else {
         // Calculate based on EMI amount and days
@@ -784,12 +823,22 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
         loanAmount = parseFloat(loanData.emiAmount) * (parseInt(loanData.loanDays) || 30);
       }
 
+      // DEBUG: Log date calculation for verification
+      console.log('📅 DEBUG - EMI Date calculation for loan addition:', {
+        loanNumber: loanNumber,
+        emiStartDate: emiStartDate,
+        loanType: loanData.loanType,
+        emiPaidCount: 0,
+        nextEmiDate: new Date(emiStartDate), // Should be same as emiStartDate
+        shouldBe: 'Same as EMI start date for new loans'
+      });
+
       const newLoanData = {
         customerId: customer._id,
         customerName: customer.name,
         customerNumber: customer.customerNumber,
         loanNumber: loanNumber,
-        amount: loanAmount,
+        amount: loanAmount, // Principal amount
         emiAmount: parseFloat(loanData.emiAmount),
         loanType: loanData.loanType,
         dateApplied: loanDate,
@@ -800,7 +849,8 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
         totalEmiCount: parseInt(loanData.loanDays) || 30,
         emiPaidCount: 0,
         lastEmiDate: null,
-        nextEmiDate: calculateNextEmiDate(emiStartDate, loanData.loanType),
+        // FIXED: For new loans, nextEmiDate should be emiStartDate (no increment)
+        nextEmiDate: new Date(emiStartDate), // No calculation needed for new loans
         totalPaidAmount: 0,
         remainingAmount: loanAmount,
         status: 'active',
@@ -829,12 +879,15 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
 
       console.log('💾 Creating loan with data:', {
         loanNumber: newLoanData.loanNumber,
-        amount: newLoanData.amount,
+        amount: newLoanData.amount, // Principal
+        totalLoanAmount: newLoanData.totalLoanAmount, // Total
         emiAmount: newLoanData.emiAmount,
         loanType: newLoanData.loanType,
         emiType: newLoanData.emiType,
         loanDays: newLoanData.loanDays,
-        customerId: newLoanData.customerId
+        customerId: newLoanData.customerId,
+        nextEmiDate: newLoanData.nextEmiDate,
+        emiStartDate: newLoanData.emiStartDate
       });
 
       let newLoan;
@@ -846,9 +899,12 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
         createdLoans.push({
           loanId: newLoan._id,
           loanNumber: newLoan.loanNumber,
-          amount: newLoan.amount,
+          amount: newLoan.amount, // Principal amount
+          totalLoanAmount: newLoan.totalLoanAmount, // Total amount
           loanType: newLoan.loanType,
-          emiAmount: newLoan.emiAmount
+          emiAmount: newLoan.emiAmount,
+          nextEmiDate: newLoan.nextEmiDate,
+          emiStartDate: newLoan.emiStartDate
         });
       } catch (error) {
         console.error(`❌ Error creating loan ${index + 1}:`, error);
@@ -864,8 +920,11 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
               loanId: newLoan._id,
               loanNumber: newLoan.loanNumber,
               amount: newLoan.amount,
+              totalLoanAmount: newLoan.totalLoanAmount,
               loanType: newLoan.loanType,
-              emiAmount: newLoan.emiAmount
+              emiAmount: newLoan.emiAmount,
+              nextEmiDate: newLoan.nextEmiDate,
+              emiStartDate: newLoan.emiStartDate
             });
           } catch (retryError) {
             errors.push(`Loan ${index + 1}: ${retryError.message}`);
@@ -1171,25 +1230,7 @@ async function approveLoanEdit(requestDoc, reason, processedBy) {
 
   // Recalculate next EMI date if loan type or EMI start date changed
   if (updatedFields.includes('loanType') || updatedFields.includes('emiStartDate')) {
-    const calculateNextEmiDate = (emiStartDate, loanType) => {
-      const date = new Date(emiStartDate || new Date());
-      switch(loanType) {
-        case 'Daily':
-          date.setDate(date.getDate() + 1);
-          break;
-        case 'Weekly':
-          date.setDate(date.getDate() + 7);
-          break;
-        case 'Monthly':
-          date.setMonth(date.getMonth() + 1);
-          break;
-        default:
-          date.setDate(date.getDate() + 1);
-      }
-      return date;
-    };
-    
-    loan.nextEmiDate = calculateNextEmiDate(loan.emiStartDate, loan.loanType);
+    loan.nextEmiDate = getNextEmiDateForNewLoan(loan.emiStartDate, loan.loanType, loan.emiPaidCount);
     updatedFields.push('nextEmiDate');
   }
 
@@ -1251,7 +1292,8 @@ async function approveLoanEdit(requestDoc, reason, processedBy) {
     console.log('✅ Loan updated successfully:', {
       loanId: loan._id,
       loanNumber: loan.loanNumber,
-      amount: loan.amount,
+      amount: loan.amount, // Principal amount
+      totalLoanAmount: loan.totalLoanAmount, // Total amount
       updatedFields: updatedFields
     });
   } catch (error) {
@@ -1428,25 +1470,6 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
 
     console.log('✅ Unique loan number verified:', newLoanNumber);
 
-    // Helper function to calculate next EMI date
-    const calculateNextEmiDate = (emiStartDate, loanType) => {
-      const date = new Date(emiStartDate || new Date());
-      switch(loanType) {
-        case 'Daily':
-          date.setDate(date.getDate() + 1);
-          break;
-        case 'Weekly':
-          date.setDate(date.getDate() + 7);
-          break;
-        case 'Monthly':
-          date.setMonth(date.getMonth() + 1);
-          break;
-        default:
-          date.setDate(date.getDate() + 1);
-      }
-      return date;
-    };
-
     // Process dates
     let emiStartDate;
     let renewalDate;
@@ -1521,13 +1544,23 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
       customEmiAmount: requestedData.customEmiAmount
     });
 
-    // **FIXED: Create new loan with ALL required fields - NO validateBeforeSave: false!**
+    // **FIXED: Create new loan with ALL required fields**
     // Start a session for transaction
     const session = await mongoose.startSession();
     
     try {
       session.startTransaction();
       
+      // DEBUG: Log date calculation for verification
+      console.log('📅 DEBUG - EMI Date calculation for renewal:', {
+        loanNumber: newLoanNumber,
+        emiStartDate: emiStartDate,
+        loanType: requestedData.newLoanType,
+        emiPaidCount: 0,
+        nextEmiDate: new Date(emiStartDate), // Should be same as emiStartDate
+        shouldBe: 'Same as EMI start date for new renewed loan'
+      });
+
       // **FIXED: Create new loan with ALL required fields**
       const newLoan = new Loan({
         customerId: customerId,
@@ -1545,7 +1578,8 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
         totalEmiCount: newLoanDays,
         emiPaidCount: 0,
         lastEmiDate: null,
-        nextEmiDate: calculateNextEmiDate(emiStartDate, requestedData.newLoanType),
+        // FIXED: For new renewed loans, nextEmiDate should be emiStartDate (no increment)
+        nextEmiDate: new Date(emiStartDate), // No calculation needed for new loans
         totalPaidAmount: 0,
         remainingAmount: newLoanAmount,
         status: 'active',
@@ -1570,20 +1604,20 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
           return end;
         })(),
         interestRate: 0,
-        // These fields will be set by pre-save middleware:
-        // remainingAmount, totalEmiCount, etc.
       });
 
       console.log('💾 Creating renewed loan with data:', {
         loanNumber: newLoan.loanNumber,
-        amount: newLoan.amount,
+        amount: newLoan.amount, // Principal amount
         emiAmount: newLoan.emiAmount,
         loanType: newLoan.loanType,
         loanDays: newLoan.loanDays,
-        totalLoanAmount: newLoan.totalLoanAmount
+        totalLoanAmount: newLoan.totalLoanAmount, // Total amount
+        nextEmiDate: newLoan.nextEmiDate,
+        emiStartDate: newLoan.emiStartDate
       });
 
-      // **FIXED: Save WITH validation - let pre-save middleware set calculated fields**
+      // **FIXED: Save WITH validation**
       await newLoan.save({ session });
       
       // **FIXED: Mark original loan as renewed with proper fields**
@@ -1610,10 +1644,13 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
       console.log('✅ Loan renewal completed successfully:', {
         originalLoan: originalLoan.loanNumber,
         newLoan: newLoanNumber,
-        newAmount: newLoanAmount,
+        principalAmount: newLoanAmount, // Principal
+        totalLoanAmount: totalLoanAmount, // Total
         newEMI: newEmiAmount,
         newType: requestedData.newLoanType,
-        newDays: newLoanDays
+        newDays: newLoanDays,
+        nextEmiDate: newLoan.nextEmiDate,
+        emiStartDate: newLoan.emiStartDate
       });
 
       // Update the request
@@ -1621,7 +1658,7 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
       requestDoc.reviewedBy = processedBy;
       requestDoc.reviewedByRole = 'admin';
       requestDoc.reviewNotes = reason || 'Loan renewal approved by admin';
-      requestDoc.actionTaken = `Loan renewed: ${originalLoan.loanNumber} → ${newLoanNumber} (Amount: ₹${newLoanAmount.toLocaleString()}, EMI: ₹${newEmiAmount.toLocaleString()}, Type: ${requestedData.newLoanType}, Days: ${newLoanDays})`;
+      requestDoc.actionTaken = `Loan renewed: ${originalLoan.loanNumber} → ${newLoanNumber} (Principal: ₹${newLoanAmount.toLocaleString()}, Total: ₹${totalLoanAmount.toLocaleString()}, EMI: ₹${newEmiAmount.toLocaleString()}, Type: ${requestedData.newLoanType}, Days: ${newLoanDays})`;
       requestDoc.reviewedAt = new Date();
       requestDoc.approvedAt = new Date();
       requestDoc.completedAt = new Date();
@@ -1643,12 +1680,14 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
             loanId: newLoan._id,
             loanNumber: newLoan.loanNumber,
             customerName: customer.name,
-            amount: newLoanAmount,
+            amount: newLoanAmount, // Principal
+            totalLoanAmount: totalLoanAmount, // Total
             emiAmount: newEmiAmount,
             loanType: requestedData.newLoanType,
             loanDays: newLoanDays,
             originalLoanNumber: originalLoan.loanNumber,
-            totalLoanAmount: totalLoanAmount
+            nextEmiDate: newLoan.nextEmiDate,
+            emiStartDate: newLoan.emiStartDate
           }
         }
       });

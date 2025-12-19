@@ -202,15 +202,23 @@ export async function POST(request) {
 
     // CRITICAL FIX: Only validate loan details for Single Loan selection
     if (loanSelectionType === 'single') {
-      console.log('🔍 Validating loan details for Single Loan selection');
-      
-      // Validate loan details
-      if (!loanDate || !emiStartDate || !loanAmount || !loanDays || !loanType || !emiType) {
-        return NextResponse.json(
-          { success: false, error: 'All basic loan details are required for Single Loan' },
-          { status: 400 }
-        );
-      }
+  console.log('🔍 Validating loan details for Single Loan selection');
+  
+  // Validate loan details
+  if (!loanDate || !emiStartDate || !amount || !loanDays || !loanType || !emiType) { // ← Added amount validation
+    return NextResponse.json(
+      { success: false, error: 'All basic loan details are required for Single Loan' },
+      { status: 400 }
+    );
+  }
+  
+  // Validate amount (principal) is positive
+  if (parseFloat(amount) <= 0) {
+    return NextResponse.json(
+      { success: false, error: 'Amount (principal) must be greater than 0' },
+      { status: 400 }
+    );
+  }
 
       // Validate EMI amounts
       if (loanType === 'Daily') {
@@ -469,20 +477,21 @@ export async function POST(request) {
       },
       
       step2Data: {
-        loanSelectionType: loanSelectionType,
-        // CRITICAL FIX: For Single Loan use actual values; for Multiple Loan use defaults
-        loanDate: loanSelectionType === 'single' ? loanDate : '',
-        emiStartDate: loanSelectionType === 'single' ? emiStartDate : '',
-        loanAmount: loanSelectionType === 'single' ? parseFloat(loanAmount) : 0,
-        emiAmount: loanSelectionType === 'single' ? parseFloat(emiAmount) : 0,
-        loanDays: loanSelectionType === 'single' ? parseInt(loanDays) : 0,
-        loanType: loanSelectionType === 'single' ? loanType : '',
-        emiType: loanSelectionType === 'single' ? emiType : 'fixed',
-        customEmiAmount: loanSelectionType === 'single' && customEmiAmount ? parseFloat(customEmiAmount) : null,
-        totalLoanAmount: totalLoanAmount,
-        // Include loan number only for Single Loan
-        loanNumber: loanSelectionType === 'single' ? formData.get('loanNumber') || '' : ''
-      },
+  loanSelectionType: loanSelectionType,
+  // CRITICAL FIX: For Single Loan use actual values; for Multiple Loan use defaults
+  loanDate: loanSelectionType === 'single' ? loanDate : '',
+  emiStartDate: loanSelectionType === 'single' ? emiStartDate : '',
+  amount: loanSelectionType === 'single' ? parseFloat(amount) : 0, // ← ADD THIS LINE (Principal)
+  loanAmount: loanSelectionType === 'single' ? parseFloat(loanAmount) : 0, // Total Amount
+  emiAmount: loanSelectionType === 'single' ? parseFloat(emiAmount) : 0,
+  loanDays: loanSelectionType === 'single' ? parseInt(loanDays) : 0,
+  loanType: loanSelectionType === 'single' ? loanType : '',
+  emiType: loanSelectionType === 'single' ? emiType : 'fixed',
+  customEmiAmount: loanSelectionType === 'single' && customEmiAmount ? parseFloat(customEmiAmount) : null,
+  totalLoanAmount: totalLoanAmount,
+  // Include loan number only for Single Loan
+  loanNumber: loanSelectionType === 'single' ? formData.get('loanNumber') || '' : ''
+},
       
       step3Data: {
         loginId,
