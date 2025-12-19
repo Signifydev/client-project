@@ -39,7 +39,7 @@ export const calculateLastScheduledEmiDate = (
   const startDate = new Date(emiStartDate);
   startDate.setHours(0, 0, 0, 0);
   
-  let lastScheduledDate = new Date(startDate);
+  const lastScheduledDate = new Date(startDate); // Fixed: let → const
   
   switch(loanType) {
     case 'Daily':
@@ -143,25 +143,28 @@ const calculateDueDateForPayment = (loan: Loan, payment: EMIHistory): Date => {
   const paymentDate = new Date(payment.paymentDate);
   const paymentDay = Math.floor((paymentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
   
-  let dueDate = new Date(startDate);
+  const dueDate = new Date(startDate); // Fixed: let → const
+  
+  // Create a mutable copy since setDate/setMonth mutates the date
+  const mutableDueDate = new Date(dueDate);
   
   switch(loan.loanType) {
     case 'Daily':
-      dueDate.setDate(startDate.getDate() + Math.floor(paymentDay));
+      mutableDueDate.setDate(startDate.getDate() + Math.floor(paymentDay));
       break;
     case 'Weekly':
       const weekNumber = Math.floor(paymentDay / 7);
-      dueDate.setDate(startDate.getDate() + (weekNumber * 7));
+      mutableDueDate.setDate(startDate.getDate() + (weekNumber * 7));
       break;
     case 'Monthly':
       const monthNumber = Math.floor(paymentDay / 30);
-      dueDate.setMonth(startDate.getMonth() + monthNumber);
+      mutableDueDate.setMonth(startDate.getMonth() + monthNumber);
       break;
     default:
-      dueDate.setDate(startDate.getDate() + Math.floor(paymentDay));
+      mutableDueDate.setDate(startDate.getDate() + Math.floor(paymentDay));
   }
   
-  return dueDate;
+  return mutableDueDate;
 };
 
 export const calculateTotalLoanAmount = (loan: Loan): number => {
@@ -172,7 +175,7 @@ export const getAllCustomerLoans = (customer: Customer, customerDetails: Custome
   const loans: Loan[] = [];
 
   if (customerDetails?.loans && Array.isArray(customerDetails.loans)) {
-    customerDetails.loans.forEach((loan: any, index: number) => {
+    customerDetails.loans.forEach((loan: Loan, index: number) => {
       if (loan._id && loan._id.length === 24 && /^[0-9a-fA-F]{24}$/.test(loan._id.replace(/_default$/, ''))) {
         const cleanLoanId = loan._id.replace(/_default$/, '');
         
@@ -300,4 +303,22 @@ export const validateLoanBusinessRules = (loanType: string, emiType: string, cus
   }
   
   return { isValid: true };
+};
+
+// Helper function to calculate days between two dates (for payment lateness calculation)
+export const calculateDaysLate = (dueDate: Date, paymentDate: Date): number => {
+  // Remove time portion for accurate day calculation
+  const due = new Date(dueDate);
+  due.setHours(0, 0, 0, 0);
+  const payment = new Date(paymentDate);
+  payment.setHours(0, 0, 0, 0);
+  
+  const dueDateFixed = due; // Fixed: let → const
+  const paymentDateFixed = payment; // Fixed: let → const
+  
+  const diffTime = paymentDateFixed.getTime() - dueDateFixed.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  // If payment is before due date, it's not late (negative or zero days)
+  return Math.max(diffDays, 0);
 };

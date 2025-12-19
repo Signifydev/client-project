@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import type { TodayStats } from '@/src/app/data-entry/types/dataEntry';
+import type { TodayStats, Request } from '@/src/app/data-entry/types/dataEntry';
 import { useRequests } from '@/src/app/data-entry/hooks/useRequests';
 
 interface DashboardSectionProps {
@@ -9,6 +9,13 @@ interface DashboardSectionProps {
   onNavigateToTab: (tab: string) => void;
   onShowAddCustomer: () => void;
   onShowUpdateEMI: () => void;
+}
+
+interface RecentActivity {
+  type: 'customer_added' | 'emi_paid' | 'loan_created' | 'other';
+  description: string;
+  time: string;
+  customerName: string;
 }
 
 // Dashboard Statistics Card Component
@@ -63,7 +70,7 @@ const DashboardSection: React.FC<DashboardSectionProps> = React.memo(({
   onShowAddCustomer,
   onShowUpdateEMI
 }) => {
-  // Use the requests hook - this provides refetch, not fetchRequests
+  // Use the requests hook
   const { requests, loading: requestsLoading, refetch: refetchRequests, statistics: requestsStats } = useRequests(currentUserOffice);
   
   const [isLoading, setIsLoading] = useState(true);
@@ -74,7 +81,7 @@ const DashboardSection: React.FC<DashboardSectionProps> = React.memo(({
     totalCollection: 0
   });
   
-  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
 
   // Load dashboard data
   const loadDashboardData = useCallback(async () => {
@@ -137,6 +144,13 @@ const DashboardSection: React.FC<DashboardSectionProps> = React.memo(({
   // Initial data load
   useEffect(() => {
     loadDashboardData();
+    
+    // Set up auto-refresh every 2 minutes
+    const intervalId = setInterval(() => {
+      loadDashboardData();
+    }, 120000);
+    
+    return () => clearInterval(intervalId);
   }, [loadDashboardData]);
 
   // Memoized handlers
@@ -223,6 +237,11 @@ const DashboardSection: React.FC<DashboardSectionProps> = React.memo(({
       onClick: handleViewEMI
     }
   ], [onShowAddCustomer, onShowUpdateEMI, handleViewCustomers, handleViewEMI]);
+
+  // Filter only pending requests for display
+  const pendingRequests = useMemo(() => {
+    return requests.filter(request => request.status === 'pending');
+  }, [requests]);
 
   if (isLoading) {
     return (
@@ -332,9 +351,9 @@ const DashboardSection: React.FC<DashboardSectionProps> = React.memo(({
               <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
               <p className="mt-4 text-gray-600">Loading requests...</p>
             </div>
-          ) : requests && requests.length > 0 ? (
+          ) : pendingRequests && pendingRequests.length > 0 ? (
             <div className="space-y-4">
-              {requests.slice(0, 5).map((request) => (
+              {pendingRequests.slice(0, 5).map((request: Request) => (
                 <div key={request._id} className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors duration-200">
                   <div className="flex justify-between items-start mb-2">
                     <div>
@@ -356,12 +375,12 @@ const DashboardSection: React.FC<DashboardSectionProps> = React.memo(({
                 </div>
               ))}
               
-              {requests.length > 5 && (
+              {pendingRequests.length > 5 && (
                 <button
                   onClick={handleViewRequests}
                   className="w-full mt-4 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors duration-200"
                 >
-                  View All Requests ({requests.length})
+                  View All Requests ({pendingRequests.length})
                 </button>
               )}
             </div>
@@ -377,9 +396,12 @@ const DashboardSection: React.FC<DashboardSectionProps> = React.memo(({
     </div>
   );
 }, (prevProps, nextProps) => {
-  // Memoize the entire section
+  // Improved memoization comparison
   return (
-    prevProps.currentUserOffice === nextProps.currentUserOffice
+    prevProps.currentUserOffice === nextProps.currentUserOffice &&
+    prevProps.onNavigateToTab === nextProps.onNavigateToTab &&
+    prevProps.onShowAddCustomer === nextProps.onShowAddCustomer &&
+    prevProps.onShowUpdateEMI === nextProps.onShowUpdateEMI
   );
 });
 

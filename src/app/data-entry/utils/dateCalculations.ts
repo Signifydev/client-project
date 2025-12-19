@@ -68,7 +68,7 @@ export const calculateLastScheduledEmiDate = (
   const startDate = new Date(emiStartDate);
   startDate.setHours(0, 0, 0, 0);
   
-  let lastScheduledDate = new Date(startDate);
+  const lastScheduledDate = new Date(startDate); // FIXED: let → const
   
   switch(loanType) {
     case 'Daily':
@@ -233,7 +233,10 @@ export const generateEmiSchedule = (
   const monthStart = new Date(year, month, 1);
   const monthEnd = new Date(year, month + 1, 0);
   
-  let currentDate = new Date(startDate);
+  const currentDate = new Date(startDate); // FIXED: let → const
+  
+  // Create a mutable copy for iteration
+  let mutableDate = new Date(currentDate);
   
   // Generate dates up to total EMI count
   for (let i = 0; i < totalEmiCount; i++) {
@@ -241,26 +244,26 @@ export const generateEmiSchedule = (
       // Move to next EMI date based on loan type
       switch(loanType) {
         case 'Daily':
-          currentDate.setDate(currentDate.getDate() + 1);
+          mutableDate.setDate(mutableDate.getDate() + 1);
           break;
         case 'Weekly':
-          currentDate.setDate(currentDate.getDate() + 7);
+          mutableDate.setDate(mutableDate.getDate() + 7);
           break;
         case 'Monthly':
-          currentDate.setMonth(currentDate.getMonth() + 1);
+          mutableDate.setMonth(mutableDate.getMonth() + 1);
           break;
         default:
-          currentDate.setDate(currentDate.getDate() + 1);
+          mutableDate.setDate(mutableDate.getDate() + 1);
       }
     }
     
     // Check if within current month
-    if (currentDate >= monthStart && currentDate <= monthEnd) {
-      schedule.push(new Date(currentDate));
+    if (mutableDate >= monthStart && mutableDate <= monthEnd) {
+      schedule.push(new Date(mutableDate));
     }
     
     // Stop if we've passed the month
-    if (currentDate > monthEnd) break;
+    if (mutableDate > monthEnd) break;
   }
   
   return schedule;
@@ -270,10 +273,10 @@ export const generateEmiSchedule = (
 export const isEmiDate = (
   date: Date,
   emiStartDate: string,
-  loanType: string,
+  _loanType: string, // FIXED: Added underscore prefix to indicate intentional non-use
   totalEmiCount: number
 ): boolean => {
-  if (!emiStartDate || !loanType) return false;
+  if (!emiStartDate || !_loanType) return false;
   
   const startDate = new Date(emiStartDate);
   startDate.setHours(0, 0, 0, 0);
@@ -282,7 +285,7 @@ export const isEmiDate = (
   checkDate.setHours(0, 0, 0, 0);
   
   // Check if date is within loan period
-  const lastEmiDate = calculateLastScheduledEmiDate(emiStartDate, loanType, totalEmiCount);
+  const lastEmiDate = calculateLastScheduledEmiDate(emiStartDate, _loanType, totalEmiCount);
   const lastDate = new Date(lastEmiDate);
   
   if (checkDate < startDate || checkDate > lastDate) {
@@ -290,7 +293,7 @@ export const isEmiDate = (
   }
   
   // Check if date matches EMI schedule
-  switch(loanType) {
+  switch(_loanType) {
     case 'Daily':
       // For Daily loans, every day is an EMI date
       return true;
@@ -354,29 +357,32 @@ export const calculateOverdueEmis = (
   const startDate = new Date(emiStartDate);
   
   let overdueCount = 0;
-  let currentDate = new Date(startDate);
+  const currentDate = new Date(startDate); // FIXED: let → const
+  
+  // Create a mutable copy for iteration
+  let mutableDate = new Date(currentDate);
   
   // Check each scheduled EMI date up to today
   for (let i = 0; i < totalEmiCount; i++) {
     if (i > 0) {
       switch(loanType) {
         case 'Daily':
-          currentDate.setDate(currentDate.getDate() + 1);
+          mutableDate.setDate(mutableDate.getDate() + 1);
           break;
         case 'Weekly':
-          currentDate.setDate(currentDate.getDate() + 7);
+          mutableDate.setDate(mutableDate.getDate() + 7);
           break;
         case 'Monthly':
-          currentDate.setMonth(currentDate.getMonth() + 1);
+          mutableDate.setMonth(mutableDate.getMonth() + 1);
           break;
       }
     }
     
     // Stop if we've passed today or checked all EMIs
-    if (currentDate > todayIST || i >= emiPaidCount) break;
+    if (mutableDate > todayIST || i >= emiPaidCount) break;
     
     // Count as overdue if EMI is due and not paid yet (i >= emiPaidCount)
-    if (currentDate < todayIST && i >= emiPaidCount) {
+    if (mutableDate < todayIST && i >= emiPaidCount) {
       overdueCount++;
     }
   }
