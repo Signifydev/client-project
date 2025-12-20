@@ -193,6 +193,7 @@ export async function POST(request) {
     // Loan details - CRITICAL: Only validate for Single Loan
     const loanDate = formData.get('loanDate');
     const emiStartDate = formData.get('emiStartDate');
+    const amount = formData.get('amount');
     const loanAmount = formData.get('loanAmount');
     const emiAmount = formData.get('emiAmount');
     const loanDays = formData.get('loanDays');
