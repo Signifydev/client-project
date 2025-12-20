@@ -137,20 +137,30 @@ export default function AddCustomerModal({
   };
 
   useEffect(() => {
-    if (step2Data.loanSelectionType === 'single' && (step2Data.loanType === 'Daily' || step2Data.emiType === 'fixed')) {
+    // FIX: Auto-calculate BOTH amount (principal) and loanAmount (total) when EMI or Days change
+    if (step2Data.loanSelectionType === 'single') {
       const totalAmount = calculateTotalLoanAmount();
-      setStep2Data(prev => ({ 
-        ...prev, 
-        loanAmount: totalAmount > 0 ? totalAmount.toString() : '' 
-      }));
-    } else if (step2Data.loanSelectionType === 'single' && step2Data.loanType !== 'Daily' && step2Data.emiType === 'custom') {
-      const totalAmount = calculateTotalLoanAmount();
-      setStep2Data(prev => ({ 
-        ...prev, 
-        loanAmount: totalAmount > 0 ? totalAmount.toString() : '' 
-      }));
+      
+      // For Single Loan, amount (principal) should be the same as total loan amount
+      // unless there's a specific principal amount entered by user
+      if (totalAmount > 0) {
+        // If user hasn't entered a specific principal amount, use the calculated total
+        if (!step2Data.amount || parseFloat(step2Data.amount) <= 0) {
+          setStep2Data(prev => ({ 
+            ...prev, 
+            amount: totalAmount.toString(),
+            loanAmount: totalAmount.toString()
+          }));
+        } else {
+          // User has entered a principal amount, keep it and update loanAmount
+          setStep2Data(prev => ({ 
+            ...prev, 
+            loanAmount: totalAmount.toString()
+          }));
+        }
+      }
     }
-  }, [step2Data.emiAmount, step2Data.loanDays, step2Data.customEmiAmount, step2Data.loanType, step2Data.emiType, step2Data.loanSelectionType]);
+  }, [step2Data.emiAmount, step2Data.loanDays, step2Data.customEmiAmount, step2Data.loanType, step2Data.emiType, step2Data.loanSelectionType, step2Data.amount]);
 
   useEffect(() => {
     return () => {
@@ -445,9 +455,12 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
       // Step 2 data - ONLY for Single Loan
       formData.append('loanDate', step2Data.loanDate);
       formData.append('emiStartDate', step2Data.emiStartDate);
-      // FIX: Send BOTH amount (principal) and loanAmount (total)
-      formData.append('amount', step2Data.amount || '0'); // ← ADD THIS LINE (Principal Amount)
-      formData.append('loanAmount', step2Data.loanAmount || totalLoanAmount.toString()); // Total Amount
+      // FIX: Ensure amount is not empty or zero for single loans
+      const principalAmount = step2Data.amount && parseFloat(step2Data.amount) > 0 
+        ? step2Data.amount 
+        : totalLoanAmount.toString();
+      formData.append('amount', principalAmount);
+      formData.append('loanAmount', step2Data.loanAmount || totalLoanAmount.toString());
       formData.append('emiAmount', step2Data.emiAmount);
       formData.append('loanDays', step2Data.loanDays);
       formData.append('loanType', step2Data.loanType);
@@ -461,7 +474,7 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
       // For Multiple Loans, don't send loan fields or send empty/default values
       formData.append('loanDate', '');
       formData.append('emiStartDate', '');
-      formData.append('amount', '0'); // ← ADD THIS LINE
+      formData.append('amount', '0');
       formData.append('loanAmount', '0');
       formData.append('emiAmount', '0');
       formData.append('loanDays', '0');
@@ -504,7 +517,8 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
       principalAmount: step2Data.amount,
       totalLoanAmount: step2Data.loanAmount,
       calculatedTotal: totalLoanAmount,
-      loanSelectionType: step2Data.loanSelectionType
+      loanSelectionType: step2Data.loanSelectionType,
+      isSingleLoan: step2Data.loanSelectionType === 'single'
     });
     
     const response = await fetch('/api/data-entry/customers', {
@@ -622,11 +636,19 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
     console.log('Step 2 data:', step2Data);
     
     if (step2Data.loanSelectionType === 'single') {
+      // FIX: Debug log to see what values are being validated
+      console.log('🔍 Validating Single Loan - Amount field:', {
+        amount: step2Data.amount,
+        parsedAmount: parseFloat(step2Data.amount),
+        isGreaterThanZero: parseFloat(step2Data.amount) > 0,
+        isEmpty: step2Data.amount === ''
+      });
+      
       const errors = validateStep2(step2Data);
       setStep2Errors(errors);
       
       if (Object.keys(errors).length > 0) {
-        console.log('Step 2 validation failed');
+        console.log('Step 2 validation failed:', errors);
         setTimeout(() => {
           const firstErrorElement = document.querySelector('[id^="error-"]');
           if (firstErrorElement) {
@@ -703,9 +725,15 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
   const handleSubmit = async (): Promise<void> => {
     console.log('🟢 handleSubmit called - Starting submission process');
     
-    // Log all step data
+    // Log all step data with debug info
     console.log('📋 Step 1 Data:', step1Data);
-    console.log('📋 Step 2 Data:', step2Data);
+    console.log('📋 Step 2 Data:', {
+      ...step2Data,
+      amount: step2Data.amount,
+      parsedAmount: parseFloat(step2Data.amount),
+      isSingleLoan: step2Data.loanSelectionType === 'single',
+      isAmountValid: step2Data.amount && parseFloat(step2Data.amount) > 0
+    });
     console.log('📋 Step 3 Data:', step3Data);
     
     const errors = validateStep3(step3Data);
@@ -728,6 +756,16 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
 
     const totalLoanAmount = calculateTotalLoanAmount();
     console.log('💰 Calculated total loan amount:', totalLoanAmount);
+    
+    // FIX: Ensure amount is valid for single loans before submitting
+    if (step2Data.loanSelectionType === 'single') {
+      const amountValue = parseFloat(step2Data.amount);
+      if (!step2Data.amount || isNaN(amountValue) || amountValue <= 0) {
+        alert('Please enter a valid Amount (Principal) greater than 0 for Single Loan');
+        setCurrentStep(2);
+        return;
+      }
+    }
     
     setIsLoading(true);
     try {
@@ -1527,10 +1565,13 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
                       )}
                     </div>
 
-                    {/* Amount */}
+                    {/* Amount - FIXED: Improved with better validation and auto-calculation */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Amount (Principal) *
+                        <span className="text-xs font-normal text-gray-500 ml-2">
+                          (Principal loan amount)
+                        </span>
                       </label>
                       <div className="relative">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -1538,7 +1579,8 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
                         </div>
                         <input
                           type="number"
-                          min="1"
+                          min="100"
+                          step="100"
                           className={`w-full pl-10 px-3 py-2 border ${step2Errors.amount ? 'border-red-300' : 'border-gray-300'} rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
                           value={step2Data.amount}
                           onChange={(e) => {
@@ -1548,13 +1590,17 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
                               setStep2Errors(prev => ({ ...prev, amount: '' }));
                             }
                           }}
-                          placeholder="Enter principal amount"
+                          placeholder="Enter principal amount (min ₹100)"
                           id="error-amount"
+                          required={step2Data.loanSelectionType === 'single'}
                         />
                       </div>
                       {step2Errors.amount && (
                         <p className="mt-1 text-sm text-red-600">{step2Errors.amount}</p>
                       )}
+                      <p className="text-xs text-gray-500 mt-1">
+                        This is the principal amount borrowed. For Single Loan, this is usually the same as Total Loan Amount.
+                      </p>
                     </div>
 
                     {/* Number of Periods */}
@@ -1989,6 +2035,12 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
                             <p className="text-xs text-gray-500">Loan Number</p>
                             <p className="font-semibold text-gray-900">{step2Data.loanNumber || 'Not set'}</p>
                           </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Amount (Principal)</p>
+                            <p className="font-semibold text-green-600">
+                              ₹{step2Data.amount ? parseFloat(step2Data.amount).toLocaleString('en-IN') : '0'}
+                            </p>
+                          </div>
                         </>
                       )}
                       {step2Data.loanSelectionType === 'multiple' && (
@@ -2085,6 +2137,14 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
                         <div>
                           <p className="text-xs text-gray-500">Loan Number</p>
                           <p className="font-semibold text-gray-900">{step2Data.loanNumber}</p>
+                        </div>
+                      )}
+                      {step2Data.loanSelectionType === 'single' && (
+                        <div>
+                          <p className="text-xs text-gray-500">Amount (Principal)</p>
+                          <p className="font-semibold text-green-600">
+                            ₹{step2Data.amount ? parseFloat(step2Data.amount).toLocaleString('en-IN') : '0'}
+                          </p>
                         </div>
                       )}
                     </div>
