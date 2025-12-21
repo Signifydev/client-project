@@ -8,6 +8,160 @@ import EMIPayment from '@/lib/models/EMIPayment';
 import { connectDB } from '@/lib/db';
 import bcrypt from 'bcryptjs';
 
+// ==============================================
+// DATE UTILITY FUNCTIONS - FIXED FOR IST TIMEZONE
+// ==============================================
+
+/**
+ * Parse a YYYY-MM-DD string as IST date (Asia/Kolkata, UTC+5:30)
+ * @param {string} dateString - Date string in YYYY-MM-DD format
+ * @returns {Date} Date object in IST timezone
+ */
+function parseISTDateString(dateString) {
+  if (!dateString || dateString.trim() === '') {
+    console.log('⚠️ Empty date string provided, returning current date');
+    return new Date();
+  }
+  
+  try {
+    // Remove any time part if present
+    const dateOnly = dateString.split('T')[0];
+    
+    // Split the date string
+    const [year, month, day] = dateOnly.split('-').map(Number);
+    
+    // Validate date components
+    if (isNaN(year) || isNaN(month) || isNaN(day)) {
+      console.error('❌ Invalid date components:', { year, month, day, original: dateString });
+      return new Date();
+    }
+    
+    // Create date in IST timezone (UTC+5:30)
+    // Note: JavaScript months are 0-indexed (0 = January, 11 = December)
+    const istDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+    
+    // Add 5 hours 30 minutes to convert from UTC to IST
+    istDate.setHours(istDate.getHours() + 5);
+    istDate.setMinutes(istDate.getMinutes() + 30);
+    
+    // Validate the created date
+    if (isNaN(istDate.getTime())) {
+      console.error('❌ Invalid date created from string:', dateString);
+      return new Date();
+    }
+    
+    console.log('📅 Parsed IST Date:', {
+      input: dateString,
+      output: istDate.toISOString(),
+      local: istDate.toLocaleString('en-IN'),
+      day: istDate.getDate(),
+      month: istDate.getMonth() + 1,
+      year: istDate.getFullYear()
+    });
+    
+    return istDate;
+  } catch (error) {
+    console.error('❌ Error parsing IST date:', error, 'input:', dateString);
+    return new Date();
+  }
+}
+
+/**
+ * Convert IST date to UTC for database storage
+ * @param {Date} istDate - Date in IST timezone
+ * @returns {Date} Date in UTC
+ */
+function convertISTToUTC(istDate) {
+  if (!istDate) return new Date();
+  
+  try {
+    const utcDate = new Date(istDate);
+    utcDate.setHours(utcDate.getHours() - 5);
+    utcDate.setMinutes(utcDate.getMinutes() - 30);
+    
+    console.log('🔄 Converted IST to UTC:', {
+      istDate: istDate.toLocaleString('en-IN'),
+      utcDate: utcDate.toISOString(),
+      istDateISO: istDate.toISOString()
+    });
+    
+    return utcDate;
+  } catch (error) {
+    console.error('❌ Error converting IST to UTC:', error);
+    return new Date();
+  }
+}
+
+/**
+ * Format date to DD/MM/YYYY for display (returns IST date)
+ * @param {Date} date - Date object
+ * @returns {string} Date string in DD/MM/YYYY format (IST)
+ */
+function formatToDDMMYYYY(date) {
+  if (!date) return '';
+  
+  try {
+    // Create a copy to avoid modifying original
+    let displayDate = new Date(date);
+    
+    // If date is stored as UTC, convert to IST
+    if (date.toISOString().includes('Z')) {
+      displayDate.setHours(displayDate.getHours() + 5);
+      displayDate.setMinutes(displayDate.getMinutes() + 30);
+    }
+    
+    const day = String(displayDate.getDate()).padStart(2, '0');
+    const month = String(displayDate.getMonth() + 1).padStart(2, '0');
+    const year = displayDate.getFullYear();
+    
+    return `${day}/${month}/${year}`;
+  } catch (error) {
+    console.error('❌ Error formatting date to DD/MM/YYYY:', error);
+    return '';
+  }
+}
+
+/**
+ * Get today's date in IST timezone (YYYY-MM-DD format)
+ * @returns {string} Today's date in YYYY-MM-DD format (IST)
+ */
+function getTodayISTDate() {
+  const now = new Date();
+  const istDate = new Date(now.getTime() + (5 * 60 * 60 * 1000) + (30 * 60 * 1000));
+  const year = istDate.getUTCFullYear();
+  const month = String(istDate.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(istDate.getUTCDate()).padStart(2, '0');
+  const result = `${year}-${month}-${day}`;
+  
+  console.log('📅 Today\'s IST Date:', result);
+  return result;
+}
+
+/**
+ * Validate date string is in YYYY-MM-DD format
+ * @param {string} dateString - Date string to validate
+ * @returns {boolean} True if valid YYYY-MM-DD format
+ */
+function isValidYYYYMMDD(dateString) {
+  if (!dateString || typeof dateString !== 'string') return false;
+  
+  const pattern = /^\d{4}-\d{2}-\d{2}$/;
+  if (!pattern.test(dateString)) return false;
+  
+  const [year, month, day] = dateString.split('-').map(Number);
+  
+  // Basic validation
+  if (year < 2000 || year > 2100) return false;
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  
+  // More accurate validation
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && 
+         date.getMonth() === month - 1 && 
+         date.getDate() === day;
+}
+
 export async function POST(request) {
   try {
     console.log('🟡 Starting approve-request API call');
@@ -332,7 +486,9 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
       amount: step2Data.amount, // Principal amount
       loanAmount: step2Data.loanAmount, // Total amount
       emiAmount: step2Data.emiAmount,
-      loanDays: step2Data.loanDays
+      loanDays: step2Data.loanDays,
+      emiStartDate: step2Data.emiStartDate, // Log the raw emiStartDate
+      loanDate: step2Data.loanDate // Log the raw loanDate
     });
 
     // Validate required fields with specific error messages
@@ -515,19 +671,45 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
         
         console.log('💰 Creating Single Loan with number:', loanNumber);
         
-        // Simple date handling with validation
-        const loanDate = step2Data.loanDate ? new Date(step2Data.loanDate) : new Date();
-        let emiStartDate = step2Data.emiStartDate ? new Date(step2Data.emiStartDate) : new Date(loanDate);
+        // ==============================================
+        // CRITICAL FIX: PROPER IST DATE HANDLING
+        // ==============================================
         
+        // Parse dates as IST dates
+        const loanDate = step2Data.loanDate ? parseISTDateString(step2Data.loanDate) : parseISTDateString(getTodayISTDate());
+        let emiStartDate = step2Data.emiStartDate ? parseISTDateString(step2Data.emiStartDate) : new Date(loanDate);
+        
+        console.log('📅 DEBUG - Date parsing results:', {
+          rawLoanDate: step2Data.loanDate,
+          rawEMIStartDate: step2Data.emiStartDate,
+          parsedLoanDate: loanDate,
+          parsedEMIStartDate: emiStartDate,
+          loanDateISO: loanDate.toISOString(),
+          emiStartDateISO: emiStartDate.toISOString(),
+          loanDateLocal: loanDate.toLocaleString('en-IN'),
+          emiStartDateLocal: emiStartDate.toLocaleString('en-IN')
+        });
+
         // Ensure emiStartDate is not before loanDate
         if (emiStartDate < loanDate) {
           console.log('⚠️ Adjusting EMI start date to match loan date');
           emiStartDate = new Date(loanDate);
         }
 
-        // Normalize dates to start of day
+        // Normalize dates to start of day in IST
         loanDate.setHours(0, 0, 0, 0);
         emiStartDate.setHours(0, 0, 0, 0);
+
+        // Convert to UTC for database storage
+        const loanDateUTC = convertISTToUTC(loanDate);
+        const emiStartDateUTC = convertISTToUTC(emiStartDate);
+
+        console.log('📅 DEBUG - Date conversion results:', {
+          loanDateIST: loanDate.toLocaleString('en-IN'),
+          emiStartDateIST: emiStartDate.toLocaleString('en-IN'),
+          loanDateUTC: loanDateUTC.toISOString(),
+          emiStartDateUTC: emiStartDateUTC.toISOString()
+        });
 
         // Calculate total loan amount based on EMI type
         let totalLoanAmount;
@@ -540,12 +722,15 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
           totalLoanAmount = parseFloat(step2Data.emiAmount) * parseInt(step2Data.loanDays);
         }
 
-        // DEBUG: Log date calculation for verification
+        // Calculate next EMI date (should be same as emiStartDate for new loans)
+        const nextEmiDate = new Date(emiStartDateUTC); // No increment for new loans
+
         console.log('📅 DEBUG - EMI Date calculation:', {
-          emiStartDate: emiStartDate,
+          emiStartDateIST: emiStartDate.toLocaleString('en-IN'),
+          emiStartDateUTC: emiStartDateUTC.toISOString(),
           loanType: step2Data.loanType,
           emiPaidCount: 0,
-          nextEmiDate: new Date(emiStartDate), // Should be same as emiStartDate
+          nextEmiDateUTC: nextEmiDate.toISOString(),
           shouldBe: 'Same as EMI start date for new loans'
         });
 
@@ -557,16 +742,16 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
           amount: parseFloat(step2Data.amount) || 0, // FIX: Use amount (principal), NOT loanAmount
           emiAmount: parseFloat(step2Data.emiAmount) || 0,
           loanType: step2Data.loanType || 'Daily',
-          dateApplied: loanDate,
+          dateApplied: loanDateUTC, // Store as UTC
           loanDays: parseInt(step2Data.loanDays) || 30,
           emiType: step2Data.emiType || 'fixed',
           customEmiAmount: step2Data.customEmiAmount ? parseFloat(step2Data.customEmiAmount) : null,
-          emiStartDate: emiStartDate,
+          emiStartDate: emiStartDateUTC, // Store as UTC
           totalEmiCount: parseInt(step2Data.loanDays) || 30,
           emiPaidCount: 0,
           lastEmiDate: null,
           // FIXED: For new loans, nextEmiDate should be emiStartDate (no increment)
-          nextEmiDate: new Date(emiStartDate), // No calculation needed for new loans
+          nextEmiDate: nextEmiDate,
           totalPaidAmount: 0,
           remainingAmount: parseFloat(step2Data.amount) || 0, // FIX: Use amount (principal)
           status: 'active',
@@ -584,8 +769,24 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
           shouldBeEqual: loanData.nextEmiDate.getTime() === loanData.emiStartDate.getTime()
         });
 
-        await Loan.create(loanData);
+        const newLoan = await Loan.create(loanData);
         console.log('✅ Loan created with selected number:', loanNumber);
+        
+        // Log the created loan for verification
+        console.log('📋 Created loan details:', {
+          loanNumber: newLoan.loanNumber,
+          amount: newLoan.amount,
+          totalLoanAmount: newLoan.totalLoanAmount,
+          emiAmount: newLoan.emiAmount,
+          loanType: newLoan.loanType,
+          dateApplied: newLoan.dateApplied?.toISOString(),
+          emiStartDate: newLoan.emiStartDate?.toISOString(),
+          nextEmiDate: newLoan.nextEmiDate?.toISOString(),
+          // Calculate display dates from UTC
+          dateAppliedDisplay: formatToDDMMYYYY(newLoan.dateApplied),
+          emiStartDateDisplay: formatToDDMMYYYY(newLoan.emiStartDate),
+          nextEmiDateDisplay: formatToDDMMYYYY(newLoan.nextEmiDate)
+        });
       } catch (loanError) {
         console.error('❌ Error creating loan:', loanError);
         // Continue even if loan creation fails - customer is already created
@@ -619,7 +820,9 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
         loanSelectionType: loanSelectionType,
         loanNumber: loanSelectionType === 'single' ? step2Data.loanNumber : null,
         principalAmount: loanSelectionType === 'single' ? parseFloat(step2Data.amount) || 0 : null,
-        totalLoanAmount: loanSelectionType === 'single' ? (step2Data.loanAmount || 0) : null
+        totalLoanAmount: loanSelectionType === 'single' ? (step2Data.loanAmount || 0) : null,
+        emiStartDateDisplay: loanSelectionType === 'single' && step2Data.emiStartDate ? formatToDDMMYYYY(parseISTDateString(step2Data.emiStartDate)) : null,
+        nextEmiDateDisplay: loanSelectionType === 'single' && step2Data.emiStartDate ? formatToDDMMYYYY(parseISTDateString(step2Data.emiStartDate)) : null
       }
     });
 
@@ -756,24 +959,28 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
       const loanNumber = loanData.loanNumber.trim().toUpperCase();
       console.log(`✅ Using loan number: ${loanNumber} for customer: ${customer.name}`);
 
-      // FIXED: Enhanced date handling
+      // ==============================================
+      // FIXED: PROPER IST DATE HANDLING FOR LOAN ADDITION
+      // ==============================================
       let emiStartDate;
       let loanDate;
       
       try {
-        // Handle loan date
-        loanDate = loanData.dateApplied ? new Date(loanData.dateApplied) : new Date();
-        if (isNaN(loanDate.getTime())) {
-          loanDate = new Date();
+        // Handle loan date - use IST parsing
+        if (loanData.dateApplied) {
+          loanDate = parseISTDateString(loanData.dateApplied);
+        } else {
+          loanDate = parseISTDateString(getTodayISTDate());
         }
         
-        // Handle EMI start date
-        emiStartDate = loanData.emiStartDate ? new Date(loanData.emiStartDate) : new Date(loanDate);
-        if (isNaN(emiStartDate.getTime())) {
+        // Handle EMI start date - use IST parsing
+        if (loanData.emiStartDate) {
+          emiStartDate = parseISTDateString(loanData.emiStartDate);
+        } else {
           emiStartDate = new Date(loanDate);
         }
         
-        // Normalize dates
+        // Normalize dates to start of day
         loanDate.setHours(0, 0, 0, 0);
         emiStartDate.setHours(0, 0, 0, 0);
         
@@ -783,12 +990,30 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
           emiStartDate = new Date(loanDate);
         }
         
+        // Convert to UTC for database storage
+        const loanDateUTC = convertISTToUTC(loanDate);
+        const emiStartDateUTC = convertISTToUTC(emiStartDate);
+        
+        console.log('📅 DEBUG - Loan Addition Date Handling:', {
+          loanNumber: loanNumber,
+          loanDateInput: loanData.dateApplied,
+          emiStartDateInput: loanData.emiStartDate,
+          loanDateIST: loanDate.toLocaleString('en-IN'),
+          emiStartDateIST: emiStartDate.toLocaleString('en-IN'),
+          loanDateUTC: loanDateUTC.toISOString(),
+          emiStartDateUTC: emiStartDateUTC.toISOString()
+        });
+        
+        // Update variables to use UTC dates for storage
+        loanDate = loanDateUTC;
+        emiStartDate = emiStartDateUTC;
+        
       } catch (error) {
-        console.error('❌ Error processing dates:', error);
-        loanDate = new Date();
-        emiStartDate = new Date();
-        loanDate.setHours(0, 0, 0, 0);
-        emiStartDate.setHours(0, 0, 0, 0);
+        console.error('❌ Error processing dates for loan addition:', error);
+        // Fallback to current date in IST
+        const todayIST = parseISTDateString(getTodayISTDate());
+        loanDate = convertISTToUTC(todayIST);
+        emiStartDate = convertISTToUTC(todayIST);
       }
 
       // Calculate loan amount based on loan type and EMI type
@@ -823,13 +1048,15 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
         loanAmount = parseFloat(loanData.emiAmount) * (parseInt(loanData.loanDays) || 30);
       }
 
-      // DEBUG: Log date calculation for verification
+      // Calculate next EMI date for new loan (should be same as emiStartDate)
+      const nextEmiDate = new Date(emiStartDate); // No increment for new loans
+
       console.log('📅 DEBUG - EMI Date calculation for loan addition:', {
         loanNumber: loanNumber,
-        emiStartDate: emiStartDate,
+        emiStartDateUTC: emiStartDate?.toISOString(),
         loanType: loanData.loanType,
         emiPaidCount: 0,
-        nextEmiDate: new Date(emiStartDate), // Should be same as emiStartDate
+        nextEmiDateUTC: nextEmiDate.toISOString(),
         shouldBe: 'Same as EMI start date for new loans'
       });
 
@@ -841,16 +1068,16 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
         amount: loanAmount, // Principal amount
         emiAmount: parseFloat(loanData.emiAmount),
         loanType: loanData.loanType,
-        dateApplied: loanDate,
+        dateApplied: loanDate, // Already in UTC
         loanDays: parseInt(loanData.loanDays) || 30,
         emiType: loanData.emiType || 'fixed',
         customEmiAmount: loanData.customEmiAmount ? parseFloat(loanData.customEmiAmount) : null,
-        emiStartDate: emiStartDate,
+        emiStartDate: emiStartDate, // Already in UTC
         totalEmiCount: parseInt(loanData.loanDays) || 30,
         emiPaidCount: 0,
         lastEmiDate: null,
         // FIXED: For new loans, nextEmiDate should be emiStartDate (no increment)
-        nextEmiDate: new Date(emiStartDate), // No calculation needed for new loans
+        nextEmiDate: nextEmiDate,
         totalPaidAmount: 0,
         remainingAmount: loanAmount,
         status: 'active',
@@ -877,7 +1104,7 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
         updatedAt: new Date()
       };
 
-      console.log('💾 Creating loan with data:', {
+      console.log('💾 Creating loan addition with data:', {
         loanNumber: newLoanData.loanNumber,
         amount: newLoanData.amount, // Principal
         totalLoanAmount: newLoanData.totalLoanAmount, // Total
@@ -886,8 +1113,9 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
         emiType: newLoanData.emiType,
         loanDays: newLoanData.loanDays,
         customerId: newLoanData.customerId,
-        nextEmiDate: newLoanData.nextEmiDate,
-        emiStartDate: newLoanData.emiStartDate
+        dateApplied: newLoanData.dateApplied?.toISOString(),
+        emiStartDate: newLoanData.emiStartDate?.toISOString(),
+        nextEmiDate: newLoanData.nextEmiDate?.toISOString()
       });
 
       let newLoan;
@@ -904,7 +1132,10 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
           loanType: newLoan.loanType,
           emiAmount: newLoan.emiAmount,
           nextEmiDate: newLoan.nextEmiDate,
-          emiStartDate: newLoan.emiStartDate
+          emiStartDate: newLoan.emiStartDate,
+          dateAppliedDisplay: formatToDDMMYYYY(newLoan.dateApplied),
+          emiStartDateDisplay: formatToDDMMYYYY(newLoan.emiStartDate),
+          nextEmiDateDisplay: formatToDDMMYYYY(newLoan.nextEmiDate)
         });
       } catch (error) {
         console.error(`❌ Error creating loan ${index + 1}:`, error);
@@ -983,7 +1214,12 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
       customerId: customer._id,
       customerName: customer.name,
       customerNumber: customer.customerNumber,
-      createdLoans: createdLoans,
+      createdLoans: createdLoans.map(loan => ({
+        ...loan,
+        dateAppliedDisplay: formatToDDMMYYYY(loan.dateApplied),
+        emiStartDateDisplay: formatToDDMMYYYY(loan.emiStartDate),
+        nextEmiDateDisplay: formatToDDMMYYYY(loan.nextEmiDate)
+      })),
       failedCount: errors.length,
       totalCount: loansData.length
     }
@@ -1203,13 +1439,33 @@ async function approveLoanEdit(requestDoc, reason, processedBy) {
         
         loan[field] = newLoanNumber;
       } 
-      // Handle date fields
+      // Handle date fields with IST conversion
       else if (field === 'dateApplied' || field === 'emiStartDate') {
-        const newDate = new Date(changes[field]);
-        if (isNaN(newDate.getTime())) {
-          throw new Error(`Invalid ${field}: ${changes[field]}`);
+        try {
+          // Parse the date string as IST date
+          const dateString = changes[field];
+          if (!dateString) {
+            throw new Error(`Empty ${field} provided`);
+          }
+          
+          // Parse as IST date
+          const istDate = parseISTDateString(dateString);
+          
+          // Convert to UTC for storage
+          const utcDate = convertISTToUTC(istDate);
+          
+          console.log(`📅 Parsing ${field} for loan edit:`, {
+            input: dateString,
+            istDate: istDate.toLocaleString('en-IN'),
+            utcDate: utcDate.toISOString(),
+            field: field
+          });
+          
+          loan[field] = utcDate;
+        } catch (dateError) {
+          console.error(`❌ Error parsing ${field}:`, dateError);
+          throw new Error(`Invalid ${field}: ${changes[field]}. Must be in YYYY-MM-DD format.`);
         }
-        loan[field] = newDate;
       }
       // Handle numeric fields
       else if (['amount', 'emiAmount', 'loanDays', 'customEmiAmount'].includes(field)) {
@@ -1294,7 +1550,10 @@ async function approveLoanEdit(requestDoc, reason, processedBy) {
       loanNumber: loan.loanNumber,
       amount: loan.amount, // Principal amount
       totalLoanAmount: loan.totalLoanAmount, // Total amount
-      updatedFields: updatedFields
+      updatedFields: updatedFields,
+      dateAppliedDisplay: formatToDDMMYYYY(loan.dateApplied),
+      emiStartDateDisplay: formatToDDMMYYYY(loan.emiStartDate),
+      nextEmiDateDisplay: formatToDDMMYYYY(loan.nextEmiDate)
     });
   } catch (error) {
     console.error('❌ Error saving loan:', error);
@@ -1326,6 +1585,11 @@ async function approveLoanEdit(requestDoc, reason, processedBy) {
       changes: {
         oldLoanNumber: loan.originalData?.loanNumber || 'N/A',
         newLoanNumber: loan.loanNumber
+      },
+      displayDates: {
+        dateApplied: formatToDDMMYYYY(loan.dateApplied),
+        emiStartDate: formatToDDMMYYYY(loan.emiStartDate),
+        nextEmiDate: formatToDDMMYYYY(loan.nextEmiDate)
       }
     }
   });
@@ -1382,7 +1646,9 @@ async function approveLoanDeletion(requestDoc, reason, processedBy) {
     message: 'Loan deleted successfully!',
     data: {
       loanNumber: loan.loanNumber,
-      customerName: loan.customerName
+      customerName: loan.customerName,
+      dateAppliedDisplay: formatToDDMMYYYY(loan.dateApplied),
+      emiStartDateDisplay: formatToDDMMYYYY(loan.emiStartDate)
     }
   });
 }
@@ -1470,16 +1736,26 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
 
     console.log('✅ Unique loan number verified:', newLoanNumber);
 
-    // Process dates
+    // ==============================================
+    // FIXED: PROPER IST DATE HANDLING FOR RENEWAL
+    // ==============================================
     let emiStartDate;
     let renewalDate;
     
     try {
-      renewalDate = requestedData.renewalDate ? new Date(requestedData.renewalDate) : new Date();
-      emiStartDate = requestedData.emiStartDate ? new Date(requestedData.emiStartDate) : new Date(renewalDate);
+      // Parse renewal date as IST
+      if (requestedData.renewalDate) {
+        renewalDate = parseISTDateString(requestedData.renewalDate);
+      } else {
+        renewalDate = parseISTDateString(getTodayISTDate());
+      }
       
-      if (isNaN(renewalDate.getTime())) renewalDate = new Date();
-      if (isNaN(emiStartDate.getTime())) emiStartDate = new Date(renewalDate);
+      // Parse EMI start date as IST
+      if (requestedData.emiStartDate) {
+        emiStartDate = parseISTDateString(requestedData.emiStartDate);
+      } else {
+        emiStartDate = new Date(renewalDate);
+      }
       
       // Ensure emiStartDate is not before renewalDate
       if (emiStartDate < renewalDate) {
@@ -1487,19 +1763,26 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
         emiStartDate = new Date(renewalDate);
       }
       
-      // Normalize dates to start of day
+      // Normalize dates to start of day in IST
       renewalDate.setHours(0, 0, 0, 0);
       emiStartDate.setHours(0, 0, 0, 0);
       
+      console.log('📅 DEBUG - Renewal Date Parsing:', {
+        renewalDateInput: requestedData.renewalDate,
+        emiStartDateInput: requestedData.emiStartDate,
+        renewalDateIST: renewalDate.toLocaleString('en-IN'),
+        emiStartDateIST: emiStartDate.toLocaleString('en-IN')
+      });
+      
     } catch (error) {
-      console.error('❌ Error processing dates:', error);
-      renewalDate = new Date();
-      emiStartDate = new Date();
-      renewalDate.setHours(0, 0, 0, 0);
-      emiStartDate.setHours(0, 0, 0, 0);
+      console.error('❌ Error processing dates for renewal:', error);
+      // Fallback to current IST date
+      const todayIST = parseISTDateString(getTodayISTDate());
+      renewalDate = todayIST;
+      emiStartDate = todayIST;
     }
 
-    // **FIXED: Parse numeric values from requestedData - NO FALLBACK to defaults!**
+    // **FIXED: Parse numeric values from requestedData**
     const newLoanAmount = parseFloat(requestedData.newLoanAmount);
     const newEmiAmount = parseFloat(requestedData.newEmiAmount);
     const newLoanDays = parseInt(requestedData.newLoanDays);
@@ -1535,7 +1818,7 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
       totalLoanAmount = newEmiAmount * newLoanDays;
     }
 
-    console.log('💰 Loan amount calculation:', {
+    console.log('💰 Loan amount calculation for renewal:', {
       emiType: requestedData.emiType,
       loanType: requestedData.newLoanType,
       totalLoanAmount: totalLoanAmount,
@@ -1551,13 +1834,26 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
     try {
       session.startTransaction();
       
-      // DEBUG: Log date calculation for verification
+      // Convert dates to UTC for storage
+      const renewalDateUTC = convertISTToUTC(renewalDate);
+      const emiStartDateUTC = convertISTToUTC(emiStartDate);
+      
+      console.log('📅 DEBUG - Date conversion for renewal:', {
+        renewalDateIST: renewalDate.toLocaleString('en-IN'),
+        emiStartDateIST: emiStartDate.toLocaleString('en-IN'),
+        renewalDateUTC: renewalDateUTC.toISOString(),
+        emiStartDateUTC: emiStartDateUTC.toISOString()
+      });
+
+      // Calculate next EMI date (should be same as emiStartDate for new renewed loan)
+      const nextEmiDate = new Date(emiStartDateUTC); // No increment for new loans
+
       console.log('📅 DEBUG - EMI Date calculation for renewal:', {
         loanNumber: newLoanNumber,
-        emiStartDate: emiStartDate,
+        emiStartDateUTC: emiStartDateUTC.toISOString(),
         loanType: requestedData.newLoanType,
         emiPaidCount: 0,
-        nextEmiDate: new Date(emiStartDate), // Should be same as emiStartDate
+        nextEmiDateUTC: nextEmiDate.toISOString(),
         shouldBe: 'Same as EMI start date for new renewed loan'
       });
 
@@ -1570,16 +1866,16 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
         amount: newLoanAmount,  // Already validated above
         emiAmount: newEmiAmount, // Already validated above
         loanType: requestedData.newLoanType,
-        dateApplied: renewalDate,
+        dateApplied: renewalDateUTC, // Store as UTC
         loanDays: newLoanDays,  // Already validated above
         emiType: requestedData.emiType || 'fixed',
         customEmiAmount: requestedData.customEmiAmount ? parseFloat(requestedData.customEmiAmount) : null,
-        emiStartDate: emiStartDate,
+        emiStartDate: emiStartDateUTC, // Store as UTC
         totalEmiCount: newLoanDays,
         emiPaidCount: 0,
         lastEmiDate: null,
         // FIXED: For new renewed loans, nextEmiDate should be emiStartDate (no increment)
-        nextEmiDate: new Date(emiStartDate), // No calculation needed for new loans
+        nextEmiDate: nextEmiDate,
         totalPaidAmount: 0,
         remainingAmount: newLoanAmount,
         status: 'active',
@@ -1597,9 +1893,9 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
         totalPaid: 0,
         tenure: newLoanDays,
         tenureType: requestedData.newLoanType.toLowerCase(),
-        startDate: renewalDate,
+        startDate: renewalDateUTC,
         endDate: (() => {
-          const end = new Date(renewalDate);
+          const end = new Date(renewalDateUTC);
           end.setDate(end.getDate() + newLoanDays);
           return end;
         })(),
@@ -1613,8 +1909,9 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
         loanType: newLoan.loanType,
         loanDays: newLoan.loanDays,
         totalLoanAmount: newLoan.totalLoanAmount, // Total amount
-        nextEmiDate: newLoan.nextEmiDate,
-        emiStartDate: newLoan.emiStartDate
+        dateApplied: newLoan.dateApplied?.toISOString(),
+        emiStartDate: newLoan.emiStartDate?.toISOString(),
+        nextEmiDate: newLoan.nextEmiDate?.toISOString()
       });
 
       // **FIXED: Save WITH validation**
@@ -1649,8 +1946,9 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
         newEMI: newEmiAmount,
         newType: requestedData.newLoanType,
         newDays: newLoanDays,
-        nextEmiDate: newLoan.nextEmiDate,
-        emiStartDate: newLoan.emiStartDate
+        dateAppliedDisplay: formatToDDMMYYYY(newLoan.dateApplied),
+        emiStartDateDisplay: formatToDDMMYYYY(newLoan.emiStartDate),
+        nextEmiDateDisplay: formatToDDMMYYYY(newLoan.nextEmiDate)
       });
 
       // Update the request
@@ -1674,7 +1972,9 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
             loanNumber: originalLoan.loanNumber,
             isRenewed: true,
             renewedLoanNumber: newLoanNumber,
-            status: 'renewed'
+            status: 'renewed',
+            dateAppliedDisplay: formatToDDMMYYYY(originalLoan.dateApplied),
+            emiStartDateDisplay: formatToDDMMYYYY(originalLoan.emiStartDate)
           },
           newLoan: {
             loanId: newLoan._id,
@@ -1686,8 +1986,13 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
             loanType: requestedData.newLoanType,
             loanDays: newLoanDays,
             originalLoanNumber: originalLoan.loanNumber,
+            dateApplied: newLoan.dateApplied,
+            emiStartDate: newLoan.emiStartDate,
             nextEmiDate: newLoan.nextEmiDate,
-            emiStartDate: newLoan.emiStartDate
+            // Display dates
+            dateAppliedDisplay: formatToDDMMYYYY(newLoan.dateApplied),
+            emiStartDateDisplay: formatToDDMMYYYY(newLoan.emiStartDate),
+            nextEmiDateDisplay: formatToDDMMYYYY(newLoan.nextEmiDate)
           }
         }
       });

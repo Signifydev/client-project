@@ -26,6 +26,19 @@ import {
   loanTypes as rawLoanTypes
 } from '@/src/app/data-entry/utils/constants';
 
+// ============================================================================
+// IMPORT NEW DATE UTILITIES
+// ============================================================================
+import {
+  getTodayISTDate,
+  formatToDDMMYYYY,
+  formatForDateInput,
+  parseISTDateString,
+  convertISTToUTC,
+  convertUTCToIST,
+  safeFormatDate
+} from '@/src/app/data-entry/utils/dateCalculations';
+
 const loanTypes = [...rawLoanTypes];
 
 interface AddCustomerModalProps {
@@ -34,7 +47,7 @@ interface AddCustomerModalProps {
   onSuccess?: () => void;
   currentUserOffice: string;
   existingCustomers: Customer[];
-  currentOperator: { id: string; name: string }; // ← ADD THIS LINE
+  currentOperator: { id: string; name: string };
 }
 
 interface Step1Errors {
@@ -49,11 +62,10 @@ interface Step3Errors {
   [key: string]: string;
 }
 
-const getTodayISTDate = () => {
-  const now = new Date();
-  const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
-  return istTime.toISOString().split('T')[0];
-};
+// ============================================================================
+// REMOVED OLD getTodayISTDate FUNCTION (Line 94-98)
+// Now using the imported getTodayISTDate from dateCalculations.ts
+// ============================================================================
 
 export default function AddCustomerModal({
   isOpen,
@@ -61,7 +73,7 @@ export default function AddCustomerModal({
   onSuccess,
   currentUserOffice,
   existingCustomers,
-  currentOperator // ← ADD THIS LINE
+  currentOperator
 }: AddCustomerModalProps) {
   const [currentStep, setCurrentStep] = useState(1);
   const [step1Data, setStep1Data] = useState<NewCustomerStep1>({
@@ -81,12 +93,15 @@ export default function AddCustomerModal({
     }
   });
   
+  // ============================================================================
+  // UPDATED: Use imported getTodayISTDate for initial values
+  // ============================================================================
   const [step2Data, setStep2Data] = useState<NewCustomerStep2>({
     loanSelectionType: 'single',
     loanNumber: '',
-    loanDate: getTodayISTDate(),
+    loanDate: getTodayISTDate(), // ✅ Using imported function
     amount: '',
-    emiStartDate: getTodayISTDate(),
+    emiStartDate: getTodayISTDate(), // ✅ Using imported function
     loanAmount: '',
     emiAmount: '',
     loanDays: '',
@@ -141,10 +156,7 @@ export default function AddCustomerModal({
     if (step2Data.loanSelectionType === 'single') {
       const totalAmount = calculateTotalLoanAmount();
       
-      // For Single Loan, amount (principal) should be the same as total loan amount
-      // unless there's a specific principal amount entered by user
       if (totalAmount > 0) {
-        // If user hasn't entered a specific principal amount, use the calculated total
         if (!step2Data.amount || parseFloat(step2Data.amount) <= 0) {
           setStep2Data(prev => ({ 
             ...prev, 
@@ -152,7 +164,6 @@ export default function AddCustomerModal({
             loanAmount: totalAmount.toString()
           }));
         } else {
-          // User has entered a principal amount, keep it and update loanAmount
           setStep2Data(prev => ({ 
             ...prev, 
             loanAmount: totalAmount.toString()
@@ -290,14 +301,12 @@ export default function AddCustomerModal({
     for (const customer of existingCustomers) {
       if (!customer.customerNumber) continue;
       
-      // Normalize the existing customer number
       const existingNormalized = normalizeCustomerNumber(customer.customerNumber);
       const existingNumeric = extractNumericPart(customer.customerNumber);
       const existingNumericValue = parseInt(existingNumeric) || 0;
       
       console.log(`Comparing: Input ${numericInput} with ${customer.customerNumber} -> ${existingNumericValue}`);
       
-      // Compare both numeric values and normalized strings
       if (existingNumericValue === parseInt(numericInput) || 
           existingNormalized === normalizeCustomerNumber(customerNumber)) {
         isDuplicateLocal = true;
@@ -314,12 +323,10 @@ export default function AddCustomerModal({
       setCustomerNumberError(errorMsg);
       setCustomerNumberSuccess('');
 
-      // Generate suggestions
       const suggestions = generateCustomerNumberSuggestions(customerNumber, existingCustomers);
       setCustomerNumberSuggestions(suggestions);
       setShowSuggestions(true);
 
-      // Find nearest available number
       const nearestAvailable = findNearestAvailableCustomerNumber(customerNumber, existingCustomers);
       if (nearestAvailable) {
         setCustomerNumberSuggestions(prev => [
@@ -429,7 +436,19 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
     
     const totalLoanAmount = calculateTotalLoanAmount();
     
-    // Create FormData instead of JSON
+    // ============================================================================
+    // IMPORTANT: Convert dates to IST strings before sending to API
+    // ============================================================================
+    const loanDateIST = step2Data.loanDate; // Already in YYYY-MM-DD from getTodayISTDate
+    const emiStartDateIST = step2Data.emiStartDate; // Already in YYYY-MM-DD from getTodayISTDate
+    
+    console.log('📅 Date Debug:', {
+      loanDate: step2Data.loanDate,
+      emiStartDate: step2Data.emiStartDate,
+      loanDateFormatted: formatToDDMMYYYY(step2Data.loanDate),
+      emiStartDateFormatted: formatToDDMMYYYY(step2Data.emiStartDate)
+    });
+    
     const formData = new FormData();
     
     // Step 1 data
@@ -453,9 +472,8 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
     if (step2Data.loanSelectionType === 'single') {
       console.log('🔍 Appending Single Loan details...');
       // Step 2 data - ONLY for Single Loan
-      formData.append('loanDate', step2Data.loanDate);
-      formData.append('emiStartDate', step2Data.emiStartDate);
-      // FIX: Ensure amount is not empty or zero for single loans
+      formData.append('loanDate', loanDateIST); // ✅ IST date string
+      formData.append('emiStartDate', emiStartDateIST); // ✅ IST date string
       const principalAmount = step2Data.amount && parseFloat(step2Data.amount) > 0 
         ? step2Data.amount 
         : totalLoanAmount.toString();
@@ -693,12 +711,16 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
         home: null
       }
     });
+    
+    // ============================================================================
+    // UPDATED: Reset to today's IST date
+    // ============================================================================
     setStep2Data({
       loanSelectionType: 'single',
       loanNumber: '',
-      loanDate: getTodayISTDate(),
+      loanDate: getTodayISTDate(), // ✅ Using imported function
       amount: '',
-      emiStartDate: getTodayISTDate(),
+      emiStartDate: getTodayISTDate(), // ✅ Using imported function
       loanAmount: '',
       emiAmount: '',
       loanDays: '',
@@ -706,6 +728,7 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
       emiType: 'fixed',
       customEmiAmount: ''
     });
+    
     setStep3Data({
       loginId: '',
       password: '',
@@ -795,6 +818,12 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
   const emiAmount = parseFloat(step2Data.emiAmount) || 0;
   const loanDays = parseFloat(step2Data.loanDays) || 0;
   const customEmiAmount = parseFloat(step2Data.customEmiAmount || '0') || 0;
+
+  // ============================================================================
+  // ADDED: Format dates for display in DD/MM/YYYY
+  // ============================================================================
+  const formattedLoanDate = safeFormatDate(step2Data.loanDate);
+  const formattedEmiStartDate = safeFormatDate(step2Data.emiStartDate);
 
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center">
@@ -1525,6 +1554,9 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Loan Date *
+                        <span className="text-xs font-normal text-gray-500 ml-2">
+                          (Will be stored as: {formattedLoanDate || 'N/A'})
+                        </span>
                       </label>
                       <input
                         type="date"
@@ -1541,12 +1573,18 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
                       {step2Errors.loanDate && (
                         <p className="mt-1 text-sm text-red-600">{step2Errors.loanDate}</p>
                       )}
+                      <p className="text-xs text-gray-500 mt-1">
+                        Display: <span className="font-medium">{formattedLoanDate || 'Not set'}</span>
+                      </p>
                     </div>
 
                     {/* EMI Start Date */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         EMI Start Date *
+                        <span className="text-xs font-normal text-gray-500 ml-2">
+                          (Will be stored as: {formattedEmiStartDate || 'N/A'})
+                        </span>
                       </label>
                       <input
                         type="date"
@@ -1563,6 +1601,9 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
                       {step2Errors.emiStartDate && (
                         <p className="mt-1 text-sm text-red-600">{step2Errors.emiStartDate}</p>
                       )}
+                      <p className="text-xs text-gray-500 mt-1">
+                        Display: <span className="font-medium">{formattedEmiStartDate || 'Not set'}</span>
+                      </p>
                     </div>
 
                     {/* Amount - FIXED: Improved with better validation and auto-calculation */}
@@ -1772,7 +1813,9 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
                     </div>
                   </div>
 
-                  {/* Loan Summary */}
+                  {/* ============================================================================
+                  // UPDATED: Loan Summary with DD/MM/YYYY formatted dates
+                  // ============================================================================ */}
                   {(step2Data.emiAmount || step2Data.loanDays) && (
                     <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                       <h4 className="font-medium text-gray-900 mb-3">Loan Summary</h4>
@@ -1801,6 +1844,17 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
                             <p className="font-semibold">₹{customEmiAmount.toLocaleString('en-IN')}</p>
                           </div>
                         )}
+                        {/* ============================================================================
+                        // ADDED: Date display in DD/MM/YYYY format
+                        // ============================================================================ */}
+                        <div>
+                          <p className="text-xs text-gray-500">Loan Date</p>
+                          <p className="font-semibold text-blue-600">{formattedLoanDate || 'Not set'}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">EMI Start Date</p>
+                          <p className="font-semibold text-green-600">{formattedEmiStartDate || 'Not set'}</p>
+                        </div>
                       </div>
                       <div className="mt-4 pt-4 border-t border-gray-200">
                         <div className="flex justify-between items-center">
@@ -2036,6 +2090,14 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
                             <p className="font-semibold text-gray-900">{step2Data.loanNumber || 'Not set'}</p>
                           </div>
                           <div>
+                            <p className="text-xs text-gray-500">Loan Date</p>
+                            <p className="font-semibold text-blue-600">{formattedLoanDate || 'Not set'}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">EMI Start Date</p>
+                            <p className="font-semibold text-green-600">{formattedEmiStartDate || 'Not set'}</p>
+                          </div>
+                          <div>
                             <p className="text-xs text-gray-500">Amount (Principal)</p>
                             <p className="font-semibold text-green-600">
                               ₹{step2Data.amount ? parseFloat(step2Data.amount).toLocaleString('en-IN') : '0'}
@@ -2139,13 +2201,26 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
                           <p className="font-semibold text-gray-900">{step2Data.loanNumber}</p>
                         </div>
                       )}
+                      {/* ============================================================================
+                      // ADDED: Date display in success summary
+                      // ============================================================================ */}
                       {step2Data.loanSelectionType === 'single' && (
-                        <div>
-                          <p className="text-xs text-gray-500">Amount (Principal)</p>
-                          <p className="font-semibold text-green-600">
-                            ₹{step2Data.amount ? parseFloat(step2Data.amount).toLocaleString('en-IN') : '0'}
-                          </p>
-                        </div>
+                        <>
+                          <div>
+                            <p className="text-xs text-gray-500">Loan Date</p>
+                            <p className="font-semibold text-blue-600">{formattedLoanDate}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">EMI Start Date</p>
+                            <p className="font-semibold text-green-600">{formattedEmiStartDate}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Amount (Principal)</p>
+                            <p className="font-semibold text-green-600">
+                              ₹{step2Data.amount ? parseFloat(step2Data.amount).toLocaleString('en-IN') : '0'}
+                            </p>
+                          </div>
+                        </>
                       )}
                     </div>
                   </div>

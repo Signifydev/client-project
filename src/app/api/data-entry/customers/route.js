@@ -6,6 +6,207 @@ import { connectDB } from '@/lib/db';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 
+// ==============================================
+// DATE UTILITY FUNCTIONS - FIXED FOR IST TIMEZONE
+// ==============================================
+
+/**
+ * Parse a YYYY-MM-DD string as IST date (Asia/Kolkata, UTC+5:30)
+ * @param {string} dateString - Date string in YYYY-MM-DD format
+ * @returns {Date} Date object in IST timezone
+ */
+function parseISTDateString(dateString) {
+  if (!dateString || dateString.trim() === '') {
+    console.log('⚠️ Empty date string provided, returning current date');
+    return new Date();
+  }
+  
+  try {
+    // Remove any time part if present
+    const dateOnly = dateString.split('T')[0];
+    
+    // Split the date string
+    const [year, month, day] = dateOnly.split('-').map(Number);
+    
+    // Validate date components
+    if (isNaN(year) || isNaN(month) || isNaN(day)) {
+      console.error('❌ Invalid date components:', { year, month, day, original: dateString });
+      return new Date();
+    }
+    
+    // Create date in IST timezone (UTC+5:30)
+    // Note: JavaScript months are 0-indexed (0 = January, 11 = December)
+    const istDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+    
+    // Add 5 hours 30 minutes to convert from UTC to IST
+    istDate.setHours(istDate.getHours() + 5);
+    istDate.setMinutes(istDate.getMinutes() + 30);
+    
+    // Validate the created date
+    if (isNaN(istDate.getTime())) {
+      console.error('❌ Invalid date created from string:', dateString);
+      return new Date();
+    }
+    
+    console.log('📅 Parsed IST Date:', {
+      input: dateString,
+      output: istDate.toISOString(),
+      local: istDate.toLocaleString('en-IN'),
+      day: istDate.getDate(),
+      month: istDate.getMonth() + 1,
+      year: istDate.getFullYear()
+    });
+    
+    return istDate;
+  } catch (error) {
+    console.error('❌ Error parsing IST date:', error, 'input:', dateString);
+    return new Date();
+  }
+}
+
+/**
+ * Format date to YYYY-MM-DD for HTML date input (returns IST date)
+ * @param {Date} date - Date object
+ * @returns {string} Date string in YYYY-MM-DD format (IST)
+ */
+function formatForDateInput(date) {
+  if (!date) return '';
+  
+  try {
+    // Create a copy to avoid modifying original
+    const istDate = new Date(date);
+    
+    // If date is stored as UTC, convert to IST
+    if (date.toISOString().includes('Z')) {
+      istDate.setHours(istDate.getHours() + 5);
+      istDate.setMinutes(istDate.getMinutes() + 30);
+    }
+    
+    const year = istDate.getFullYear();
+    const month = String(istDate.getMonth() + 1).padStart(2, '0');
+    const day = String(istDate.getDate()).padStart(2, '0');
+    
+    const result = `${year}-${month}-${day}`;
+    console.log('📅 Formatted Date Input:', {
+      input: date.toISOString(),
+      output: result,
+      local: istDate.toLocaleString('en-IN')
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('❌ Error formatting date for input:', error);
+    return '';
+  }
+}
+
+/**
+ * Format date to DD/MM/YYYY for display (returns IST date)
+ * @param {Date} date - Date object
+ * @returns {string} Date string in DD/MM/YYYY format (IST)
+ */
+function formatToDDMMYYYY(date) {
+  if (!date) return '';
+  
+  try {
+    // Create a copy to avoid modifying original
+    const istDate = new Date(date);
+    
+    // If date is stored as UTC, convert to IST
+    if (date.toISOString().includes('Z')) {
+      istDate.setHours(istDate.getHours() + 5);
+      istDate.setMinutes(istDate.getMinutes() + 30);
+    }
+    
+    const day = String(istDate.getDate()).padStart(2, '0');
+    const month = String(istDate.getMonth() + 1).padStart(2, '0');
+    const year = istDate.getFullYear();
+    
+    const result = `${day}/${month}/${year}`;
+    console.log('📅 Formatted Date Display:', {
+      input: date.toISOString(),
+      output: result,
+      local: istDate.toLocaleString('en-IN')
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('❌ Error formatting date to DD/MM/YYYY:', error);
+    return '';
+  }
+}
+
+/**
+ * Convert IST date to UTC for database storage
+ * @param {Date} istDate - Date in IST timezone
+ * @returns {Date} Date in UTC
+ */
+function convertISTToUTC(istDate) {
+  if (!istDate) return new Date();
+  
+  try {
+    const utcDate = new Date(istDate);
+    utcDate.setHours(utcDate.getHours() - 5);
+    utcDate.setMinutes(utcDate.getMinutes() - 30);
+    
+    console.log('🔄 Converted IST to UTC:', {
+      istDate: istDate.toLocaleString('en-IN'),
+      utcDate: utcDate.toISOString(),
+      istDateISO: istDate.toISOString()
+    });
+    
+    return utcDate;
+  } catch (error) {
+    console.error('❌ Error converting IST to UTC:', error);
+    return new Date();
+  }
+}
+
+/**
+ * Get today's date in IST timezone (YYYY-MM-DD format)
+ * @returns {string} Today's date in YYYY-MM-DD format (IST)
+ */
+function getTodayISTDate() {
+  const now = new Date();
+  const istDate = new Date(now.getTime() + (5 * 60 * 60 * 1000) + (30 * 60 * 1000));
+  const year = istDate.getUTCFullYear();
+  const month = String(istDate.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(istDate.getUTCDate()).padStart(2, '0');
+  const result = `${year}-${month}-${day}`;
+  
+  console.log('📅 Today\'s IST Date:', result);
+  return result;
+}
+
+/**
+ * Validate date string is in YYYY-MM-DD format
+ * @param {string} dateString - Date string to validate
+ * @returns {boolean} True if valid YYYY-MM-DD format
+ */
+function isValidYYYYMMDD(dateString) {
+  if (!dateString || typeof dateString !== 'string') return false;
+  
+  const pattern = /^\d{4}-\d{2}-\d{2}$/;
+  if (!pattern.test(dateString)) return false;
+  
+  const [year, month, day] = dateString.split('-').map(Number);
+  
+  // Basic validation
+  if (year < 2000 || year > 2100) return false;
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  
+  // More accurate validation
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && 
+         date.getMonth() === month - 1 && 
+         date.getDate() === day;
+}
+
+// ==============================================
+// MAIN API ROUTE
+// ==============================================
+
 // GET method for fetching all customers
 export async function GET(request) {
   try {
@@ -68,6 +269,14 @@ export async function GET(request) {
         customer.totalLoans = loans.length;
         customer.totalLoanAmount = loans.reduce((sum, loan) => sum + (loan.amount || 0), 0);
         customer.activeLoan = loans.find(loan => loan.status === 'active');
+        
+        // Format dates for display
+        if (customer.createdAt) {
+          customer.createdAtDisplay = formatToDDMMYYYY(customer.createdAt);
+        }
+        if (customer.updatedAt) {
+          customer.updatedAtDisplay = formatToDDMMYYYY(customer.updatedAt);
+        }
       }
       
     } catch (dbError) {
@@ -191,8 +400,8 @@ export async function POST(request) {
     }
     
     // Loan details - CRITICAL: Only validate for Single Loan
-    const loanDate = formData.get('loanDate');
-    const emiStartDate = formData.get('emiStartDate');
+    const loanDateInput = formData.get('loanDate');
+    const emiStartDateInput = formData.get('emiStartDate');
     const amount = formData.get('amount');
     const loanAmount = formData.get('loanAmount');
     const emiAmount = formData.get('emiAmount');
@@ -201,46 +410,65 @@ export async function POST(request) {
     const emiType = formData.get('emiType');
     const customEmiAmount = formData.get('customEmiAmount') || '';
 
-    // CRITICAL FIX: Only validate loan details for Single Loan selection
+    // CRITICAL FIX: Date validation for Single Loan
     if (loanSelectionType === 'single') {
-  console.log('🔍 Validating loan details for Single Loan selection');
-  
-  // Validate loan details
-  if (!loanDate || !emiStartDate || !amount || !loanDays || !loanType || !emiType) { // ← Added amount validation
-    return NextResponse.json(
-      { success: false, error: 'All basic loan details are required for Single Loan' },
-      { status: 400 }
-    );
-  }
-  
-  // Validate amount (principal) is positive
-  if (parseFloat(amount) <= 0) {
-    return NextResponse.json(
-      { success: false, error: 'Amount (principal) must be greater than 0' },
-      { status: 400 }
-    );
-  }
+      console.log('🔍 Validating loan details for Single Loan selection');
+      
+      // Validate loan details
+      if (!loanDateInput || !emiStartDateInput || !amount || !loanDays || !loanType || !emiType) {
+        return NextResponse.json(
+          { success: false, error: 'All basic loan details are required for Single Loan' },
+          { status: 400 }
+        );
+      }
+      
+      // Validate date formats
+      if (!isValidYYYYMMDD(loanDateInput)) {
+        return NextResponse.json(
+          { success: false, error: 'Invalid loan date format. Use YYYY-MM-DD format.' },
+          { status: 400 }
+        );
+      }
+      
+      if (!isValidYYYYMMDD(emiStartDateInput)) {
+        return NextResponse.json(
+          { success: false, error: 'Invalid EMI start date format. Use YYYY-MM-DD format.' },
+          { status: 400 }
+        );
+      }
+      
+      // Validate amount (principal) is positive
+      const principalAmount = parseFloat(amount);
+      if (isNaN(principalAmount) || principalAmount <= 0) {
+        return NextResponse.json(
+          { success: false, error: 'Amount (principal) must be a positive number greater than 0' },
+          { status: 400 }
+        );
+      }
 
       // Validate EMI amounts
+      const emiAmountValue = parseFloat(emiAmount);
       if (loanType === 'Daily') {
-        if (!emiAmount) {
+        if (isNaN(emiAmountValue) || emiAmountValue <= 0) {
           return NextResponse.json(
-            { success: false, error: 'EMI Amount is required for Daily loans' },
+            { success: false, error: 'EMI Amount is required and must be positive for Daily loans' },
             { status: 400 }
           );
         }
       } else {
         if (emiType === 'fixed') {
-          if (!emiAmount) {
+          if (isNaN(emiAmountValue) || emiAmountValue <= 0) {
             return NextResponse.json(
-              { success: false, error: 'EMI Amount is required for Fixed EMI type' },
+              { success: false, error: 'EMI Amount is required and must be positive for Fixed EMI type' },
               { status: 400 }
             );
           }
         } else if (emiType === 'custom') {
-          if (!emiAmount || !customEmiAmount) {
+          const customEmiAmountValue = parseFloat(customEmiAmount);
+          if (isNaN(emiAmountValue) || emiAmountValue <= 0 || 
+              isNaN(customEmiAmountValue) || customEmiAmountValue <= 0) {
             return NextResponse.json(
-              { success: false, error: 'Both Fixed EMI Amount and Last EMI Amount are required for Custom EMI type' },
+              { success: false, error: 'Both Fixed EMI Amount and Last EMI Amount are required and must be positive for Custom EMI type' },
               { status: 400 }
             );
           }
@@ -408,18 +636,53 @@ export async function POST(request) {
 
     // Calculate total loan amount - ONLY for Single Loan
     let totalLoanAmount = 0;
+    let emiStartDateIST = null;
+    let loanDateIST = null;
+    
     if (loanSelectionType === 'single') {
+      // Parse dates as IST dates
+      loanDateIST = parseISTDateString(loanDateInput);
+      emiStartDateIST = parseISTDateString(emiStartDateInput);
+      
+      console.log('📅 DEBUG - Date parsing for Single Loan:', {
+        loanDateInput,
+        emiStartDateInput,
+        loanDateIST: loanDateIST.toLocaleString('en-IN'),
+        emiStartDateIST: emiStartDateIST.toLocaleString('en-IN'),
+        loanDateDisplay: formatToDDMMYYYY(loanDateIST),
+        emiStartDateDisplay: formatToDDMMYYYY(emiStartDateIST)
+      });
+      
+      // Ensure emiStartDate is not before loanDate
+      if (emiStartDateIST < loanDateIST) {
+        console.log('⚠️ Adjusting EMI start date to match loan date');
+        emiStartDateIST = new Date(loanDateIST);
+      }
+      
+      // Calculate total loan amount based on EMI type
+      const emiAmountValue = parseFloat(emiAmount);
+      const loanDaysValue = parseInt(loanDays);
+      
       if (emiType === 'custom' && loanType !== 'Daily') {
-        const fixedPeriods = parseInt(loanDays) - 1;
-        const fixedAmount = parseFloat(emiAmount) * fixedPeriods;
+        const fixedPeriods = loanDaysValue - 1;
+        const fixedAmount = emiAmountValue * fixedPeriods;
         const lastAmount = parseFloat(customEmiAmount) || 0;
         totalLoanAmount = fixedAmount + lastAmount;
       } else {
-        totalLoanAmount = parseFloat(emiAmount) * parseInt(loanDays);
+        totalLoanAmount = emiAmountValue * loanDaysValue;
       }
+      
+      console.log('💰 Loan amount calculation:', {
+        emiType,
+        loanType,
+        emiAmount: emiAmountValue,
+        loanDays: loanDaysValue,
+        customEmiAmount,
+        totalLoanAmount
+      });
     }
 
-    // Create request data
+    // Create request data with PROPER DATE HANDLING
     const requestData = {
       type: 'New Customer',
       customerName: name,
@@ -478,21 +741,27 @@ export async function POST(request) {
       },
       
       step2Data: {
-  loanSelectionType: loanSelectionType,
-  // CRITICAL FIX: For Single Loan use actual values; for Multiple Loan use defaults
-  loanDate: loanSelectionType === 'single' ? loanDate : '',
-  emiStartDate: loanSelectionType === 'single' ? emiStartDate : '',
-  amount: loanSelectionType === 'single' ? parseFloat(amount) : 0, // ← ADD THIS LINE (Principal)
-  loanAmount: loanSelectionType === 'single' ? parseFloat(loanAmount) : 0, // Total Amount
-  emiAmount: loanSelectionType === 'single' ? parseFloat(emiAmount) : 0,
-  loanDays: loanSelectionType === 'single' ? parseInt(loanDays) : 0,
-  loanType: loanSelectionType === 'single' ? loanType : '',
-  emiType: loanSelectionType === 'single' ? emiType : 'fixed',
-  customEmiAmount: loanSelectionType === 'single' && customEmiAmount ? parseFloat(customEmiAmount) : null,
-  totalLoanAmount: totalLoanAmount,
-  // Include loan number only for Single Loan
-  loanNumber: loanSelectionType === 'single' ? formData.get('loanNumber') || '' : ''
-},
+        loanSelectionType: loanSelectionType,
+        // CRITICAL FIX: Store dates as Date objects for Single Loan, convert to UTC for storage
+        loanDate: loanSelectionType === 'single' ? convertISTToUTC(loanDateIST) : null,
+        emiStartDate: loanSelectionType === 'single' ? convertISTToUTC(emiStartDateIST) : null,
+        amount: loanSelectionType === 'single' ? parseFloat(amount) : 0, // Principal Amount
+        loanAmount: loanSelectionType === 'single' ? parseFloat(loanAmount) : 0, // Total Amount
+        emiAmount: loanSelectionType === 'single' ? parseFloat(emiAmount) : 0,
+        loanDays: loanSelectionType === 'single' ? parseInt(loanDays) : 0,
+        loanType: loanSelectionType === 'single' ? loanType : '',
+        emiType: loanSelectionType === 'single' ? emiType : 'fixed',
+        customEmiAmount: loanSelectionType === 'single' && customEmiAmount ? parseFloat(customEmiAmount) : null,
+        totalLoanAmount: totalLoanAmount,
+        // Include loan number only for Single Loan
+        loanNumber: loanSelectionType === 'single' ? formData.get('loanNumber') || '' : '',
+        // Store display dates for frontend (IST dates as strings)
+        loanDateDisplay: loanSelectionType === 'single' ? formatToDDMMYYYY(loanDateIST) : '',
+        emiStartDateDisplay: loanSelectionType === 'single' ? formatToDDMMYYYY(emiStartDateIST) : '',
+        // Store input dates as strings for reference
+        loanDateInput: loanSelectionType === 'single' ? loanDateInput : '',
+        emiStartDateInput: loanSelectionType === 'single' ? emiStartDateInput : ''
+      },
       
       step3Data: {
         loginId,
@@ -503,23 +772,44 @@ export async function POST(request) {
       description: `New customer request for ${name} - ${businessName} (${customerNumber})`,
       priority: category === 'A' ? 'High' : category === 'B' ? 'Medium' : 'Low',
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
+      // Add metadata for date handling
+      dateHandling: {
+        timezone: 'IST',
+        dateFormat: 'YYYY-MM-DD',
+        displayFormat: 'DD/MM/YYYY',
+        createdAtDisplay: formatToDDMMYYYY(new Date())
+      }
     };
 
-    console.log('📋 Creating new customer request:', {
+    console.log('📋 Creating new customer request with dates:', {
       name,
       customerNumber,
       businessName,
       loanSelectionType,
-      loanAmount: requestData.step2Data.loanAmount,
-      emiAmount: requestData.step2Data.emiAmount
+      loanDateUTC: requestData.step2Data.loanDate?.toISOString(),
+      emiStartDateUTC: requestData.step2Data.emiStartDate?.toISOString(),
+      loanDateDisplay: requestData.step2Data.loanDateDisplay,
+      emiStartDateDisplay: requestData.step2Data.emiStartDateDisplay,
+      loanDateInput: requestData.step2Data.loanDateInput,
+      emiStartDateInput: requestData.step2Data.emiStartDateInput,
+      principalAmount: requestData.step2Data.amount,
+      totalLoanAmount: requestData.step2Data.loanAmount
     });
 
     // Create the request
     const newRequest = new Request(requestData);
     await newRequest.save();
 
-    console.log('✅ New customer request created successfully:', newRequest._id);
+    console.log('✅ New customer request created successfully:', {
+      requestId: newRequest._id,
+      customerName: name,
+      customerNumber: normalizedCustomerNumber,
+      loanSelectionType,
+      loanDateDisplay: requestData.step2Data.loanDateDisplay,
+      emiStartDateDisplay: requestData.step2Data.emiStartDateDisplay,
+      datesMatch: requestData.step2Data.loanDateDisplay === requestData.step2Data.emiStartDateDisplay
+    });
 
     return NextResponse.json({
       success: true,
@@ -528,7 +818,11 @@ export async function POST(request) {
         requestId: newRequest._id,
         customerName: name,
         customerNumber: normalizedCustomerNumber,
-        loanSelectionType: loanSelectionType
+        loanSelectionType: loanSelectionType,
+        loanDateDisplay: requestData.step2Data.loanDateDisplay,
+        emiStartDateDisplay: requestData.step2Data.emiStartDateDisplay,
+        principalAmount: requestData.step2Data.amount,
+        totalLoanAmount: requestData.step2Data.loanAmount
       }
     });
 

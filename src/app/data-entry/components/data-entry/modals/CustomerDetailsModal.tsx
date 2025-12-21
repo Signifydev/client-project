@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { Customer, CustomerDetails, Loan, EMIHistory } from '@/src/app/data-entry/types/dataEntry';
-import { formatDateToDDMMYYYY } from '@/src/app/data-entry/utils/dateCalculations';
 import {
   getAllCustomerLoans,
   calculateEMICompletion,
@@ -10,6 +9,16 @@ import {
   calculateTotalLoanAmount
 } from '@/src/app/data-entry/utils/loanCalculations';
 import { useCustomers } from '@/src/app/data-entry/hooks/useCustomers';
+
+// ============================================================================
+// IMPORT UPDATED DATE UTILITIES
+// ============================================================================
+import {
+  formatToDDMMYYYY,
+  safeFormatDate,
+  parseISTDateString,
+  convertUTCToIST
+} from '@/src/app/data-entry/utils/dateCalculations';
 
 interface CustomerDetailsModalProps {
   isOpen: boolean;
@@ -70,28 +79,10 @@ const getLastPaymentDate = (loan: Loan): string | null => {
   return null;
 };
 
-// Helper function to safely format dates
-const safeFormatDate = (date: any): string => {
-  if (!date) return 'N/A';
-  
-  // If it's already a string, return it as is or try to format
-  if (typeof date === 'string') {
-    return formatDateToDDMMYYYY(date);
-  }
-  
-  // If it's a Date object, convert to string first
-  if (date instanceof Date) {
-    return formatDateToDDMMYYYY(date.toISOString());
-  }
-  
-  // For any other type, try to convert to string
-  try {
-    return formatDateToDDMMYYYY(String(date));
-  } catch (error) {
-    console.error('Error formatting date:', error);
-    return 'Invalid Date';
-  }
-};
+// ============================================================================
+// REMOVED: Custom safeFormatDate function (lines 79-99)
+// Now using imported safeFormatDate from dateCalculations.ts
+// ============================================================================
 
 // Helper function to get EMI type display text
 const getEMITypeDisplay = (loan: Loan): string => {
@@ -143,6 +134,27 @@ const getLoanTotalAmount = (loan: Loan): number => {
   return loan.amount || 0;
 };
 
+// ============================================================================
+// NEW: Helper function to format dates specifically for this component
+// ============================================================================
+const formatDateForDisplay = (dateValue: any): string => {
+  return safeFormatDate(dateValue);
+};
+
+// ============================================================================
+// NEW: Function to check if date is valid before formatting
+// ============================================================================
+const isValidDate = (dateValue: any): boolean => {
+  if (!dateValue) return false;
+  
+  try {
+    const date = new Date(dateValue);
+    return !isNaN(date.getTime());
+  } catch {
+    return false;
+  }
+};
+
 export default function CustomerDetailsModal({
   isOpen,
   onClose,
@@ -158,7 +170,7 @@ export default function CustomerDetailsModal({
   const [isLoading, setIsLoading] = useState(false);
   const [customerDetails, setCustomerDetails] = useState<CustomerDetails | null>(null);
   const [customerLoans, setCustomerLoans] = useState<Loan[]>([]);
-  const [isDeleting, setIsDeleting] = useState(false); // NEW: Track if delete modal is open
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const { fetchCustomerDetails } = useCustomers(currentUserOffice);
 
@@ -192,6 +204,22 @@ export default function CustomerDetailsModal({
       // Get customer loans
       const loans = getCustomerLoans(customer, details);
       setCustomerLoans(loans);
+      
+      // ============================================================================
+      // DEBUG: Check date formats in loaded data
+      // ============================================================================
+      console.log('📅 Customer Details Modal - Loaded Data:', {
+        customerName: details?.name,
+        loansCount: loans.length,
+        loanDates: loans.map(loan => ({
+          loanNumber: loan.loanNumber,
+          emiStartDate: loan.emiStartDate,
+          nextEmiDate: loan.nextEmiDate,
+          formattedEmiStartDate: safeFormatDate(loan.emiStartDate),
+          formattedNextEmiDate: safeFormatDate(loan.nextEmiDate)
+        }))
+      });
+      
     } catch (error: any) {
       console.error('Error fetching customer details:', error);
     } finally {
@@ -258,7 +286,7 @@ export default function CustomerDetailsModal({
               </div>
             ) : displayCustomer ? (
               <div className="p-8">
-                {/* Personal Information Card - UPDATED: Business Name removed */}
+                {/* Personal Information Card */}
                 <div className="bg-white shadow-sm rounded-xl border border-gray-200 mb-6">
                   <div className="px-8 py-4 border-b border-gray-200">
                     <h4 className="text-lg font-bold text-gray-900">Personal Information</h4>
@@ -311,7 +339,7 @@ export default function CustomerDetailsModal({
                         </div>
                       </div>
 
-                      {/* Right Column - Customer and Area Info - UPDATED: Business Name removed */}
+                      {/* Right Column - Customer and Area Info */}
                       <div className="space-y-4">
                         <div>
                           <p className="text-xs font-medium text-gray-500 mb-1">Customer Number</p>
@@ -326,14 +354,14 @@ export default function CustomerDetailsModal({
                   </div>
                 </div>
 
-                {/* Business Information Card - UPDATED: Business Name added as first field */}
+                {/* Business Information Card */}
                 <div className="bg-white shadow-sm rounded-xl border border-gray-200 mb-8">
                   <div className="px-8 py-4 border-b border-gray-200">
                     <h4 className="text-lg font-bold text-gray-900">Business Information</h4>
                   </div>
                   <div className="p-6">
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                      {/* Business Name Column - ADDED as first field */}
+                      {/* Business Name Column */}
                       <div>
                         <p className="text-xs font-medium text-gray-500 mb-1">Business Name</p>
                         <p className="font-bold text-gray-900 text-sm">{displayCustomer.businessName || 'N/A'}</p>
@@ -356,7 +384,7 @@ export default function CustomerDetailsModal({
                   </div>
                 </div>
 
-                {/* Loan Information Section - UPDATED: Added EMI type display */}
+                {/* Loan Information Section */}
                 <div className="bg-white shadow-sm rounded-xl border border-gray-200 mb-8">
                   <div className="px-8 py-4 border-b border-gray-200 flex justify-between items-center">
                     <h4 className="text-lg font-bold text-gray-900">Loan Information</h4>
@@ -382,7 +410,7 @@ export default function CustomerDetailsModal({
                           const lastPaymentDate = getLastPaymentDate(loan);
                           
                           // Calculate remaining amount and EMIs
-                          const totalLoanAmount = getLoanTotalAmount(loan); // Use helper function
+                          const totalLoanAmount = getLoanTotalAmount(loan);
                           const remainingAmount = Math.round(totalLoanAmount * (1 - completion.completionPercentage/100));
                           const remainingEmis = completion.remainingEmis;
                           const totalEmis = loan.totalEmiCount || loan.loanDays || 30;
@@ -392,12 +420,20 @@ export default function CustomerDetailsModal({
                           const emiTypeDisplay = getEMITypeDisplay(loan);
                           const emiTypeBadgeClass = getEMITypeBadgeClass(loan);
                           
+                          // ============================================================================
+                          // FORMAT DATES USING safeFormatDate
+                          // ============================================================================
+                          const formattedNextEmiDate = safeFormatDate(loan.nextEmiDate);
+                          const formattedLastPaymentDate = lastPaymentDate ? safeFormatDate(lastPaymentDate) : 'N/A';
+                          const formattedEmiStartDate = safeFormatDate(loan.emiStartDate);
+                          const formattedDateApplied = safeFormatDate(loan.dateApplied);
+                          
                           return (
                             <div 
                               key={loan._id || index} 
                               className={`border ${isRenewed ? 'border-red-300 bg-red-50' : 'border-gray-300'} rounded-xl p-6 hover:shadow-lg transition-all`}
                             >
-                              {/* Loan Header - UPDATED: Added EMI type badge */}
+                              {/* Loan Header */}
                               <div className="flex justify-between items-start mb-4">
                                 <div>
                                   <h5 className="font-bold text-gray-900 text-lg mb-2">
@@ -425,7 +461,7 @@ export default function CustomerDetailsModal({
                                     }`}>
                                       {loan.loanType}
                                     </span>
-                                    {/* EMI Type Badge - NEW */}
+                                    {/* EMI Type Badge */}
                                     <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-semibold border ${emiTypeBadgeClass}`}>
                                       {emiTypeDisplay}
                                     </span>
@@ -433,7 +469,31 @@ export default function CustomerDetailsModal({
                                 </div>
                               </div>
 
-                              {/* Completion Percentage - UPDATED: Use total loan amount */}
+                              {/* ============================================================================
+                              // ADDED: Loan Dates Summary (NEW SECTION)
+                              // ============================================================================ */}
+                              <div className="mb-4 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                  <div>
+                                    <p className="text-xs font-medium text-gray-500 mb-1">Loan Date</p>
+                                    <p className="font-semibold text-gray-900 text-sm">{formattedDateApplied || 'N/A'}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs font-medium text-gray-500 mb-1">EMI Start Date</p>
+                                    <p className="font-semibold text-gray-900 text-sm">{formattedEmiStartDate || 'N/A'}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs font-medium text-gray-500 mb-1">Last Payment</p>
+                                    <p className="font-semibold text-gray-900 text-sm">{formattedLastPaymentDate}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs font-medium text-gray-500 mb-1">Next EMI Date</p>
+                                    <p className="font-semibold text-gray-900 text-sm">{formattedNextEmiDate || 'N/A'}</p>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Completion Percentage */}
                               <div className="mb-6 bg-blue-50 p-4 rounded-xl border border-blue-100">
                                 <div className="flex justify-between items-center mb-2">
                                   <div>
@@ -467,8 +527,8 @@ export default function CustomerDetailsModal({
                                 </div>
                               </div>
 
-                              {/* Loan Stats Grid - UPDATED: Show total loan amount */}
-                              <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+                              {/* Loan Stats Grid */}
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                                 <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
                                   <p className="text-xs font-medium text-gray-500 mb-1">Total Loan Amount</p>
                                   <p className="font-semibold text-gray-900 text-sm">
@@ -488,20 +548,14 @@ export default function CustomerDetailsModal({
                                   </p>
                                 </div>
                                 <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
-                                  <p className="text-xs font-medium text-gray-500 mb-1">Next EMI Date</p>
+                                  <p className="text-xs font-medium text-gray-500 mb-1">Payment Behavior</p>
                                   <p className="font-semibold text-gray-900 text-sm">
-                                    {loan.nextEmiDate ? safeFormatDate(loan.nextEmiDate) : 'N/A'}
-                                  </p>
-                                </div>
-                                <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
-                                  <p className="text-xs font-medium text-gray-500 mb-1">Last Payment Date</p>
-                                  <p className="font-semibold text-gray-900 text-sm">
-                                    {lastPaymentDate ? safeFormatDate(lastPaymentDate) : 'N/A'}
+                                    {paymentBehavior || 'N/A'}
                                   </p>
                                 </div>
                               </div>
 
-                              {/* Loan Details Section - Show Principal vs Total */}
+                              {/* Loan Details Section */}
                               <div className="mb-6 bg-gray-50 p-4 rounded-xl border border-gray-200">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                   <div>
@@ -544,7 +598,7 @@ export default function CustomerDetailsModal({
                                 )}
                               </div>
 
-                              {/* View EMI History Button - Placed above actions */}
+                              {/* View EMI History Button */}
                               {loan.emiHistory && loan.emiHistory.length > 0 && (
                                 <div className="mb-6">
                                   <details className="group">
@@ -556,7 +610,7 @@ export default function CustomerDetailsModal({
                                       <table className="min-w-full divide-y divide-gray-200">
                                         <thead className="bg-gray-50">
                                           <tr>
-                                            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Date</th>
+                                            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Date (DD/MM/YYYY)</th>
                                             <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Amount</th>
                                             <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Status</th>
                                             <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Collected By</th>
@@ -565,7 +619,12 @@ export default function CustomerDetailsModal({
                                         <tbody className="bg-white divide-y divide-gray-200">
                                           {loan.emiHistory.slice(0, 5).map((payment: EMIHistory, idx: number) => (
                                             <tr key={idx}>
-                                              <td className="px-3 py-2 text-xs">{safeFormatDate(payment.paymentDate)}</td>
+                                              {/* ============================================================================
+                                              // UPDATED: Uses safeFormatDate for consistent formatting
+                                              // ============================================================================ */}
+                                              <td className="px-3 py-2 text-xs font-medium">
+                                                {safeFormatDate(payment.paymentDate)}
+                                              </td>
                                               <td className="px-3 py-2 text-xs font-medium">₹{payment.amount}</td>
                                               <td className="px-3 py-2 text-xs">
                                                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -594,7 +653,7 @@ export default function CustomerDetailsModal({
                                 </div>
                               )}
 
-                              {/* Action Buttons - Moved to bottom after View EMI History */}
+                              {/* Action Buttons */}
                               <div className="flex space-x-2 border-t border-gray-200 pt-4">
                                 {onEditLoan && !isRenewed && (
                                   <button

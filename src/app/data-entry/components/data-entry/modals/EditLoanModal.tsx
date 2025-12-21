@@ -4,6 +4,18 @@ import { useState, useEffect } from 'react';
 import { EditLoanData } from '@/src/app/data-entry/types/dataEntry';
 import { useLoans } from '@/src/app/data-entry/hooks/useLoans';
 
+// ============================================================================
+// IMPORT DATE UTILITIES
+// ============================================================================
+import {
+  formatToDDMMYYYY,
+  formatForDateInput,
+  parseISTDateString,
+  convertISTToUTC,
+  convertUTCToIST,
+  safeFormatDate
+} from '@/src/app/data-entry/utils/dateCalculations';
+
 interface EditLoanModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -74,6 +86,23 @@ export default function EditLoanModal({
   useEffect(() => {
     calculateTotalLoanAmount();
   }, [formData.emiAmount, formData.loanDays, formData.emiType, formData.customEmiAmount, formData.loanType]);
+
+  // ============================================================================
+  // UPDATED: Format dates when modal opens or loanData changes
+  // ============================================================================
+  useEffect(() => {
+    if (isOpen && loanData.dateApplied) {
+      // Format dates for display in input fields (YYYY-MM-DD format)
+      const formattedDateApplied = formatForDateInput(loanData.dateApplied);
+      const formattedEmiStartDate = formatForDateInput(loanData.emiStartDate || loanData.dateApplied);
+      
+      setFormData(prev => ({
+        ...prev,
+        dateApplied: formattedDateApplied,
+        emiStartDate: formattedEmiStartDate
+      }));
+    }
+  }, [isOpen, loanData]);
 
   const calculateTotalLoanAmount = () => {
     const emiAmount = parseFloat(formData.emiAmount) || 0;
@@ -206,6 +235,13 @@ export default function EditLoanModal({
     setFormData(prev => ({ ...prev, loanNumber }));
   };
 
+  // ============================================================================
+  // UPDATED: Format date before submitting
+  // ============================================================================
+  const handleDateChange = (field: 'dateApplied' | 'emiStartDate', value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
   const handleSubmit = async () => {
     // Validate loan number
     const loanNumberError = validateLoanNumber(formData.loanNumber);
@@ -242,8 +278,32 @@ export default function EditLoanModal({
       return;
     }
 
+    // Validate dates
+    if (!formData.dateApplied) {
+      alert('Please select a valid loan date');
+      return;
+    }
+
+    if (!formData.emiStartDate) {
+      alert('Please select a valid EMI start date');
+      return;
+    }
+
     setIsLoading(true);
     try {
+      // ============================================================================
+      // IMPORTANT: Format dates properly before sending to API
+      // ============================================================================
+      const formattedDateApplied = formData.dateApplied; // Already in YYYY-MM-DD from formatForDateInput
+      const formattedEmiStartDate = formData.emiStartDate || formData.dateApplied;
+      
+      console.log('📅 Date Debug - Edit Loan:', {
+        dateAppliedInput: formData.dateApplied,
+        dateAppliedFormatted: formatToDDMMYYYY(formData.dateApplied),
+        emiStartDateInput: formData.emiStartDate,
+        emiStartDateFormatted: formatToDDMMYYYY(formData.emiStartDate)
+      });
+
       // Create a properly typed EditLoanData object with all required fields
       const updatedFormData: EditLoanData = {
         loanId: formData.loanId,
@@ -254,11 +314,11 @@ export default function EditLoanModal({
         amount: formData.amount, // This is Principal Amount
         emiAmount: formData.emiAmount,
         loanType: formData.loanType,
-        dateApplied: formData.dateApplied,
+        dateApplied: formattedDateApplied, // ✅ Formatted date
         loanDays: formData.loanDays,
         emiType: formData.emiType,
         customEmiAmount: formData.customEmiAmount,
-        emiStartDate: formData.emiStartDate,
+        emiStartDate: formattedEmiStartDate, // ✅ Formatted date
         // Ensure originalData has all required properties with proper defaults
         originalData: {
           loanNumber: formData.originalData?.loanNumber || loanData.loanNumber,
@@ -296,6 +356,14 @@ export default function EditLoanModal({
       default: return 'periods';
     }
   };
+
+  // ============================================================================
+  // ADDED: Format dates for display in DD/MM/YYYY
+  // ============================================================================
+  const formattedDateApplied = safeFormatDate(formData.dateApplied);
+  const formattedEmiStartDate = safeFormatDate(formData.emiStartDate);
+  const formattedOriginalDateApplied = safeFormatDate(formData.originalData?.dateApplied);
+  const formattedOriginalEmiStartDate = safeFormatDate(formData.originalData?.emiStartDate);
 
   if (!isOpen) return null;
 
@@ -482,30 +550,46 @@ export default function EditLoanModal({
                   </p>
                 </div>
 
-                {/* Loan Date */}
+                {/* ============================================================================
+                // UPDATED: Loan Date with DD/MM/YYYY display
+                // ============================================================================ */}
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">
                     Loan Date *
+                    <span className="text-xs font-normal text-gray-400 ml-2">
+                      (Displays as: {formattedDateApplied || 'N/A'})
+                    </span>
                   </label>
                   <input
                     type="date"
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
                     value={formData.dateApplied}
-                    onChange={(e) => setFormData(prev => ({ ...prev, dateApplied: e.target.value }))}
+                    onChange={(e) => handleDateChange('dateApplied', e.target.value)}
                   />
+                  <p className="text-xs text-blue-600 mt-1 font-medium">
+                    Stored as: {formattedDateApplied || 'Not set'}
+                  </p>
                 </div>
 
-                {/* EMI Start Date */}
+                {/* ============================================================================
+                // UPDATED: EMI Start Date with DD/MM/YYYY display
+                // ============================================================================ */}
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">
                     EMI Start Date *
+                    <span className="text-xs font-normal text-gray-400 ml-2">
+                      (Displays as: {formattedEmiStartDate || 'N/A'})
+                    </span>
                   </label>
                   <input
                     type="date"
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200"
                     value={formData.emiStartDate || formData.dateApplied}
-                    onChange={(e) => setFormData(prev => ({ ...prev, emiStartDate: e.target.value }))}
+                    onChange={(e) => handleDateChange('emiStartDate', e.target.value)}
                   />
+                  <p className="text-xs text-green-600 mt-1 font-medium">
+                    Stored as: {formattedEmiStartDate || 'Not set'}
+                  </p>
                 </div>
 
                 {/* Loan Days */}
@@ -655,7 +739,9 @@ export default function EditLoanModal({
             </div>
           </div>
 
-          {/* Original Data Reference */}
+          {/* ============================================================================
+          // UPDATED: Original Data Reference with formatted dates
+          // ============================================================================ */}
           {formData.originalData && (
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-6 mb-8">
               <h4 className="font-semibold text-blue-900 mb-4 text-lg">Original Data (For Reference)</h4>
@@ -676,6 +762,18 @@ export default function EditLoanModal({
                   <p className="text-xs font-medium text-blue-700 mb-1">Original Loan Days</p>
                   <p className="font-bold text-blue-900 text-sm">{formData.originalData.loanDays}</p>
                 </div>
+                {/* ============================================================================
+                // ADDED: Original Date displays with DD/MM/YYYY format
+                // ============================================================================ */}
+                <div className="bg-white p-3 rounded-lg border border-blue-200">
+                  <p className="text-xs font-medium text-blue-700 mb-1">Original Loan Date</p>
+                  <p className="font-bold text-blue-900 text-sm">{formattedOriginalDateApplied || 'N/A'}</p>
+                </div>
+                <div className="bg-white p-3 rounded-lg border border-blue-200">
+                  <p className="text-xs font-medium text-blue-700 mb-1">Original EMI Start Date</p>
+                  <p className="font-bold text-blue-900 text-sm">{formattedOriginalEmiStartDate || 'N/A'}</p>
+                </div>
+                {/* ============================================================================ */}
                 <div className="bg-white p-3 rounded-lg border border-blue-200">
                   <p className="text-xs font-medium text-blue-700 mb-1">Original Loan Type</p>
                   <p className="font-bold text-blue-900 text-sm">{formData.originalData.loanType}</p>
