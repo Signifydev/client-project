@@ -231,6 +231,259 @@ export default function AdminPage() {
     }
   }, [fetchDashboardData, fetchPendingRequests]);
 
+  // Function to clean request data before passing to component
+const cleanRequestData = useCallback((request: any) => {
+  if (!request) return request;
+  
+  // Create a deep copy
+  const cleaned = JSON.parse(JSON.stringify(request));
+  
+  console.log('🔍 Cleaning request data:', {
+    type: cleaned.type,
+    hasStep1Data: !!cleaned.step1Data,
+    hasRequestedData: !!cleaned.requestedData
+  });
+  
+  // Helper function to clean document objects
+  const cleanDocumentObject = (doc: any): any => {
+    if (!doc || typeof doc !== 'object') return doc;
+    
+    // If it's a document object (has filename, url, etc.)
+    if (doc.filename || doc.url) {
+      // Return a simple string representation for document objects
+      const cleanedDoc = {
+        filename: doc.filename || '',
+        url: doc.url || '',
+        originalName: doc.originalName || doc.filename || '',
+        uploadedAt: doc.uploadedAt instanceof Date 
+          ? doc.uploadedAt.toISOString() 
+          : typeof doc.uploadedAt === 'string' 
+            ? doc.uploadedAt 
+            : '',
+        // Simple string representation for display
+        displayName: doc.originalName || doc.filename || 'Document'
+      };
+      return cleanedDoc;
+    }
+    
+    // For other objects, ensure Date fields are strings
+    const cleanedObj = { ...doc };
+    Object.keys(cleanedObj).forEach(key => {
+      if (cleanedObj[key] instanceof Date) {
+        cleanedObj[key] = cleanedObj[key].toISOString();
+      }
+    });
+    return cleanedObj;
+  };
+  
+  // SPECIAL HANDLING FOR NEW CUSTOMER REQUESTS
+  if (cleaned.type === 'New Customer') {
+    console.log('🔄 Processing New Customer request');
+    
+    // Clean step1Data if it exists
+    if (cleaned.step1Data) {
+      console.log('📝 Cleaning step1Data');
+      
+      // Clean profilePicture
+      if (cleaned.step1Data.profilePicture) {
+        console.log('🖼️ Cleaning profilePicture');
+        cleaned.step1Data.profilePicture = cleanDocumentObject(cleaned.step1Data.profilePicture);
+      }
+      
+      // Clean fiDocuments
+      if (cleaned.step1Data.fiDocuments) {
+        console.log('📄 Cleaning fiDocuments');
+        if (cleaned.step1Data.fiDocuments.shop) {
+          cleaned.step1Data.fiDocuments.shop = cleanDocumentObject(cleaned.step1Data.fiDocuments.shop);
+        }
+        if (cleaned.step1Data.fiDocuments.home) {
+          cleaned.step1Data.fiDocuments.home = cleanDocumentObject(cleaned.step1Data.fiDocuments.home);
+        }
+      }
+      
+      // Ensure phone is an array
+      if (!Array.isArray(cleaned.step1Data.phone)) {
+        cleaned.step1Data.phone = [cleaned.step1Data.phone || ''];
+      }
+      
+      // Convert any remaining Date objects to strings
+      Object.keys(cleaned.step1Data).forEach(key => {
+        const value = cleaned.step1Data[key];
+        if (value instanceof Date) {
+          cleaned.step1Data[key] = value.toISOString();
+        }
+      });
+    }
+    
+    // Clean step2Data for loan information
+    if (cleaned.step2Data) {
+      console.log('💰 Cleaning step2Data');
+      
+      // Convert Date objects to strings
+      if (cleaned.step2Data.loanDate instanceof Date) {
+        cleaned.step2Data.loanDate = cleaned.step2Data.loanDate.toISOString();
+      }
+      if (cleaned.step2Data.emiStartDate instanceof Date) {
+        cleaned.step2Data.emiStartDate = cleaned.step2Data.emiStartDate.toISOString();
+      }
+      
+      // Ensure loanDateInput and emiStartDateInput exist
+      if (!cleaned.step2Data.loanDateInput && cleaned.step2Data.loanDate) {
+        cleaned.step2Data.loanDateInput = cleaned.step2Data.loanDate.split('T')[0];
+      }
+      if (!cleaned.step2Data.emiStartDateInput && cleaned.step2Data.emiStartDate) {
+        cleaned.step2Data.emiStartDateInput = cleaned.step2Data.emiStartDate.split('T')[0];
+      }
+      
+      // Ensure numeric fields are numbers
+      const numericFields = ['amount', 'loanAmount', 'emiAmount', 'loanDays', 'customEmiAmount', 'totalLoanAmount'];
+      numericFields.forEach(field => {
+        if (cleaned.step2Data[field] !== undefined) {
+          cleaned.step2Data[field] = Number(cleaned.step2Data[field]) || 0;
+        }
+      });
+    }
+    
+    // Clean step3Data for login credentials
+    if (cleaned.step3Data) {
+      console.log('🔐 Cleaning step3Data');
+      // Ensure all fields are strings
+      const stringFields = ['loginId', 'password', 'confirmPassword'];
+      stringFields.forEach(field => {
+        if (cleaned.step3Data[field] !== undefined) {
+          cleaned.step3Data[field] = String(cleaned.step3Data[field] || '');
+        }
+      });
+    }
+    
+    // Also clean requestedData if it exists (for backward compatibility)
+    if (cleaned.requestedData) {
+      console.log('📋 Cleaning requestedData for New Customer');
+      // Copy data from step1Data, step2Data, step3Data into requestedData
+      cleaned.requestedData = {
+        ...cleaned.step1Data,
+        ...cleaned.step2Data,
+        ...cleaned.step3Data,
+        type: 'New Customer',
+        customerName: cleaned.customerName,
+        customerNumber: cleaned.customerNumber || (cleaned.step1Data?.customerNumber || ''),
+        loanType: cleaned.step2Data?.loanType || '',
+        loanNumber: cleaned.step2Data?.loanNumber || '',
+        loanSelectionType: cleaned.step2Data?.loanSelectionType || 'single'
+      };
+    }
+    
+  } else {
+    // For other request types (Loan Addition, etc.)
+    if (cleaned.requestedData) {
+      console.log('📋 Cleaning requestedData for other request types');
+      
+      // Clean any document objects in requestedData
+      if (cleaned.requestedData.profilePicture) {
+        cleaned.requestedData.profilePicture = cleanDocumentObject(cleaned.requestedData.profilePicture);
+      }
+      
+      if (cleaned.requestedData.fiDocuments) {
+        if (cleaned.requestedData.fiDocuments.shop) {
+          cleaned.requestedData.fiDocuments.shop = cleanDocumentObject(cleaned.requestedData.fiDocuments.shop);
+        }
+        if (cleaned.requestedData.fiDocuments.home) {
+          cleaned.requestedData.fiDocuments.home = cleanDocumentObject(cleaned.requestedData.fiDocuments.home);
+        }
+      }
+    }
+  }
+  
+  // Clean other nested objects (for all request types)
+  const cleanNestedObjects = (obj: any): any => {
+    if (!obj || typeof obj !== 'object') return obj;
+    
+    const cleanedObj = { ...obj };
+    
+    Object.keys(cleanedObj).forEach(key => {
+      const value = cleanedObj[key];
+      
+      // Convert Date objects to strings
+      if (value instanceof Date) {
+        cleanedObj[key] = value.toISOString();
+      }
+      // Clean document objects
+      else if (value && typeof value === 'object' && !Array.isArray(value)) {
+        if (value.filename || value.url) {
+          cleanedObj[key] = cleanDocumentObject(value);
+        } else {
+          cleanedObj[key] = cleanNestedObjects(value);
+        }
+      }
+    });
+    
+    return cleanedObj;
+  };
+  
+  // Apply cleaning to all data fields
+  if (cleaned.step1Data && cleaned.type !== 'New Customer') {
+    cleaned.step1Data = cleanNestedObjects(cleaned.step1Data);
+  }
+  if (cleaned.step2Data && cleaned.type !== 'New Customer') {
+    cleaned.step2Data = cleanNestedObjects(cleaned.step2Data);
+  }
+  if (cleaned.step3Data && cleaned.type !== 'New Customer') {
+    cleaned.step3Data = cleanNestedObjects(cleaned.step3Data);
+  }
+  if (cleaned.requestedData && cleaned.type !== 'New Customer') {
+    cleaned.requestedData = cleanNestedObjects(cleaned.requestedData);
+  }
+  if (cleaned.currentData) {
+    cleaned.currentData = cleanNestedObjects(cleaned.currentData);
+  }
+  
+  // Convert main Date fields to strings
+  const dateFields = ['createdAt', 'updatedAt', 'reviewedAt', 'approvedAt', 'rejectedAt', 'completedAt'];
+  dateFields.forEach(field => {
+    if (cleaned[field] && cleaned[field] instanceof Date) {
+      cleaned[field] = cleaned[field].toISOString();
+    }
+  });
+  
+  // Replace the addSafeDisplay function with this safer version:
+const addSafeDisplay = (obj: any, path: string = ''): void => {
+  if (!obj || typeof obj !== 'object' || obj instanceof Date) return;
+  
+  Object.keys(obj).forEach(key => {
+    const value = obj[key];
+    const currentPath = path ? `${path}.${key}` : key;
+    
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      // Skip Date objects
+      if (value instanceof Date) {
+        return;
+      }
+      
+      // Add a safe display string for objects
+      if (!value.safeDisplay) {
+        if (value.filename || value.url) {
+          value.safeDisplay = value.originalName || value.filename || 'Document';
+        } else {
+          value.safeDisplay = `[${currentPath}]`;
+        }
+      }
+      addSafeDisplay(value, currentPath);
+    }
+  });
+};
+  
+  // Apply safe display to all nested objects
+  addSafeDisplay(cleaned);
+  
+  console.log('✅ Request cleaned successfully');
+  return cleaned;
+}, []);
+
+  // Get cleaned requests
+  const cleanedPendingRequests = useMemo(() => {
+    return pendingRequests.map(cleanRequestData);
+  }, [pendingRequests, cleanRequestData]);
+
   // Loading state
   const loading = statsLoading || customersLoading || requestsLoading;
 
@@ -285,7 +538,7 @@ export default function AdminPage() {
       case 'requests':
         return (
           <PendingRequests
-            requests={pendingRequests}
+            requests={cleanedPendingRequests}
             onApprove={handleApproveRequest}
             onReject={handleRejectRequest}
             onBack={() => setActiveTab('dashboard')}

@@ -7,7 +7,8 @@ import {
   NewCustomerStep1, 
   NewCustomerStep2, 
   NewCustomerStep3,
-  CustomerNumberSuggestion 
+  CustomerNumberSuggestion,
+  CloudinaryUploadResponse  // ADD THIS IMPORT
 } from '@/src/app/data-entry/types/dataEntry';
 import {
   validateStep1,
@@ -63,6 +64,15 @@ interface Step3Errors {
 }
 
 // ============================================================================
+// ADD NEW: File upload state interface
+// ============================================================================
+interface FileUploadState {
+  profilePicture: { file: File | null; isUploading: boolean; url?: string };
+  fiDocumentShop: { file: File | null; isUploading: boolean; url?: string };
+  fiDocumentHome: { file: File | null; isUploading: boolean; url?: string };
+}
+
+// ============================================================================
 // REMOVED OLD getTodayISTDate FUNCTION (Line 94-98)
 // Now using the imported getTodayISTDate from dateCalculations.ts
 // ============================================================================
@@ -76,6 +86,10 @@ export default function AddCustomerModal({
   currentOperator
 }: AddCustomerModalProps) {
   const [currentStep, setCurrentStep] = useState(1);
+  
+  // ============================================================================
+  // UPDATE: Add uploadedFiles to step1Data
+  // ============================================================================
   const [step1Data, setStep1Data] = useState<NewCustomerStep1>({
     name: '',
     phone: ['', ''],
@@ -90,7 +104,21 @@ export default function AddCustomerModal({
     fiDocuments: {
       shop: null,
       home: null
+    },
+    uploadedFiles: {  // ADD THIS: Store Cloudinary URLs after upload
+      profilePicture: undefined,
+      shopDocument: undefined,
+      homeDocument: undefined
     }
+  });
+  
+  // ============================================================================
+  // ADD NEW: File upload state
+  // ============================================================================
+  const [fileUploadState, setFileUploadState] = useState<FileUploadState>({
+    profilePicture: { file: null, isUploading: false },
+    fiDocumentShop: { file: null, isUploading: false },
+    fiDocumentHome: { file: null, isUploading: false }
   });
   
   // ============================================================================
@@ -129,6 +157,12 @@ export default function AddCustomerModal({
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isAwaitingApproval, setIsAwaitingApproval] = useState(false);
   const [checkAttempts, setCheckAttempts] = useState(0);
+  // ============================================================================
+  // ADD NEW: Upload progress states
+  // ============================================================================
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadMessage, setUploadMessage] = useState('');
+  const [uploadError, setUploadError] = useState('');
 
   const customerNumberTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -210,18 +244,50 @@ export default function AddCustomerModal({
     }
   }, [isOpen, existingCustomers]);
 
+  // ============================================================================
+  // UPDATED: handleFileUpload function with Cloudinary upload logic
+  // ============================================================================
   const handleFileUpload = (field: string, file: File | null, documentType?: 'shop' | 'home'): void => {
-    if (field === 'profilePicture') {
-      if (file && !file.type.startsWith('image/')) {
-        alert('Please upload an image file (PNG, JPEG, etc.) for profile picture');
-        return;
+    // Validate file type and size
+    if (file) {
+      // Validate image files
+      if (field === 'profilePicture') {
+        if (!file.type.startsWith('image/')) {
+          alert('Please upload an image file (PNG, JPEG, etc.) for profile picture');
+          return;
+        }
+        if (file.size > 5 * 1024 * 1024) { // 5MB limit
+          alert('Profile picture size should be less than 5MB');
+          return;
+        }
       }
+      
+      // Validate PDF files
+      if (field === 'fiDocuments' && documentType) {
+        if (file.type !== 'application/pdf') {
+          alert('Please upload a PDF file for FI documents');
+          return;
+        }
+        if (file.size > 10 * 1024 * 1024) { // 10MB limit
+          alert('FI document size should be less than 10MB');
+          return;
+        }
+      }
+    }
+    
+    // Update file state
+    if (field === 'profilePicture') {
+      setFileUploadState(prev => ({ 
+        ...prev, 
+        profilePicture: { file, isUploading: false } 
+      }));
       setStep1Data(prev => ({ ...prev, profilePicture: file }));
     } else if (field === 'fiDocuments' && documentType) {
-      if (file && file.type !== 'application/pdf') {
-        alert('Please upload a PDF file for FI documents');
-        return;
-      }
+      const key = documentType === 'shop' ? 'fiDocumentShop' : 'fiDocumentHome';
+      setFileUploadState(prev => ({ 
+        ...prev, 
+        [key]: { file, isUploading: false } 
+      }));
       setStep1Data(prev => ({
         ...prev,
         fiDocuments: {
@@ -230,6 +296,145 @@ export default function AddCustomerModal({
         }
       }));
     }
+  };
+
+  // ============================================================================
+  // ADD NEW: Function to upload file to Cloudinary
+  // ============================================================================
+  const uploadFileToCloudinary = async (file: File, folderName: string, fileType: 'image' | 'document'): Promise<CloudinaryUploadResponse> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', `loan_app/${folderName}`);
+    formData.append('type', fileType);
+    
+    console.log(`📤 Uploading ${file.name} to Cloudinary...`);
+    console.log(`📁 Folder: loan_app/${folderName}`);
+    console.log(`📄 File Type: ${fileType}`);
+    console.log(`📊 File Size: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
+    
+    const response = await fetch('/api/upload', {
+      method: 'POST',
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `Upload failed with status ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log(`✅ Upload successful:`, data);
+    return data;
+  };
+
+  // ============================================================================
+  // ADD NEW: Function to upload all files
+  // ============================================================================
+  const uploadAllFiles = async (): Promise<{ 
+    profilePictureUrl?: string; 
+    shopDocumentUrl?: string; 
+    homeDocumentUrl?: string; 
+  }> => {
+    const uploadedFiles: {
+      profilePictureUrl?: string;
+      shopDocumentUrl?: string;
+      homeDocumentUrl?: string;
+    } = {};
+    
+    let filesToUpload = 0;
+    let filesUploaded = 0;
+    
+    // Count files to upload
+    if (step1Data.profilePicture) filesToUpload++;
+    if (step1Data.fiDocuments.shop) filesToUpload++;
+    if (step1Data.fiDocuments.home) filesToUpload++;
+    
+    if (filesToUpload === 0) {
+      console.log('📭 No files to upload');
+      return uploadedFiles;
+    }
+    
+    console.log(`📊 Starting upload of ${filesToUpload} file(s)...`);
+    setUploadMessage(`Uploading ${filesToUpload} file(s) to Cloudinary...`);
+    setUploadProgress(0);
+    
+    // Upload profile picture
+    if (step1Data.profilePicture) {
+      setFileUploadState(prev => ({ ...prev, profilePicture: { ...prev.profilePicture, isUploading: true } }));
+      try {
+        const result = await uploadFileToCloudinary(
+          step1Data.profilePicture, 
+          'profile_pictures', 
+          'image'
+        );
+        uploadedFiles.profilePictureUrl = result.url;
+        setFileUploadState(prev => ({ 
+          ...prev, 
+          profilePicture: { ...prev.profilePicture, isUploading: false, url: result.url } 
+        }));
+        filesUploaded++;
+        setUploadProgress(Math.round((filesUploaded / filesToUpload) * 100));
+        console.log('✅ Profile picture uploaded:', result.url);
+      } catch (error: any) {
+        console.error('❌ Profile picture upload failed:', error);
+        setUploadError(`Failed to upload profile picture: ${error.message}`);
+        setFileUploadState(prev => ({ ...prev, profilePicture: { ...prev.profilePicture, isUploading: false } }));
+        throw error;
+      }
+    }
+    
+    // Upload shop document
+    if (step1Data.fiDocuments.shop) {
+      setFileUploadState(prev => ({ ...prev, fiDocumentShop: { ...prev.fiDocumentShop, isUploading: true } }));
+      try {
+        const result = await uploadFileToCloudinary(
+          step1Data.fiDocuments.shop, 
+          'fi_documents/shop', 
+          'document'
+        );
+        uploadedFiles.shopDocumentUrl = result.url;
+        setFileUploadState(prev => ({ 
+          ...prev, 
+          fiDocumentShop: { ...prev.fiDocumentShop, isUploading: false, url: result.url } 
+        }));
+        filesUploaded++;
+        setUploadProgress(Math.round((filesUploaded / filesToUpload) * 100));
+        console.log('✅ Shop document uploaded:', result.url);
+      } catch (error: any) {
+        console.error('❌ Shop document upload failed:', error);
+        setUploadError(`Failed to upload shop document: ${error.message}`);
+        setFileUploadState(prev => ({ ...prev, fiDocumentShop: { ...prev.fiDocumentShop, isUploading: false } }));
+        throw error;
+      }
+    }
+    
+    // Upload home document
+    if (step1Data.fiDocuments.home) {
+      setFileUploadState(prev => ({ ...prev, fiDocumentHome: { ...prev.fiDocumentHome, isUploading: true } }));
+      try {
+        const result = await uploadFileToCloudinary(
+          step1Data.fiDocuments.home, 
+          'fi_documents/home', 
+          'document'
+        );
+        uploadedFiles.homeDocumentUrl = result.url;
+        setFileUploadState(prev => ({ 
+          ...prev, 
+          fiDocumentHome: { ...prev.fiDocumentHome, isUploading: false, url: result.url } 
+        }));
+        filesUploaded++;
+        setUploadProgress(100);
+        console.log('✅ Home document uploaded:', result.url);
+      } catch (error: any) {
+        console.error('❌ Home document upload failed:', error);
+        setUploadError(`Failed to upload home document: ${error.message}`);
+        setFileUploadState(prev => ({ ...prev, fiDocumentHome: { ...prev.fiDocumentHome, isUploading: false } }));
+        throw error;
+      }
+    }
+    
+    setUploadMessage(`✅ Successfully uploaded ${filesUploaded} file(s) to Cloudinary`);
+    return uploadedFiles;
   };
 
   const generateLoginId = (): void => {
@@ -428,144 +633,174 @@ export default function AddCustomerModal({
     }
   };
 
-  // In sendApprovalRequest function, around line 314
-const sendApprovalRequest = async (): Promise<{success: boolean, message?: string}> => {
-  try {
-    console.log('📤 Sending approval request as FormData...');
-    console.log('🔍 Loan Selection Type:', step2Data.loanSelectionType);
-    
-    const totalLoanAmount = calculateTotalLoanAmount();
-    
-    // ============================================================================
-    // IMPORTANT: Convert dates to IST strings before sending to API
-    // ============================================================================
-    const loanDateIST = step2Data.loanDate; // Already in YYYY-MM-DD from getTodayISTDate
-    const emiStartDateIST = step2Data.emiStartDate; // Already in YYYY-MM-DD from getTodayISTDate
-    
-    console.log('📅 Date Debug:', {
-      loanDate: step2Data.loanDate,
-      emiStartDate: step2Data.emiStartDate,
-      loanDateFormatted: formatToDDMMYYYY(step2Data.loanDate),
-      emiStartDateFormatted: formatToDDMMYYYY(step2Data.emiStartDate)
-    });
-    
-    const formData = new FormData();
-    
-    // Step 1 data
-    formData.append('name', step1Data.name.trim());
-    step1Data.phone.forEach((phone, index) => {
-      if (phone && phone.trim() !== '') {
-        formData.append(`phone[${index}]`, phone);
+  // ============================================================================
+  // UPDATED: sendApprovalRequest function with Cloudinary upload
+  // ============================================================================
+  const sendApprovalRequest = async (): Promise<{success: boolean, message?: string}> => {
+    try {
+      console.log('📤 Starting customer creation process with Cloudinary upload...');
+      console.log('🔍 Loan Selection Type:', step2Data.loanSelectionType);
+      
+      // ============================================================================
+      // STEP 1: Upload files to Cloudinary FIRST
+      // ============================================================================
+      console.log('☁️ Starting Cloudinary file upload...');
+      setUploadMessage('Uploading files to Cloudinary...');
+      
+      const uploadedFiles = await uploadAllFiles();
+      
+      console.log('✅ All files uploaded to Cloudinary:', uploadedFiles);
+      
+      const totalLoanAmount = calculateTotalLoanAmount();
+      
+      // ============================================================================
+      // IMPORTANT: Convert dates to IST strings before sending to API
+      // ============================================================================
+      const loanDateIST = step2Data.loanDate; // Already in YYYY-MM-DD from getTodayISTDate
+      const emiStartDateIST = step2Data.emiStartDate; // Already in YYYY-MM-DD from getTodayISTDate
+      
+      console.log('📅 Date Debug:', {
+        loanDate: step2Data.loanDate,
+        emiStartDate: step2Data.emiStartDate,
+        loanDateFormatted: formatToDDMMYYYY(step2Data.loanDate),
+        emiStartDateFormatted: formatToDDMMYYYY(step2Data.emiStartDate)
+      });
+      
+      // ============================================================================
+      // STEP 2: Prepare FormData with Cloudinary URLs
+      // ============================================================================
+      const formData = new FormData();
+      
+      // Step 1 data
+      formData.append('name', step1Data.name.trim());
+      step1Data.phone.forEach((phone, index) => {
+        if (phone && phone.trim() !== '') {
+          formData.append(`phone[${index}]`, phone);
+        }
+      });
+      formData.append('whatsappNumber', step1Data.whatsappNumber || '');
+      formData.append('businessName', step1Data.businessName);
+      formData.append('area', step1Data.area);
+      formData.append('customerNumber', step1Data.customerNumber);
+      formData.append('address', step1Data.address || '');
+      formData.append('category', step1Data.category);
+      formData.append('officeCategory', step1Data.officeCategory);
+      
+      // ============================================================================
+      // ADD: Cloudinary URLs to FormData
+      // ============================================================================
+      if (uploadedFiles.profilePictureUrl) {
+        formData.append('profilePictureUrl', uploadedFiles.profilePictureUrl);
+        console.log('📸 Added profile picture URL:', uploadedFiles.profilePictureUrl);
       }
-    });
-    formData.append('whatsappNumber', step1Data.whatsappNumber || '');
-    formData.append('businessName', step1Data.businessName);
-    formData.append('area', step1Data.area);
-    formData.append('customerNumber', step1Data.customerNumber);
-    formData.append('address', step1Data.address || '');
-    formData.append('category', step1Data.category);
-    formData.append('officeCategory', step1Data.officeCategory);
-    
-    // CRITICAL FIX: Only append loan fields for Single Loan
-    formData.append('loanSelectionType', step2Data.loanSelectionType);
-    
-    if (step2Data.loanSelectionType === 'single') {
-      console.log('🔍 Appending Single Loan details...');
-      // Step 2 data - ONLY for Single Loan
-      formData.append('loanDate', loanDateIST); // ✅ IST date string
-      formData.append('emiStartDate', emiStartDateIST); // ✅ IST date string
-      const principalAmount = step2Data.amount && parseFloat(step2Data.amount) > 0 
-        ? step2Data.amount 
-        : totalLoanAmount.toString();
-      formData.append('amount', principalAmount);
-      formData.append('loanAmount', step2Data.loanAmount || totalLoanAmount.toString());
-      formData.append('emiAmount', step2Data.emiAmount);
-      formData.append('loanDays', step2Data.loanDays);
-      formData.append('loanType', step2Data.loanType);
-      formData.append('emiType', step2Data.emiType);
-      if (step2Data.customEmiAmount) {
-        formData.append('customEmiAmount', step2Data.customEmiAmount);
+      if (uploadedFiles.shopDocumentUrl) {
+        formData.append('shopDocumentUrl', uploadedFiles.shopDocumentUrl);
+        console.log('🏪 Added shop document URL:', uploadedFiles.shopDocumentUrl);
       }
-      formData.append('loanNumber', step2Data.loanNumber);
-    } else {
-      console.log('🔍 Multiple Loan selected - skipping loan fields');
-      // For Multiple Loans, don't send loan fields or send empty/default values
-      formData.append('loanDate', '');
-      formData.append('emiStartDate', '');
-      formData.append('amount', '0');
-      formData.append('loanAmount', '0');
-      formData.append('emiAmount', '0');
-      formData.append('loanDays', '0');
-      formData.append('loanType', '');
-      formData.append('emiType', 'fixed');
-      formData.append('loanNumber', '');
-    }
-    
-    // Step 3 data
-    formData.append('loginId', step3Data.loginId);
-    formData.append('password', step3Data.password);
-    formData.append('confirmPassword', step3Data.confirmPassword);
-    formData.append('createdBy', currentOperator.id || 'data_entry_operator');
-    
-    // Add files if they exist
-    if (step1Data.profilePicture) {
-      formData.append('profilePicture', step1Data.profilePicture);
-    }
-    if (step1Data.fiDocuments.shop) {
-      formData.append('fiDocumentShop', step1Data.fiDocuments.shop);
-    }
-    if (step1Data.fiDocuments.home) {
-      formData.append('fiDocumentHome', step1Data.fiDocuments.home);
-    }
-    
-    // Log FormData contents
-    console.log('📋 FormData entries:');
-    for (const [key, value] of formData.entries()) {
-      if (key === 'password' || key === 'confirmPassword') {
-        console.log(`  ${key}: [HIDDEN]`);
-      } else if (value instanceof File) {
-        console.log(`  ${key}: File - ${value.name} (${value.size} bytes)`);
+      if (uploadedFiles.homeDocumentUrl) {
+        formData.append('homeDocumentUrl', uploadedFiles.homeDocumentUrl);
+        console.log('🏠 Added home document URL:', uploadedFiles.homeDocumentUrl);
+      }
+      
+      // CRITICAL FIX: Only append loan fields for Single Loan
+      formData.append('loanSelectionType', step2Data.loanSelectionType);
+      
+      if (step2Data.loanSelectionType === 'single') {
+        console.log('🔍 Appending Single Loan details...');
+        // Step 2 data - ONLY for Single Loan
+        formData.append('loanDate', loanDateIST); // ✅ IST date string
+        formData.append('emiStartDate', emiStartDateIST); // ✅ IST date string
+        const principalAmount = step2Data.amount && parseFloat(step2Data.amount) > 0 
+          ? step2Data.amount 
+          : totalLoanAmount.toString();
+        formData.append('amount', principalAmount);
+        formData.append('loanAmount', step2Data.loanAmount || totalLoanAmount.toString());
+        formData.append('emiAmount', step2Data.emiAmount);
+        formData.append('loanDays', step2Data.loanDays);
+        formData.append('loanType', step2Data.loanType);
+        formData.append('emiType', step2Data.emiType);
+        if (step2Data.customEmiAmount) {
+          formData.append('customEmiAmount', step2Data.customEmiAmount);
+        }
+        formData.append('loanNumber', step2Data.loanNumber);
       } else {
-        console.log(`  ${key}:`, value);
+        console.log('🔍 Multiple Loan selected - skipping loan fields');
+        // For Multiple Loans, don't send loan fields or send empty/default values
+        formData.append('loanDate', '');
+        formData.append('emiStartDate', '');
+        formData.append('amount', '0');
+        formData.append('loanAmount', '0');
+        formData.append('emiAmount', '0');
+        formData.append('loanDays', '0');
+        formData.append('loanType', '');
+        formData.append('emiType', 'fixed');
+        formData.append('loanNumber', '');
       }
-    }
-    
-    // Debug: Show amount values
-    console.log('💰 DEBUG - Amount values:', {
-      principalAmount: step2Data.amount,
-      totalLoanAmount: step2Data.loanAmount,
-      calculatedTotal: totalLoanAmount,
-      loanSelectionType: step2Data.loanSelectionType,
-      isSingleLoan: step2Data.loanSelectionType === 'single'
-    });
-    
-    const response = await fetch('/api/data-entry/customers', {
-      method: 'POST',
-      body: formData,
-    });
+      
+      // Step 3 data
+      formData.append('loginId', step3Data.loginId);
+      formData.append('password', step3Data.password);
+      formData.append('confirmPassword', step3Data.confirmPassword);
+      formData.append('createdBy', currentOperator.id || 'data_entry_operator');
+      
+      // ============================================================================
+      // NOTE: We're NOT sending files directly, only Cloudinary URLs
+      // ============================================================================
+      
+      // Log FormData contents
+      console.log('📋 FormData entries:');
+      for (const [key, value] of formData.entries()) {
+        if (key === 'password' || key === 'confirmPassword') {
+          console.log(`  ${key}: [HIDDEN]`);
+        } else if (value instanceof File) {
+          console.log(`  ${key}: File - ${value.name} (${value.size} bytes)`);
+        } else {
+          console.log(`  ${key}:`, value);
+        }
+      }
+      
+      // Debug: Show amount values
+      console.log('💰 DEBUG - Amount values:', {
+        principalAmount: step2Data.amount,
+        totalLoanAmount: step2Data.loanAmount,
+        calculatedTotal: totalLoanAmount,
+        loanSelectionType: step2Data.loanSelectionType,
+        isSingleLoan: step2Data.loanSelectionType === 'single'
+      });
+      
+      // ============================================================================
+      // STEP 3: Send customer data to your API
+      // ============================================================================
+      console.log('📨 Sending customer data to API...');
+      setUploadMessage('Saving customer data to database...');
+      
+      const response = await fetch('/api/data-entry/customers', {
+        method: 'POST',
+        body: formData,
+      });
 
-    console.log('📊 Response status:', response.status);
-    console.log('📊 Response status text:', response.statusText);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ API Error Response:', errorText);
-      throw new Error(`Failed to submit approval request (${response.status}): ${errorText}`);
-    }
+      console.log('📊 Response status:', response.status);
+      console.log('📊 Response status text:', response.statusText);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ API Error Response:', errorText);
+        throw new Error(`Failed to submit approval request (${response.status}): ${errorText}`);
+      }
 
-    const result = await response.json();
-    console.log('✅ API Success Response:', result);
-    
-    return { 
-      success: true, 
-      message: result.message || 'Request submitted successfully' 
-    };
-    
-  } catch (error: any) {
-    console.error('❌ Error in sendApprovalRequest:', error);
-    throw error;
-  }
-};
+      const result = await response.json();
+      console.log('✅ API Success Response:', result);
+      
+      return { 
+        success: true, 
+        message: result.message || 'Customer created successfully with file uploads' 
+      };
+      
+    } catch (error: any) {
+      console.error('❌ Error in sendApprovalRequest:', error);
+      throw error;
+    }
+  };
 
   const handleStep1Next = (): void => {
     console.log('Step 1 Next - Validating customer number:', step1Data.customerNumber);
@@ -709,7 +944,21 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
       fiDocuments: {
         shop: null,
         home: null
+      },
+      uploadedFiles: {
+        profilePicture: undefined,
+        shopDocument: undefined,
+        homeDocument: undefined
       }
+    });
+    
+    // ============================================================================
+    // RESET: File upload state
+    // ============================================================================
+    setFileUploadState({
+      profilePicture: { file: null, isUploading: false },
+      fiDocumentShop: { file: null, isUploading: false },
+      fiDocumentHome: { file: null, isUploading: false }
     });
     
     // ============================================================================
@@ -743,10 +992,23 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
     setShowSuggestions(false);
     setShowPassword(false);
     setCheckAttempts(0);
+    // ============================================================================
+    // RESET: Upload progress states
+    // ============================================================================
+    setUploadProgress(0);
+    setUploadMessage('');
+    setUploadError('');
   };
 
+  // ============================================================================
+  // UPDATED: handleSubmit function with Cloudinary upload
+  // ============================================================================
   const handleSubmit = async (): Promise<void> => {
-    console.log('🟢 handleSubmit called - Starting submission process');
+    console.log('🟢 handleSubmit called - Starting submission process with Cloudinary upload');
+    
+    // Reset upload states
+    setUploadError('');
+    setUploadMessage('Starting file upload...');
     
     // Log all step data with debug info
     console.log('📋 Step 1 Data:', step1Data);
@@ -797,13 +1059,15 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
       if (result.success) {
         setIsSubmitted(true);
         setIsAwaitingApproval(true);
-        console.log('✅ Customer request submitted for admin approval');
+        setUploadMessage('✅ Customer created successfully!');
+        console.log('✅ Customer request submitted with Cloudinary uploads');
       } else {
         alert('Failed to submit customer request. Please try again.');
       }
       
     } catch (error: any) {
       console.error('❌ Error submitting customer request:', error);
+      setUploadError(`Upload failed: ${error.message || 'Unknown error'}`);
       alert('Error submitting customer request: ' + (error.message || 'Unknown error'));
     } finally {
       setIsLoading(false);
@@ -863,6 +1127,31 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
         </div>
 
         <div className="p-6">
+          {/* ============================================================================
+          ADDED: Upload Progress Bar (shown during loading)
+          ============================================================================ */}
+          {isLoading && (
+            <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-blue-700">
+                  {uploadMessage || 'Uploading files...'}
+                </span>
+                <span className="text-sm font-bold text-blue-700">{uploadProgress}%</span>
+              </div>
+              <div className="w-full bg-blue-100 rounded-full h-2.5">
+                <div 
+                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out" 
+                  style={{ width: `${uploadProgress}%` }}
+                ></div>
+              </div>
+              {uploadError && (
+                <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
+                  <p className="text-sm text-red-600">⚠️ {uploadError}</p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Step 1: Personal Details */}
           {currentStep === 1 && (
             <div className="space-y-6">
@@ -1245,6 +1534,9 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Profile Picture
+                    <span className="text-xs font-normal text-gray-500 ml-2">
+                      (Max 5MB, JPG/PNG)
+                    </span>
                   </label>
                   <div className="flex items-center space-x-4">
                     <div className="flex-shrink-0">
@@ -1279,10 +1571,28 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
                       />
                       <label
                         htmlFor="profile-picture"
-                        className="cursor-pointer bg-white text-gray-700 border border-gray-300 rounded-md px-4 py-2 hover:bg-gray-50 inline-block"
+                        className={`cursor-pointer px-4 py-2 rounded-md inline-flex items-center ${
+                          fileUploadState.profilePicture.isUploading
+                            ? 'bg-blue-100 text-blue-700 border border-blue-300'
+                            : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                        }`}
                       >
-                        {step1Data.profilePicture ? 'Change Picture' : 'Upload Picture'}
+                        {fileUploadState.profilePicture.isUploading ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
+                            Uploading...
+                          </>
+                        ) : step1Data.profilePicture ? (
+                          'Change Picture'
+                        ) : (
+                          'Upload Picture'
+                        )}
                       </label>
+                      {fileUploadState.profilePicture.url && (
+                        <div className="mt-2 text-xs text-green-600">
+                          ✅ Uploaded to Cloudinary
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1291,64 +1601,104 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     FI Documents (PDF Only)
+                    <span className="text-xs font-normal text-gray-500 ml-2">
+                      (Max 10MB each)
+                    </span>
                   </label>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {(['shop', 'home'] as const).map((docType) => (
-                      <div key={docType} className="border border-gray-200 rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium text-gray-700">
-                            {docType === 'shop' ? 'Shop FI' : 'Home FI'}
-                          </span>
-                          {step1Data.fiDocuments[docType] && (
-                            <button
-                              type="button"
-                              onClick={() => handleFileUpload('fiDocuments', null, docType)}
-                              className="text-red-600 hover:text-red-800 text-sm"
-                            >
-                              Remove
-                            </button>
-                          )}
-                        </div>
-                        <div className="flex items-center space-x-3">
-                          <div className="flex-shrink-0">
-                            <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                              <span className="text-red-600">📄</span>
-                            </div>
-                          </div>
-                          <div className="flex-1">
-                            {step1Data.fiDocuments[docType] ? (
-                              <div>
-                                <p className="text-sm font-medium text-gray-900 truncate">
-                                  {step1Data.fiDocuments[docType]?.name}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  {(step1Data.fiDocuments[docType]?.size || 0) / 1024} KB
-                                </p>
-                              </div>
-                            ) : (
-                              <div>
-                                <p className="text-sm text-gray-500">No file selected</p>
-                              </div>
+                    {(['shop', 'home'] as const).map((docType) => {
+                      const fileKey = docType === 'shop' ? 'fiDocumentShop' : 'fiDocumentHome';
+                      const fileState = fileUploadState[fileKey];
+                      
+                      return (
+                        <div key={docType} className="border border-gray-200 rounded-lg p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium text-gray-700">
+                              {docType === 'shop' ? 'Shop FI' : 'Home FI'}
+                            </span>
+                            {step1Data.fiDocuments[docType] && !fileState.isUploading && (
+                              <button
+                                type="button"
+                                onClick={() => handleFileUpload('fiDocuments', null, docType)}
+                                className="text-red-600 hover:text-red-800 text-sm"
+                              >
+                                Remove
+                              </button>
                             )}
                           </div>
-                          <div>
-                            <input
-                              type="file"
-                              id={`fi-doc-${docType}`}
-                              className="hidden"
-                              accept=".pdf"
-                              onChange={(e) => handleFileUpload('fiDocuments', e.target.files?.[0] || null, docType)}
-                            />
-                            <label
-                              htmlFor={`fi-doc-${docType}`}
-                              className="cursor-pointer bg-blue-600 text-white text-sm px-3 py-1 rounded-md hover:bg-blue-700 inline-block"
-                            >
-                              Browse
-                            </label>
+                          <div className="flex items-center space-x-3">
+                            <div className="flex-shrink-0">
+                              <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                                fileState.isUploading 
+                                  ? 'bg-blue-100 text-blue-600' 
+                                  : fileState.url
+                                  ? 'bg-green-100 text-green-600'
+                                  : 'bg-red-100 text-red-600'
+                              }`}>
+                                {fileState.isUploading ? (
+                                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                                ) : fileState.url ? (
+                                  <span>✅</span>
+                                ) : (
+                                  <span>📄</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex-1">
+                              {step1Data.fiDocuments[docType] ? (
+                                <div>
+                                  <p className="text-sm font-medium text-gray-900 truncate">
+                                    {step1Data.fiDocuments[docType]?.name}
+                                  </p>
+                                  <p className="text-xs text-gray-500">
+                                    {(step1Data.fiDocuments[docType]?.size || 0) / 1024} KB
+                                  </p>
+                                </div>
+                              ) : (
+                                <div>
+                                  <p className="text-sm text-gray-500">No file selected</p>
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <input
+                                type="file"
+                                id={`fi-doc-${docType}`}
+                                className="hidden"
+                                accept=".pdf"
+                                onChange={(e) => handleFileUpload('fiDocuments', e.target.files?.[0] || null, docType)}
+                                disabled={fileState.isUploading}
+                              />
+                              <label
+                                htmlFor={`fi-doc-${docType}`}
+                                className={`cursor-pointer text-sm px-3 py-1 rounded-md inline-flex items-center ${
+                                  fileState.isUploading
+                                    ? 'bg-blue-100 text-blue-700 border border-blue-300 cursor-not-allowed'
+                                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                                }`}
+                              >
+                                {fileState.isUploading ? (
+                                  <>
+                                    <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white mr-1"></div>
+                                    Uploading
+                                  </>
+                                ) : fileState.url ? (
+                                  'Change'
+                                ) : (
+                                  'Browse'
+                                )}
+                              </label>
+                            </div>
                           </div>
+                          {fileState.url && !fileState.isUploading && (
+                            <div className="mt-2 text-xs text-green-600 flex items-center">
+                              <span className="mr-1">✅</span>
+                              Uploaded to Cloudinary
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -2145,6 +2495,24 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
                 </div>
               </div>
 
+              {/* Cloudinary Upload Info */}
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <span className="text-purple-400 text-lg">☁️</span>
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-purple-800">File Upload Information</h3>
+                    <ul className="text-sm text-purple-700 mt-1 space-y-1">
+                      <li>• Files will be uploaded to Cloudinary (secure cloud storage)</li>
+                      <li>• Profile pictures: Stored in <code>loan_app/profile_pictures/</code></li>
+                      <li>• FI documents: Stored in <code>loan_app/fi_documents/</code> folders</li>
+                      <li>• Only secure URLs will be saved in your database</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
               {/* Approval Info */}
               <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
                 <div className="flex items-center">
@@ -2222,6 +2590,32 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
                           </div>
                         </>
                       )}
+                      {/* ============================================================================
+                      ADDED: File Upload Status
+                      ============================================================================ */}
+                      <div>
+                        <p className="text-xs text-gray-500">Files Uploaded</p>
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          {step1Data.profilePicture && (
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              ✅ Profile Picture
+                            </span>
+                          )}
+                          {step1Data.fiDocuments.shop && (
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              ✅ Shop FI Document
+                            </span>
+                          )}
+                          {step1Data.fiDocuments.home && (
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                              ✅ Home FI Document
+                            </span>
+                          )}
+                          {!step1Data.profilePicture && !step1Data.fiDocuments.shop && !step1Data.fiDocuments.home && (
+                            <span className="text-xs text-gray-500">No files uploaded</span>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
                   
@@ -2241,6 +2635,12 @@ const sendApprovalRequest = async (): Promise<{success: boolean, message?: strin
                       <div>
                         <p className="text-xs text-gray-500">Request Type</p>
                         <p className="font-semibold text-purple-600">New Customer Registration</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">File Storage</p>
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          ☁️ Cloudinary
+                        </span>
                       </div>
                     </div>
                   </div>

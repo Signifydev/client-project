@@ -81,6 +81,20 @@ export interface CustomerNumberSuggestion {
   reason: string;
   isAvailable: boolean;
 }
+
+/**
+ * Cloudinary upload response
+ */
+export interface CloudinaryUploadResponse {
+  success: boolean;
+  url: string;           // Cloudinary secure URL
+  publicId: string;      // Cloudinary public ID for deletion
+  format: string;        // File format (jpg, pdf, etc.)
+  size: number;          // File size in bytes
+  originalFilename: string;
+  uploadedAt: string;
+}
+
 // =============================================
 // LOAN RELATED TYPES
 // =============================================
@@ -179,6 +193,11 @@ export interface NewCustomerStep1 {
   fiDocuments: {
     shop: File | null;
     home: File | null;
+  };
+  uploadedFiles?: {  // NEW: Stores Cloudinary URLs after upload
+    profilePicture?: string;
+    shopDocument?: string;
+    homeDocument?: string;
   };
   // Index signature for TypeScript error handling
   [key: string]: any;
@@ -566,6 +585,10 @@ export interface BaseModalProps {
 export interface AddCustomerModalProps extends BaseModalProps {
   currentUserOffice: string;
   existingCustomers: Customer[];
+  currentOperator?: {      // ADD THIS - Operator info for tracking
+    id: string;
+    name: string;
+  };
 }
 
 /**

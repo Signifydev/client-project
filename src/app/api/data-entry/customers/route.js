@@ -3,8 +3,6 @@ import Customer from '@/lib/models/Customer';
 import Loan from '@/lib/models/Loan';
 import Request from '@/lib/models/Request';
 import { connectDB } from '@/lib/db';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
 
 // ==============================================
 // DATE UTILITY FUNCTIONS - FIXED FOR IST TIMEZONE
@@ -15,53 +13,76 @@ import path from 'path';
  * @param {string} dateString - Date string in YYYY-MM-DD format
  * @returns {Date} Date object in IST timezone
  */
-function parseISTDateString(dateString) {
-  if (!dateString || dateString.trim() === '') {
-    console.log('⚠️ Empty date string provided, returning current date');
-    return new Date();
+function parseISTDateString(dateInput) {
+  // ==============================================
+  // FIX 1: Handle Date objects (from MongoDB)
+  // ==============================================
+  if (dateInput instanceof Date && !isNaN(dateInput.getTime())) {
+    console.log('📅 Input is already a valid Date object, returning as-is:', {
+      input: dateInput,
+      iso: dateInput.toISOString(),
+      local: dateInput.toLocaleString('en-IN')
+    });
+    return dateInput;
   }
   
-  try {
-    // Remove any time part if present
-    const dateOnly = dateString.split('T')[0];
-    
-    // Split the date string
-    const [year, month, day] = dateOnly.split('-').map(Number);
-    
-    // Validate date components
-    if (isNaN(year) || isNaN(month) || isNaN(day)) {
-      console.error('❌ Invalid date components:', { year, month, day, original: dateString });
+  // ==============================================
+  // FIX 2: Use LOCAL date creation (matching frontend)
+  // ==============================================
+  if (typeof dateInput === 'string') {
+    if (!dateInput || dateInput.trim() === '') {
+      console.log('⚠️ Empty date string provided, returning current date');
       return new Date();
     }
     
-    // Create date in IST timezone (UTC+5:30)
-    // Note: JavaScript months are 0-indexed (0 = January, 11 = December)
-    const istDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
-    
-    // Add 5 hours 30 minutes to convert from UTC to IST
-    istDate.setHours(istDate.getHours() + 5);
-    istDate.setMinutes(istDate.getMinutes() + 30);
-    
-    // Validate the created date
-    if (isNaN(istDate.getTime())) {
-      console.error('❌ Invalid date created from string:', dateString);
+    try {
+      // Remove any time part if present
+      const dateOnly = dateInput.split('T')[0];
+      
+      // Split the date string
+      const [year, month, day] = dateOnly.split('-').map(Number);
+      
+      // Validate date components
+      if (isNaN(year) || isNaN(month) || isNaN(day)) {
+        console.error('❌ Invalid date components:', { year, month, day, original: dateInput });
+        return new Date();
+      }
+      
+      // FIXED: Create as LOCAL date (server should be in IST timezone)
+      // This matches the frontend's dateCalculations.ts behavior
+      const localDate = new Date(year, month - 1, day, 0, 0, 0, 0);
+      
+      // Validate the created date
+      if (isNaN(localDate.getTime())) {
+        console.error('❌ Invalid date created from string:', dateInput);
+        return new Date();
+      }
+      
+      console.log('📅 Parsed as Local Date (should be IST):', {
+        input: dateInput,
+        output: localDate.toISOString(),
+        local: localDate.toLocaleString('en-IN'),
+        day: localDate.getDate(),
+        month: localDate.getMonth() + 1,
+        year: localDate.getFullYear(),
+        // Debug: Check if server is in IST
+        timezoneOffset: localDate.getTimezoneOffset(),
+        offsetHours: Math.abs(localDate.getTimezoneOffset() / 60),
+        offsetMinutes: Math.abs(localDate.getTimezoneOffset() % 60)
+      });
+      
+      return localDate;
+    } catch (error) {
+      console.error('❌ Error parsing date:', error, 'input:', dateInput);
       return new Date();
     }
-    
-    console.log('📅 Parsed IST Date:', {
-      input: dateString,
-      output: istDate.toISOString(),
-      local: istDate.toLocaleString('en-IN'),
-      day: istDate.getDate(),
-      month: istDate.getMonth() + 1,
-      year: istDate.getFullYear()
-    });
-    
-    return istDate;
-  } catch (error) {
-    console.error('❌ Error parsing IST date:', error, 'input:', dateString);
-    return new Date();
   }
+  
+  // ==============================================
+  // Handle other invalid cases
+  // ==============================================
+  console.error('❌ Invalid date input type:', typeof dateInput, dateInput);
+  return new Date();
 }
 
 /**
@@ -145,14 +166,17 @@ function convertISTToUTC(istDate) {
   if (!istDate) return new Date();
   
   try {
-    const utcDate = new Date(istDate);
-    utcDate.setHours(utcDate.getHours() - 5);
-    utcDate.setMinutes(utcDate.getMinutes() - 30);
+    // Since server is in IST, and date is already in IST (local),
+    // we just need to convert to UTC by removing timezone offset
+    const utcDate = new Date(istDate.getTime() - (istDate.getTimezoneOffset() * 60000));
     
     console.log('🔄 Converted IST to UTC:', {
       istDate: istDate.toLocaleString('en-IN'),
+      istDateISO: istDate.toISOString(),
       utcDate: utcDate.toISOString(),
-      istDateISO: istDate.toISOString()
+      timezoneOffset: istDate.getTimezoneOffset(),
+      offsetHours: Math.abs(istDate.getTimezoneOffset() / 60),
+      offsetMinutes: Math.abs(istDate.getTimezoneOffset() % 60)
     });
     
     return utcDate;
@@ -160,22 +184,6 @@ function convertISTToUTC(istDate) {
     console.error('❌ Error converting IST to UTC:', error);
     return new Date();
   }
-}
-
-/**
- * Get today's date in IST timezone (YYYY-MM-DD format)
- * @returns {string} Today's date in YYYY-MM-DD format (IST)
- */
-function getTodayISTDate() {
-  const now = new Date();
-  const istDate = new Date(now.getTime() + (5 * 60 * 60 * 1000) + (30 * 60 * 1000));
-  const year = istDate.getUTCFullYear();
-  const month = String(istDate.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(istDate.getUTCDate()).padStart(2, '0');
-  const result = `${year}-${month}-${day}`;
-  
-  console.log('📅 Today\'s IST Date:', result);
-  return result;
 }
 
 /**
@@ -314,7 +322,7 @@ export async function GET(request) {
   }
 }
 
-// POST method for creating new customer requests
+// POST method for creating new customer requests - UPDATED FOR CLOUDINARY
 export async function POST(request) {
   try {
     await connectDB();
@@ -322,6 +330,11 @@ export async function POST(request) {
     const formData = await request.formData();
     
     console.log('📦 Received form data with fields:', Array.from(formData.keys()));
+    console.log('☁️ Cloudinary URLs present:', {
+      profilePictureUrl: formData.has('profilePictureUrl'),
+      shopDocumentUrl: formData.has('shopDocumentUrl'),
+      homeDocumentUrl: formData.has('homeDocumentUrl')
+    });
 
     // Extract all form data
     const name = formData.get('name');
@@ -525,16 +538,22 @@ export async function POST(request) {
       );
     }
 
-    // Check for duplicate phone numbers
-    const existingPhoneCustomer = await Customer.findOne({
-      phone: { $in: phone }
-    });
-    
+    // ==============================================
+    // FIXED: Check for duplicate phone numbers in Customer collection
+    // ==============================================
+    let existingPhoneCustomer = null;
+    for (const phoneNumber of phone.filter(p => p && p.trim() !== '')) {
+      existingPhoneCustomer = await Customer.findOne({
+        phone: phoneNumber
+      });
+      if (existingPhoneCustomer) break;
+    }
+
     if (existingPhoneCustomer) {
       return NextResponse.json(
         { 
           success: false, 
-          error: 'Customer with this phone number already exists',
+          error: `Customer with phone number ${existingPhoneCustomer.phone} already exists`,
           field: 'phone'
         },
         { status: 409 }
@@ -557,82 +576,96 @@ export async function POST(request) {
       );
     }
 
-    // Check for existing pending request
+    // ==============================================
+    // FIXED: Check for existing pending request with CORRECT query
+    // ==============================================
     const existingRequest = await Request.findOne({
       $or: [
-        { 'step1Data.phone': { $in: phone } },
-        { 'step1Data.customerNumber': { $regex: new RegExp(`^${normalizedCustomerNumber}$`, 'i') } },
+        // Check if ANY phone number in step1Data.phone array matches ANY phone in our array
+        { 
+          'step1Data.phone': { 
+            $elemMatch: { 
+              $in: phone.filter(p => p && p.trim() !== '') 
+            } 
+          } 
+        },
+        // Check customer number (case-insensitive)
+        { 
+          'step1Data.customerNumber': { 
+            $regex: new RegExp(`^${normalizedCustomerNumber}$`, 'i') 
+          } 
+        },
+        // Check login ID
         { 'step3Data.loginId': loginId }
       ],
       status: 'Pending',
       type: 'New Customer'
     });
 
+    console.log('🔍 Pending request check:', {
+      phoneNumbers: phone.filter(p => p && p.trim() !== ''),
+      customerNumber: normalizedCustomerNumber,
+      loginId,
+      foundExistingRequest: !!existingRequest,
+      existingRequest: existingRequest ? {
+        _id: existingRequest._id,
+        customerNumber: existingRequest.step1Data?.customerNumber,
+        phones: existingRequest.step1Data?.phone,
+        status: existingRequest.status,
+        createdAt: existingRequest.createdAt
+      } : null
+    });
+
     if (existingRequest) {
+      console.log('🚨 Found existing pending request:', {
+        requestId: existingRequest._id,
+        customerName: existingRequest.customerName,
+        customerNumber: existingRequest.step1Data?.customerNumber,
+        phones: existingRequest.step1Data?.phone,
+        loginId: existingRequest.step3Data?.loginId,
+        createdAt: existingRequest.createdAt,
+        createdBy: existingRequest.createdBy
+      });
+      
+      let errorDetails = '';
+      if (existingRequest.step1Data?.customerNumber?.toUpperCase() === normalizedCustomerNumber.toUpperCase()) {
+        errorDetails = `Customer number "${normalizedCustomerNumber}" is already in a pending request`;
+      } else if (existingRequest.step3Data?.loginId === loginId) {
+        errorDetails = `Login ID "${loginId}" is already in use in a pending request`;
+      } else {
+        // Check which phone number matches
+        const matchingPhones = phone.filter(p => 
+          p && existingRequest.step1Data?.phone?.includes(p)
+        );
+        if (matchingPhones.length > 0) {
+          errorDetails = `Phone number "${matchingPhones[0]}" is already in a pending request`;
+        }
+      }
+      
       return NextResponse.json(
         { 
           success: false, 
           error: 'A pending request already exists for this customer',
+          details: errorDetails,
+          requestId: existingRequest._id,
           field: 'request'
         },
         { status: 409 }
       );
     }
 
-    // Handle file uploads
-    let profilePicturePath = '';
-    let fiDocumentShopPath = '';
-    let fiDocumentHomePath = '';
+    // ==============================================
+    // CLOUDINARY FILE HANDLING (No local file saving)
+    // ==============================================
+    const profilePictureUrl = formData.get('profilePictureUrl') || '';
+    const shopDocumentUrl = formData.get('shopDocumentUrl') || '';
+    const homeDocumentUrl = formData.get('homeDocumentUrl') || '';
 
-    // Create uploads directory if it doesn't exist
-    const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-    try {
-      await mkdir(uploadsDir, { recursive: true });
-    } catch (error) {
-      console.log('Uploads directory already exists or cannot be created');
-    }
-
-    // Upload profile picture - ONLY IF A VALID FILE WAS SENT
-    const profilePicture = formData.get('profilePicture');
-    if (profilePicture && profilePicture !== 'null' && profilePicture.size > 0) {
-      const bytes = await profilePicture.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-      const fileName = `profile_${Date.now()}_${profilePicture.name}`;
-      profilePicturePath = `/uploads/${fileName}`;
-      
-      await writeFile(path.join(uploadsDir, fileName), buffer);
-      console.log('✅ Profile picture uploaded:', profilePicturePath);
-    } else {
-      console.log('ℹ️ No profile picture provided');
-    }
-
-    // Upload FI Shop document - ONLY IF A VALID FILE WAS SENT
-    const fiDocumentShop = formData.get('fiDocumentShop');
-    if (fiDocumentShop && fiDocumentShop !== 'null' && fiDocumentShop.size > 0) {
-      const bytes = await fiDocumentShop.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-      const fileName = `fi_shop_${Date.now()}_${fiDocumentShop.name}`;
-      fiDocumentShopPath = `/uploads/${fileName}`;
-      
-      await writeFile(path.join(uploadsDir, fileName), buffer);
-      console.log('✅ FI Shop document uploaded:', fiDocumentShopPath);
-    } else {
-      console.log('ℹ️ No FI Shop document provided');
-    }
-
-    // Upload FI Home document - ONLY IF A VALID FILE WAS SENT
-    const fiDocumentHome = formData.get('fiDocumentHome');
-    if (fiDocumentHome && fiDocumentHome !== 'null' && fiDocumentHome.size > 0) {
-      const bytes = await fiDocumentHome.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-      const fileName = `fi_home_${Date.now()}_${fiDocumentHome.name}`;
-      fiDocumentHomePath = `/uploads/${fileName}`;
-      
-      await writeFile(path.join(uploadsDir, fileName), buffer);
-      console.log('✅ FI Home document uploaded:', fiDocumentHomePath);
-    } else {
-      console.log('ℹ️ No FI Home document provided');
-    }
+    console.log('☁️ Cloudinary URLs received:', {
+      profilePictureUrl: profilePictureUrl ? 'Yes' : 'No',
+      shopDocumentUrl: shopDocumentUrl ? 'Yes' : 'No',
+      homeDocumentUrl: homeDocumentUrl ? 'Yes' : 'No'
+    });
 
     // Calculate total loan amount - ONLY for Single Loan
     let totalLoanAmount = 0;
@@ -701,39 +734,45 @@ export async function POST(request) {
         address,
         category,
         officeCategory,
-        profilePicture: profilePicturePath ? {
-          filename: path.basename(profilePicturePath),
-          url: profilePicturePath,
-          originalName: profilePicture.name || path.basename(profilePicturePath),
-          uploadedAt: new Date()
+        profilePicture: profilePictureUrl ? {
+          filename: profilePictureUrl.split('/').pop(), // Extract filename from URL
+          url: profilePictureUrl,
+          originalName: profilePictureUrl.split('/').pop(),
+          uploadedAt: new Date(),
+          source: 'cloudinary'
         } : {
           filename: null,
           url: null,
           originalName: null,
-          uploadedAt: new Date()
+          uploadedAt: new Date(),
+          source: null
         },
         fiDocuments: {
-          shop: fiDocumentShopPath ? {
-            filename: path.basename(fiDocumentShopPath),
-            url: fiDocumentShopPath,
-            originalName: fiDocumentShop.name || path.basename(fiDocumentShopPath),
-            uploadedAt: new Date()
+          shop: shopDocumentUrl ? {
+            filename: shopDocumentUrl.split('/').pop(),
+            url: shopDocumentUrl,
+            originalName: shopDocumentUrl.split('/').pop(),
+            uploadedAt: new Date(),
+            source: 'cloudinary'
           } : {
             filename: null,
             url: null,
             originalName: null,
-            uploadedAt: new Date()
+            uploadedAt: new Date(),
+            source: null
           },
-          home: fiDocumentHomePath ? {
-            filename: path.basename(fiDocumentHomePath),
-            url: fiDocumentHomePath,
-            originalName: fiDocumentHome.name || path.basename(fiDocumentHomePath),
-            uploadedAt: new Date()
+          home: homeDocumentUrl ? {
+            filename: homeDocumentUrl.split('/').pop(),
+            url: homeDocumentUrl,
+            originalName: homeDocumentUrl.split('/').pop(),
+            uploadedAt: new Date(),
+            source: 'cloudinary'
           } : {
             filename: null,
             url: null,
             originalName: null,
-            uploadedAt: new Date()
+            uploadedAt: new Date(),
+            source: null
           }
         },
         email: '',
@@ -778,7 +817,8 @@ export async function POST(request) {
         timezone: 'IST',
         dateFormat: 'YYYY-MM-DD',
         displayFormat: 'DD/MM/YYYY',
-        createdAtDisplay: formatToDDMMYYYY(new Date())
+        createdAtDisplay: formatToDDMMYYYY(new Date()),
+        fileStorage: 'cloudinary'
       }
     };
 
@@ -794,7 +834,8 @@ export async function POST(request) {
       loanDateInput: requestData.step2Data.loanDateInput,
       emiStartDateInput: requestData.step2Data.emiStartDateInput,
       principalAmount: requestData.step2Data.amount,
-      totalLoanAmount: requestData.step2Data.loanAmount
+      totalLoanAmount: requestData.step2Data.loanAmount,
+      fileStorage: 'Cloudinary'
     });
 
     // Create the request
@@ -808,7 +849,8 @@ export async function POST(request) {
       loanSelectionType,
       loanDateDisplay: requestData.step2Data.loanDateDisplay,
       emiStartDateDisplay: requestData.step2Data.emiStartDateDisplay,
-      datesMatch: requestData.step2Data.loanDateDisplay === requestData.step2Data.emiStartDateDisplay
+      datesMatch: requestData.step2Data.loanDateDisplay === requestData.step2Data.emiStartDateDisplay,
+      fileStorage: 'Cloudinary'
     });
 
     return NextResponse.json({
@@ -822,7 +864,8 @@ export async function POST(request) {
         loanDateDisplay: requestData.step2Data.loanDateDisplay,
         emiStartDateDisplay: requestData.step2Data.emiStartDateDisplay,
         principalAmount: requestData.step2Data.amount,
-        totalLoanAmount: requestData.step2Data.loanAmount
+        totalLoanAmount: requestData.step2Data.loanAmount,
+        fileStorage: 'Cloudinary'
       }
     });
 

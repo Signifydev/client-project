@@ -17,53 +17,76 @@ import bcrypt from 'bcryptjs';
  * @param {string} dateString - Date string in YYYY-MM-DD format
  * @returns {Date} Date object in IST timezone
  */
-function parseISTDateString(dateString) {
-  if (!dateString || dateString.trim() === '') {
-    console.log('⚠️ Empty date string provided, returning current date');
-    return new Date();
+function parseISTDateString(dateInput) {
+  // ==============================================
+  // FIX 1: Handle Date objects (from MongoDB)
+  // ==============================================
+  if (dateInput instanceof Date && !isNaN(dateInput.getTime())) {
+    console.log('📅 Input is already a valid Date object, returning as-is:', {
+      input: dateInput,
+      iso: dateInput.toISOString(),
+      local: dateInput.toLocaleString('en-IN')
+    });
+    return dateInput;
   }
   
-  try {
-    // Remove any time part if present
-    const dateOnly = dateString.split('T')[0];
-    
-    // Split the date string
-    const [year, month, day] = dateOnly.split('-').map(Number);
-    
-    // Validate date components
-    if (isNaN(year) || isNaN(month) || isNaN(day)) {
-      console.error('❌ Invalid date components:', { year, month, day, original: dateString });
+  // ==============================================
+  // FIX 2: Use LOCAL date creation (matching frontend)
+  // ==============================================
+  if (typeof dateInput === 'string') {
+    if (!dateInput || dateInput.trim() === '') {
+      console.log('⚠️ Empty date string provided, returning current date');
       return new Date();
     }
     
-    // Create date in IST timezone (UTC+5:30)
-    // Note: JavaScript months are 0-indexed (0 = January, 11 = December)
-    const istDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
-    
-    // Add 5 hours 30 minutes to convert from UTC to IST
-    istDate.setHours(istDate.getHours() + 5);
-    istDate.setMinutes(istDate.getMinutes() + 30);
-    
-    // Validate the created date
-    if (isNaN(istDate.getTime())) {
-      console.error('❌ Invalid date created from string:', dateString);
+    try {
+      // Remove any time part if present
+      const dateOnly = dateInput.split('T')[0];
+      
+      // Split the date string
+      const [year, month, day] = dateOnly.split('-').map(Number);
+      
+      // Validate date components
+      if (isNaN(year) || isNaN(month) || isNaN(day)) {
+        console.error('❌ Invalid date components:', { year, month, day, original: dateInput });
+        return new Date();
+      }
+      
+      // FIXED: Create as LOCAL date (server should be in IST timezone)
+      // This matches the frontend's dateCalculations.ts behavior
+      const localDate = new Date(year, month - 1, day, 0, 0, 0, 0);
+      
+      // Validate the created date
+      if (isNaN(localDate.getTime())) {
+        console.error('❌ Invalid date created from string:', dateInput);
+        return new Date();
+      }
+      
+      console.log('📅 Parsed as Local Date (should be IST):', {
+        input: dateInput,
+        output: localDate.toISOString(),
+        local: localDate.toLocaleString('en-IN'),
+        day: localDate.getDate(),
+        month: localDate.getMonth() + 1,
+        year: localDate.getFullYear(),
+        // Debug: Check if server is in IST
+        timezoneOffset: localDate.getTimezoneOffset(),
+        offsetHours: Math.abs(localDate.getTimezoneOffset() / 60),
+        offsetMinutes: Math.abs(localDate.getTimezoneOffset() % 60)
+      });
+      
+      return localDate;
+    } catch (error) {
+      console.error('❌ Error parsing date:', error, 'input:', dateInput);
       return new Date();
     }
-    
-    console.log('📅 Parsed IST Date:', {
-      input: dateString,
-      output: istDate.toISOString(),
-      local: istDate.toLocaleString('en-IN'),
-      day: istDate.getDate(),
-      month: istDate.getMonth() + 1,
-      year: istDate.getFullYear()
-    });
-    
-    return istDate;
-  } catch (error) {
-    console.error('❌ Error parsing IST date:', error, 'input:', dateString);
-    return new Date();
   }
+  
+  // ==============================================
+  // Handle other invalid cases
+  // ==============================================
+  console.error('❌ Invalid date input type:', typeof dateInput, dateInput);
+  return new Date();
 }
 
 /**
@@ -75,14 +98,17 @@ function convertISTToUTC(istDate) {
   if (!istDate) return new Date();
   
   try {
-    const utcDate = new Date(istDate);
-    utcDate.setHours(utcDate.getHours() - 5);
-    utcDate.setMinutes(utcDate.getMinutes() - 30);
+    // Since server is in IST, and date is already in IST (local),
+    // we just need to convert to UTC by removing timezone offset
+    const utcDate = new Date(istDate.getTime() - (istDate.getTimezoneOffset() * 60000));
     
     console.log('🔄 Converted IST to UTC:', {
       istDate: istDate.toLocaleString('en-IN'),
+      istDateISO: istDate.toISOString(),
       utcDate: utcDate.toISOString(),
-      istDateISO: istDate.toISOString()
+      timezoneOffset: istDate.getTimezoneOffset(),
+      offsetHours: Math.abs(istDate.getTimezoneOffset() / 60),
+      offsetMinutes: Math.abs(istDate.getTimezoneOffset() % 60)
     });
     
     return utcDate;
@@ -101,20 +127,20 @@ function formatToDDMMYYYY(date) {
   if (!date) return '';
   
   try {
-    // Create a copy to avoid modifying original
-    let displayDate = new Date(date);
+    // Date is already in IST (local timezone), no conversion needed
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
     
-    // If date is stored as UTC, convert to IST
-    if (date.toISOString().includes('Z')) {
-      displayDate.setHours(displayDate.getHours() + 5);
-      displayDate.setMinutes(displayDate.getMinutes() + 30);
-    }
+    const result = `${day}/${month}/${year}`;
     
-    const day = String(displayDate.getDate()).padStart(2, '0');
-    const month = String(displayDate.getMonth() + 1).padStart(2, '0');
-    const year = displayDate.getFullYear();
+    console.log('📅 Formatted DD/MM/YYYY:', {
+      input: date.toISOString(),
+      output: result,
+      local: date.toLocaleString('en-IN')
+    });
     
-    return `${day}/${month}/${year}`;
+    return result;
   } catch (error) {
     console.error('❌ Error formatting date to DD/MM/YYYY:', error);
     return '';
@@ -446,6 +472,19 @@ const getNextEmiDateForNewLoan = (emiStartDate, loanType, emiPaidCount = 0) => {
 
 async function approveNewCustomer(requestDoc, reason, processedBy) {
   console.log('📝 Creating new customer from multi-step request...');
+
+    // ==============================================
+  // DEBUG: Check server timezone
+  // ==============================================
+  const now = new Date();
+  console.log('🕒 Server Timezone Check:', {
+    serverTime: now.toLocaleString('en-IN'),
+    serverISO: now.toISOString(),
+    timezoneOffset: now.getTimezoneOffset(),
+    offsetHours: Math.abs(now.getTimezoneOffset() / 60),
+    offsetMinutes: Math.abs(now.getTimezoneOffset() % 60),
+    expectedOffset: -330 // -5.5 hours = IST
+  });
   
   try {
     const step1Data = requestDoc.step1Data;
