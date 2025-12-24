@@ -8,7 +8,6 @@ import mongoose from 'mongoose';
 // Helper function to clean IDs by removing suffixes
 function cleanId(id) {
   if (!id) return id;
-  // Remove common suffixes like "_default", "_temp", etc.
   return id.replace(/(_default|_temp|_new|fallback_)/, '');
 }
 
@@ -35,6 +34,31 @@ function validateAndCleanObjectId(id, fieldName = 'ID') {
   };
 }
 
+// Helper to convert Date to YYYY-MM-DD string
+function toYYYYMMDD(dateInput) {
+  if (!dateInput) return '';
+  
+  try {
+    // If already a valid YYYY-MM-DD string
+    if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+      return dateInput;
+    }
+    
+    // If it's a Date object
+    if (dateInput instanceof Date && !isNaN(dateInput.getTime())) {
+      const year = dateInput.getFullYear();
+      const month = String(dateInput.getMonth() + 1).padStart(2, '0');
+      const day = String(dateInput.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    
+    return '';
+  } catch (error) {
+    console.error('Error converting to YYYY-MM-DD:', error);
+    return '';
+  }
+}
+
 // CORRECTED: Calculate next scheduled EMI date based on last scheduled EMI date
 function calculateNextScheduledEmiDate(lastScheduledEmiDate, loanType, emiStartDate) {
   if (!lastScheduledEmiDate) return emiStartDate;
@@ -44,16 +68,12 @@ function calculateNextScheduledEmiDate(lastScheduledEmiDate, loanType, emiStartD
   
   switch(loanType) {
     case 'Daily':
-      // For Daily loans, next scheduled EMI is always next calendar day
       date.setDate(date.getDate() + 1);
       break;
     case 'Weekly':
-      // For Weekly loans, next scheduled EMI is exactly 7 days after last scheduled EMI
-      // NOT 7 days after payment date
       date.setDate(date.getDate() + 7);
       break;
     case 'Monthly':
-      // For Monthly loans, same day next month
       date.setMonth(date.getMonth() + 1);
       break;
     default:
@@ -74,15 +94,12 @@ function calculateLastScheduledEmiDate(emiStartDate, loanType, totalEmisPaid) {
   
   switch(loanType) {
     case 'Daily':
-      // For Daily loans, last scheduled EMI is startDate + (totalEmisPaid - 1) days
       lastScheduledDate.setDate(startDate.getDate() + (totalEmisPaid - 1));
       break;
     case 'Weekly':
-      // For Weekly loans, last scheduled EMI is startDate + ((totalEmisPaid - 1) * 7) days
       lastScheduledDate.setDate(startDate.getDate() + ((totalEmisPaid - 1) * 7));
       break;
     case 'Monthly':
-      // For Monthly loans, last scheduled EMI is startDate + (totalEmisPaid - 1) months
       lastScheduledDate.setMonth(startDate.getMonth() + (totalEmisPaid - 1));
       break;
     default:
@@ -521,7 +538,7 @@ export async function POST(request) {
           emiPaidCount: emiPaidCount,
           lastScheduledEmiDate: lastScheduledEmiDate,
           nextScheduledEmiDate: nextScheduledEmiDate,
-          lastPaymentDate: new Date(paymentDate) // This is when payment was made
+          lastPaymentDate: new Date(paymentDate)
         });
 
         // Update loan with CORRECT dates
@@ -529,31 +546,30 @@ export async function POST(request) {
           emiPaidCount: emiPaidCount,
           totalPaidAmount: totalPaidAmount,
           remainingAmount: Math.max(loan.amount - totalPaidAmount, 0),
-          // IMPORTANT: lastEmiDate should be the last scheduled EMI date, not payment date
           lastEmiDate: lastScheduledEmiDate,
-          // IMPORTANT: nextEmiDate should be the next scheduled EMI date
           nextEmiDate: nextScheduledEmiDate,
-          // Keep payment date separately if needed
           lastPaymentDate: new Date(paymentDate),
           updatedAt: new Date()
         };
 
-        // Add all payments to emiHistory
+        // 🔴🔴🔴 CRITICAL FIX: Convert all dates to YYYY-MM-DD strings for emiHistory
         if (payments.length > 0) {
           updateData.$push = {
             emiHistory: {
               $each: payments.map(payment => ({
                 _id: payment._id,
-                paymentDate: payment.paymentDate,
+                paymentDate: toYYYYMMDD(payment.paymentDate), // ✅ Convert to string
                 amount: payment.amount,
                 status: payment.status,
                 collectedBy: payment.collectedBy,
                 notes: payment.notes,
-                createdAt: new Date(),
+                createdAt: toYYYYMMDD(new Date()), // ✅ String
                 isAdvance: payment.paymentType === 'advance',
                 paymentType: payment.paymentType,
-                advanceFromDate: payment.advanceFromDate,
-                advanceToDate: payment.advanceToDate,
+                advanceFromDate: payment.advanceFromDate ? 
+                  toYYYYMMDD(payment.advanceFromDate) : null,
+                advanceToDate: payment.advanceToDate ? 
+                  toYYYYMMDD(payment.advanceToDate) : null,
                 advanceEmiCount: payment.advanceEmiCount
               }))
             }
@@ -565,7 +581,8 @@ export async function POST(request) {
           payments: payments.length,
           lastEmiDate: updateData.lastEmiDate,
           nextEmiDate: updateData.nextEmiDate,
-          emiPaidCount: updateData.emiPaidCount
+          emiPaidCount: updateData.emiPaidCount,
+          emiHistoryDates: payments.map(p => toYYYYMMDD(p.paymentDate))
         });
       } catch (loanUpdateError) {
         console.error('⚠️ Error updating loan statistics:', loanUpdateError);

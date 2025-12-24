@@ -58,7 +58,7 @@ const debugLog = (label: string, data: unknown) => {
 };
 
 // ============================================================================
-// FIXED: Helper function to parse date strings from API
+// FIXED: Helper function to parse date strings from API - HANDLES ALL FORMATS
 // ============================================================================
 const parseDateFromAPI = (dateValue: any): Date => {
   if (!dateValue) {
@@ -67,7 +67,7 @@ const parseDateFromAPI = (dateValue: any): Date => {
   
   // If it's already a Date object
   if (dateValue instanceof Date && !isNaN(dateValue.getTime())) {
-    return dateValue;
+    return convertUTCToIST(dateValue);
   }
   
   // If it's a string in YYYY-MM-DD format (from API)
@@ -76,12 +76,44 @@ const parseDateFromAPI = (dateValue: any): Date => {
     return parseISTDateString(dateValue);
   }
   
-  // For other string formats
+  // If it's a string in ISO format (e.g., "2024-12-10T00:00:00.000Z")
+  if (typeof dateValue === 'string' && dateValue.includes('T')) {
+    try {
+      const date = new Date(dateValue);
+      if (!isNaN(date.getTime())) {
+        return convertUTCToIST(date);
+      }
+    } catch (e) {
+      console.error('Error parsing ISO date:', e);
+    }
+  }
+  
+  // If it's a string in DD/MM/YYYY format
+  if (typeof dateValue === 'string' && /^\d{2}\/\d{2}\/\d{4}$/.test(dateValue)) {
+    const [day, month, year] = dateValue.split('/').map(Number);
+    const date = new Date(year, month - 1, day);
+    return convertUTCToIST(date);
+  }
+  
+  // For other string formats, try direct parsing
   if (typeof dateValue === 'string') {
-    return parseISTDateString(dateValue);
+    try {
+      const parsed = new Date(dateValue);
+      if (!isNaN(parsed.getTime())) {
+        return convertUTCToIST(parsed);
+      }
+    } catch (e) {
+      console.error('Error parsing date string:', e);
+    }
+  }
+  
+  // If it's a number (timestamp)
+  if (typeof dateValue === 'number') {
+    return convertUTCToIST(new Date(dateValue));
   }
   
   // Fallback
+  console.warn('Unable to parse date, using today:', dateValue);
   return getTodayIST();
 };
 
@@ -98,6 +130,36 @@ const compareDates = (date1: any, date2: any): number => {
   if (date1Key < date2Key) return -1;
   if (date1Key > date2Key) return 1;
   return 0;
+};
+
+// ============================================================================
+// FIXED: Helper function to format Date to DD/MM/YYYY string
+// ============================================================================
+const formatDateToDDMMYYYY = (date: Date): string => {
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
+    return '';
+  }
+  
+  const day = date.getDate().toString().padStart(2, '0');
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const year = date.getFullYear();
+  
+  return `${day}/${month}/${year}`;
+};
+
+// ============================================================================
+// FIXED: Helper function to get date as YYYY-MM-DD string
+// ============================================================================
+const getDateAsYYYYMMDD = (date: Date): string => {
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
+    return '';
+  }
+  
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  
+  return `${year}-${month}-${day}`;
 };
 
 // ============================================================================
@@ -121,7 +183,7 @@ const generateCalendarGrid = (year: number, month: number): CalendarDay[] => {
   
   const calendarDays: CalendarDay[] = [];
   const todayIST = getTodayIST();
-  const todayKey = todayIST.toISOString().split('T')[0];
+  const todayKey = getDateAsYYYYMMDD(todayIST);
   
   // Previous month days
   const prevMonthLastDay = new Date(year, month, 0).getDate();
@@ -129,7 +191,7 @@ const generateCalendarGrid = (year: number, month: number): CalendarDay[] => {
     const day = prevMonthLastDay - i;
     const date = new Date(year, month - 1, day);
     const dateIST = convertUTCToIST(date);
-    const dateKey = dateIST.toISOString().split('T')[0];
+    const dateKey = getDateAsYYYYMMDD(dateIST);
     
     calendarDays.push({
       date: dateIST,
@@ -145,7 +207,7 @@ const generateCalendarGrid = (year: number, month: number): CalendarDay[] => {
   for (let day = 1; day <= daysInMonth; day++) {
     const date = new Date(year, month, day);
     const dateIST = convertUTCToIST(date);
-    const dateKey = dateIST.toISOString().split('T')[0];
+    const dateKey = getDateAsYYYYMMDD(dateIST);
     
     calendarDays.push({
       date: dateIST,
@@ -162,7 +224,7 @@ const generateCalendarGrid = (year: number, month: number): CalendarDay[] => {
   for (let day = 1; day <= remainingCells; day++) {
     const date = new Date(year, month + 1, day);
     const dateIST = convertUTCToIST(date);
-    const dateKey = dateIST.toISOString().split('T')[0];
+    const dateKey = getDateAsYYYYMMDD(dateIST);
     
     calendarDays.push({
       date: dateIST,
@@ -181,12 +243,36 @@ const generateCalendarGrid = (year: number, month: number): CalendarDay[] => {
     daysInMonth,
     daysFromPrevMonth,
     totalDays: calendarDays.length,
-    firstDate: formatToDDMMYYYY(calendarDays[0]?.date),
-    lastDate: formatToDDMMYYYY(calendarDays[calendarDays.length - 1]?.date),
+    firstDate: formatDateToDDMMYYYY(calendarDays[0]?.date),
+    lastDate: formatDateToDDMMYYYY(calendarDays[calendarDays.length - 1]?.date),
     gridType: `${Math.ceil(calendarDays.length / 7)} weeks`
   });
   
   return calendarDays;
+};
+
+// ============================================================================
+// Helper to debug emiHistory
+// ============================================================================
+const debugEMIHistory = (loan: Loan) => {
+  if (!loan.emiHistory || loan.emiHistory.length === 0) {
+    debugLog(`No EMI history for loan ${loan.loanNumber}`, {});
+    return;
+  }
+  
+  debugLog(`EMI History for ${loan.loanNumber}`, {
+    count: loan.emiHistory.length,
+    payments: loan.emiHistory.map((p: any, idx: number) => ({
+      index: idx,
+      paymentDate: p.paymentDate,
+      paymentDateType: typeof p.paymentDate,
+      isDate: p.paymentDate instanceof Date,
+      parsedDate: p.paymentDate ? parseDateFromAPI(p.paymentDate).toISOString() : 'N/A',
+      amount: p.amount,
+      status: p.status,
+      paymentType: p.paymentType
+    }))
+  });
 };
 
 export default function EMICalendarModal({
@@ -347,8 +433,8 @@ export default function EMICalendarModal({
 
     // Today's date for comparison
     const todayIST = getTodayIST();
-    const todayKey = todayIST.toISOString().split('T')[0];
-    const todayFormatted = formatToDDMMYYYY(todayIST.toISOString().split('T')[0]);
+    const todayKey = getDateAsYYYYMMDD(todayIST);
+    const todayFormatted = formatDateToDDMMYYYY(todayIST);
     
     debugLog('Today in IST', {
       todayIST: todayIST.toISOString(),
@@ -358,6 +444,9 @@ export default function EMICalendarModal({
 
     // Process each loan
     loansToShow.forEach(loan => {
+      // Debug EMI history for this loan
+      debugEMIHistory(loan);
+      
       debugLog(`Processing loan ${loan.loanNumber}`, {
         emiStartDate: loan.emiStartDate,
         formattedEmiStartDate: safeFormatDate(loan.emiStartDate),
@@ -376,8 +465,11 @@ export default function EMICalendarModal({
       // ============================================================================
       const parsedEmiStartDate = parseDateFromAPI(loan.emiStartDate);
       
+      // Convert parsed date to YYYY-MM-DD string for generateEmiSchedule
+      const emiStartDateStr = getDateAsYYYYMMDD(parsedEmiStartDate);
+      
       const emiSchedule = generateEmiSchedule(
-        parsedEmiStartDate,
+        emiStartDateStr, // Pass as string
         loan.loanType,
         loan.totalEmiCount || 365,
         selectedYear,
@@ -386,10 +478,11 @@ export default function EMICalendarModal({
       
       debugLog(`Generated schedule for ${loan.loanNumber}`, {
         emiStartDateParsed: parsedEmiStartDate.toISOString(),
+        emiStartDateString: emiStartDateStr,
         scheduleLength: emiSchedule.length,
         dates: emiSchedule.slice(0, 5).map(date => ({
           date: date.toLocaleDateString('en-IN'),
-          formatted: formatToDDMMYYYY(date),
+          formatted: formatDateToDDMMYYYY(date),
           day: date.getDate()
         }))
       });
@@ -398,8 +491,8 @@ export default function EMICalendarModal({
         // ============================================================================
         // FIXED: Use consistent date formatting
         // ============================================================================
-        const dateKey = scheduledDate.toISOString().split('T')[0];
-        const formattedDate = formatToDDMMYYYY(scheduledDate);
+        const dateKey = getDateAsYYYYMMDD(scheduledDate);
+        const formattedDate = formatDateToDDMMYYYY(scheduledDate);
         
         const existing = emiStatusMap.get(dateKey);
         
@@ -416,7 +509,7 @@ export default function EMICalendarModal({
             // FIXED: Use parseDateFromAPI for consistent parsing
             // ============================================================================
             const paymentDate = parseDateFromAPI(payment.paymentDate);
-            const paymentDateKey = paymentDate.toISOString().split('T')[0];
+            const paymentDateKey = getDateAsYYYYMMDD(paymentDate);
             
             if (paymentDateKey === dateKey) return true;
             
@@ -477,7 +570,7 @@ export default function EMICalendarModal({
 
     // Update calendar grid with EMI information
     const updatedCalendarDays = calendarGrid.map(day => {
-      const dateKey = day.date.toISOString().split('T')[0];
+      const dateKey = getDateAsYYYYMMDD(day.date);
       const emiInfo = emiStatusMap.get(dateKey);
       
       if (emiInfo) {
@@ -504,8 +597,8 @@ export default function EMICalendarModal({
       emiDays: updatedCalendarDays.filter(d => d.isEmiDue).length,
       month: `${selectedMonth + 1}/${selectedYear}`,
       today: todayFormatted,
-      firstDay: formatToDDMMYYYY(updatedCalendarDays[0]?.date),
-      lastDay: formatToDDMMYYYY(updatedCalendarDays[updatedCalendarDays.length - 1]?.date)
+      firstDay: formatDateToDDMMYYYY(updatedCalendarDays[0]?.date),
+      lastDay: formatDateToDDMMYYYY(updatedCalendarDays[updatedCalendarDays.length - 1]?.date)
     });
   }, [selectedMonth, selectedYear, customerLoans, selectedLoan, isOpen]);
 
@@ -581,7 +674,7 @@ export default function EMICalendarModal({
     selectedLoan,
     selectedMonth: monthNames[selectedMonth],
     selectedYear,
-    todayFormatted: formatToDDMMYYYY(getTodayIST()),
+    todayFormatted: formatDateToDDMMYYYY(getTodayIST()),
     customerLoansCount: customerLoans.length
   });
 
@@ -608,10 +701,10 @@ export default function EMICalendarModal({
                     {monthNames[selectedMonth]} {selectedYear} • Selected: {selectedLoan === 'all' ? 'All Loans' : selectedLoan}
                   </p>
                   {/* ============================================================================
-                  // FIXED: Today's date display in DD/MM/YYYY
+                  // FIXED: Today's date display in DD/MM/YYYY using Date object
                   // ============================================================================ */}
                   <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200">
-                    Today: {formatToDDMMYYYY(getTodayIST())}
+                    Today: {formatDateToDDMMYYYY(getTodayIST())}
                   </span>
                 </div>
               </div>
@@ -640,10 +733,10 @@ export default function EMICalendarModal({
                 </h2>
                 
                 {/* ============================================================================
-                // FIXED: Month dates in DD/MM/YYYY format
+                // FIXED: Month dates in DD/MM/YYYY format using Date objects
                 // ============================================================================ */}
                 <p className="text-sm text-gray-600 mt-1">
-                  {formatToDDMMYYYY(new Date(selectedYear, selectedMonth, 1))} - {formatToDDMMYYYY(new Date(selectedYear, selectedMonth + 1, 0))}
+                  {formatDateToDDMMYYYY(new Date(selectedYear, selectedMonth, 1))} - {formatDateToDDMMYYYY(new Date(selectedYear, selectedMonth + 1, 0))}
                 </p>
                 
                 <div className="mt-2 w-full max-w-xs">
@@ -694,7 +787,7 @@ export default function EMICalendarModal({
               {/* Calendar Days */}
               <div className="grid grid-cols-7">
                 {calendarDays.map((day, index) => {
-                  const formattedDate = formatToDDMMYYYY(day.date);
+                  const formattedDate = formatDateToDDMMYYYY(day.date);
                   const dayOfWeek = day.date.getDay();
                   
                   return (
@@ -718,7 +811,7 @@ export default function EMICalendarModal({
                               {day.date.getDate()}
                             </span>
                             {/* ============================================================================
-                            // FIXED: DD/MM/YYYY date display
+                            // FIXED: DD/MM/YYYY date display using Date object
                             // ============================================================================ */}
                             <div className="text-xs text-gray-500 mt-0.5">
                               {formattedDate}
@@ -834,10 +927,10 @@ export default function EMICalendarModal({
                   ? `Showing total EMI amounts per day for all loans in ${monthNames[selectedMonth]} ${selectedYear}`
                   : `Showing EMI schedule for ${selectedLoan} in ${monthNames[selectedMonth]} ${selectedYear}`}
                 {/* ============================================================================
-                // FIXED: Date range in DD/MM/YYYY format
+                // FIXED: Date range in DD/MM/YYYY format using Date objects
                 // ============================================================================ */}
                 <div className="text-xs text-gray-500 mt-1">
-                  Date Range: {formatToDDMMYYYY(new Date(selectedYear, selectedMonth, 1))} - {formatToDDMMYYYY(new Date(selectedYear, selectedMonth + 1, 0))}
+                  Date Range: {formatDateToDDMMYYYY(new Date(selectedYear, selectedMonth, 1))} - {formatDateToDDMMYYYY(new Date(selectedYear, selectedMonth + 1, 0))}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
                   Calendar: {calendarDays.length} days ({Math.ceil(calendarDays.length / 7)} weeks)
