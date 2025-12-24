@@ -30,6 +30,7 @@ interface CalendarDay {
   isWeekend: boolean;
   isToday: boolean;
   isPast: boolean;
+  isCurrentMonth: boolean;
   status?: 'paid' | 'partial' | 'missed' | 'advance' | 'due' | 'amount-only';
   amount?: number;
   loanNumbers?: string[];
@@ -57,9 +58,136 @@ const debugLog = (label: string, data: unknown) => {
 };
 
 // ============================================================================
-// REMOVED: Custom generateEmiSchedule function (lines 48-145)
-// Now using imported generateEmiSchedule from dateCalculations.ts
+// FIXED: Helper function to parse date strings from API
 // ============================================================================
+const parseDateFromAPI = (dateValue: any): Date => {
+  if (!dateValue) {
+    return getTodayIST();
+  }
+  
+  // If it's already a Date object
+  if (dateValue instanceof Date && !isNaN(dateValue.getTime())) {
+    return dateValue;
+  }
+  
+  // If it's a string in YYYY-MM-DD format (from API)
+  if (typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+    // Parse as IST date directly
+    return parseISTDateString(dateValue);
+  }
+  
+  // For other string formats
+  if (typeof dateValue === 'string') {
+    return parseISTDateString(dateValue);
+  }
+  
+  // Fallback
+  return getTodayIST();
+};
+
+// ============================================================================
+// FIXED: Helper function to compare dates correctly
+// ============================================================================
+const compareDates = (date1: any, date2: any): number => {
+  const d1 = parseDateFromAPI(date1);
+  const d2 = parseDateFromAPI(date2);
+  
+  const date1Key = d1.toISOString().split('T')[0];
+  const date2Key = d2.toISOString().split('T')[0];
+  
+  if (date1Key < date2Key) return -1;
+  if (date1Key > date2Key) return 1;
+  return 0;
+};
+
+// ============================================================================
+// NEW: Function to generate proper calendar grid
+// ============================================================================
+const generateCalendarGrid = (year: number, month: number): CalendarDay[] => {
+  const firstDayOfMonth = new Date(year, month, 1);
+  const lastDayOfMonth = new Date(year, month + 1, 0);
+  
+  // Get day of week for first day (0 = Sunday, 1 = Monday, etc.)
+  const firstDayOfWeek = firstDayOfMonth.getDay(); // 0-6
+  
+  // Days in the month
+  const daysInMonth = lastDayOfMonth.getDate();
+  
+  // Days from previous month to show
+  const daysFromPrevMonth = firstDayOfWeek;
+  
+  // Calculate total days needed (6 weeks * 7 days = 42 cells)
+  const totalCells = 42;
+  
+  const calendarDays: CalendarDay[] = [];
+  const todayIST = getTodayIST();
+  const todayKey = todayIST.toISOString().split('T')[0];
+  
+  // Previous month days
+  const prevMonthLastDay = new Date(year, month, 0).getDate();
+  for (let i = daysFromPrevMonth - 1; i >= 0; i--) {
+    const day = prevMonthLastDay - i;
+    const date = new Date(year, month - 1, day);
+    const dateIST = convertUTCToIST(date);
+    const dateKey = dateIST.toISOString().split('T')[0];
+    
+    calendarDays.push({
+      date: dateIST,
+      isEmiDue: false,
+      isWeekend: dateIST.getDay() === 0 || dateIST.getDay() === 6,
+      isToday: dateKey === todayKey,
+      isPast: compareDates(dateIST, todayIST) < 0,
+      isCurrentMonth: false,
+    });
+  }
+  
+  // Current month days
+  for (let day = 1; day <= daysInMonth; day++) {
+    const date = new Date(year, month, day);
+    const dateIST = convertUTCToIST(date);
+    const dateKey = dateIST.toISOString().split('T')[0];
+    
+    calendarDays.push({
+      date: dateIST,
+      isEmiDue: false, // Will be set later
+      isWeekend: dateIST.getDay() === 0 || dateIST.getDay() === 6,
+      isToday: dateKey === todayKey,
+      isPast: compareDates(dateIST, todayIST) < 0,
+      isCurrentMonth: true,
+    });
+  }
+  
+  // Next month days to fill the grid
+  const remainingCells = totalCells - calendarDays.length;
+  for (let day = 1; day <= remainingCells; day++) {
+    const date = new Date(year, month + 1, day);
+    const dateIST = convertUTCToIST(date);
+    const dateKey = dateIST.toISOString().split('T')[0];
+    
+    calendarDays.push({
+      date: dateIST,
+      isEmiDue: false,
+      isWeekend: dateIST.getDay() === 0 || dateIST.getDay() === 6,
+      isToday: dateKey === todayKey,
+      isPast: compareDates(dateIST, todayIST) < 0,
+      isCurrentMonth: false,
+    });
+  }
+  
+  debugLog('Calendar grid generated', {
+    year,
+    month: month + 1,
+    firstDayOfWeek,
+    daysInMonth,
+    daysFromPrevMonth,
+    totalDays: calendarDays.length,
+    firstDate: formatToDDMMYYYY(calendarDays[0]?.date),
+    lastDate: formatToDDMMYYYY(calendarDays[calendarDays.length - 1]?.date),
+    gridType: `${Math.ceil(calendarDays.length / 7)} weeks`
+  });
+  
+  return calendarDays;
+};
 
 export default function EMICalendarModal({
   isOpen,
@@ -151,7 +279,12 @@ export default function EMICalendarModal({
       debugLog('Active loans', {
         total: loans.length,
         active: activeLoans.length,
-        loanNumbers: activeLoans.map(l => l.loanNumber)
+        loanNumbers: activeLoans.map(l => l.loanNumber),
+        emiStartDates: activeLoans.map(l => ({
+          raw: l.emiStartDate,
+          formatted: safeFormatDate(l.emiStartDate),
+          type: typeof l.emiStartDate
+        }))
       });
       
       setCustomerLoans(activeLoans);
@@ -199,22 +332,23 @@ export default function EMICalendarModal({
         loanNumber: l.loanNumber,
         emiStartDate: l.emiStartDate,
         formattedEmiStartDate: safeFormatDate(l.emiStartDate),
+        emiStartDateType: typeof l.emiStartDate,
         loanType: l.loanType,
         emiAmount: l.emiAmount
       }))
     });
 
-    const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
-    const days: CalendarDay[] = [];
-
+    // ============================================================================
+    // FIXED: Generate proper calendar grid
+    // ============================================================================
+    const calendarGrid = generateCalendarGrid(selectedYear, selectedMonth);
+    
     const emiStatusMap = new Map<string, EMIStatusInfo>();
 
-    // ============================================================================
-    // UPDATED: Use getTodayIST() instead of manual calculation
-    // ============================================================================
+    // Today's date for comparison
     const todayIST = getTodayIST();
     const todayKey = todayIST.toISOString().split('T')[0];
-    const todayFormatted = formatToDDMMYYYY(todayIST);
+    const todayFormatted = formatToDDMMYYYY(todayIST.toISOString().split('T')[0]);
     
     debugLog('Today in IST', {
       todayIST: todayIST.toISOString(),
@@ -227,6 +361,7 @@ export default function EMICalendarModal({
       debugLog(`Processing loan ${loan.loanNumber}`, {
         emiStartDate: loan.emiStartDate,
         formattedEmiStartDate: safeFormatDate(loan.emiStartDate),
+        emiStartDateType: typeof loan.emiStartDate,
         loanType: loan.loanType,
         emiAmount: loan.emiAmount
       });
@@ -237,10 +372,12 @@ export default function EMICalendarModal({
       }
 
       // ============================================================================
-      // UPDATED: Use imported generateEmiSchedule with IST handling
+      // FIXED: Parse emiStartDate correctly from API string
       // ============================================================================
+      const parsedEmiStartDate = parseDateFromAPI(loan.emiStartDate);
+      
       const emiSchedule = generateEmiSchedule(
-        loan.emiStartDate,
+        parsedEmiStartDate,
         loan.loanType,
         loan.totalEmiCount || 365,
         selectedYear,
@@ -248,8 +385,9 @@ export default function EMICalendarModal({
       );
       
       debugLog(`Generated schedule for ${loan.loanNumber}`, {
+        emiStartDateParsed: parsedEmiStartDate.toISOString(),
         scheduleLength: emiSchedule.length,
-        dates: emiSchedule.map(date => ({
+        dates: emiSchedule.slice(0, 5).map(date => ({
           date: date.toLocaleDateString('en-IN'),
           formatted: formatToDDMMYYYY(date),
           day: date.getDate()
@@ -258,7 +396,7 @@ export default function EMICalendarModal({
       
       emiSchedule.forEach(scheduledDate => {
         // ============================================================================
-        // UPDATED: Format dates consistently
+        // FIXED: Use consistent date formatting
         // ============================================================================
         const dateKey = scheduledDate.toISOString().split('T')[0];
         const formattedDate = formatToDDMMYYYY(scheduledDate);
@@ -275,16 +413,16 @@ export default function EMICalendarModal({
             if (!payment.paymentDate) return false;
             
             // ============================================================================
-            // UPDATED: Format payment date for comparison
+            // FIXED: Use parseDateFromAPI for consistent parsing
             // ============================================================================
-            const paymentDate = parseISTDateString(payment.paymentDate);
+            const paymentDate = parseDateFromAPI(payment.paymentDate);
             const paymentDateKey = paymentDate.toISOString().split('T')[0];
             
             if (paymentDateKey === dateKey) return true;
             
             if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.advanceToDate) {
-              const advanceFrom = parseISTDateString(payment.advanceFromDate);
-              const advanceTo = parseISTDateString(payment.advanceToDate);
+              const advanceFrom = parseDateFromAPI(payment.advanceFromDate);
+              const advanceTo = parseDateFromAPI(payment.advanceToDate);
               return scheduledDate >= advanceFrom && scheduledDate <= advanceTo;
             }
             
@@ -302,23 +440,19 @@ export default function EMICalendarModal({
             }
           } else {
             // ============================================================================
-            // UPDATED: Compare dates correctly
+            // FIXED: Use compareDates function for consistent comparison
             // ============================================================================
-            const scheduleDateIST = convertUTCToIST(scheduledDate);
-            const scheduleDateKey = scheduleDateIST.toISOString().split('T')[0];
-            
-            if (scheduleDateKey < todayKey) {
+            const comparison = compareDates(scheduledDate, todayIST);
+            if (comparison < 0) {
               paymentStatus = 'missed';
             }
           }
         } else {
           // ============================================================================
-          // UPDATED: Use convertUTCToIST for date comparison
+          // FIXED: Use compareDates function
           // ============================================================================
-          const scheduleDateIST = convertUTCToIST(scheduledDate);
-          const scheduleDateKey = scheduleDateIST.toISOString().split('T')[0];
-          
-          if (scheduleDateKey < todayKey) {
+          const comparison = compareDates(scheduledDate, todayIST);
+          if (comparison < 0) {
             paymentStatus = 'missed';
           }
         }
@@ -341,56 +475,37 @@ export default function EMICalendarModal({
       });
     });
 
-    // Generate calendar days for the month
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(selectedYear, selectedMonth, day);
-      // ============================================================================
-      // UPDATED: Convert to IST for comparison
-      // ============================================================================
-      const dateIST = convertUTCToIST(date);
-      const dateKey = dateIST.toISOString().split('T')[0];
-      const formattedDate = formatToDDMMYYYY(date);
-      
-      const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-      const isToday = dateKey === todayKey;
-      const isPast = dateKey < todayKey;
-      
+    // Update calendar grid with EMI information
+    const updatedCalendarDays = calendarGrid.map(day => {
+      const dateKey = day.date.toISOString().split('T')[0];
       const emiInfo = emiStatusMap.get(dateKey);
-      const isEmiDue = !!emiInfo;
-
-      const statusForDisplay = selectedLoan === 'all' 
-        ? (isEmiDue ? 'amount-only' : undefined)
-        : emiInfo?.status;
-
-      days.push({
-        date,
-        isEmiDue,
-        isWeekend,
-        isToday,
-        isPast,
-        status: statusForDisplay,
-        amount: emiInfo?.amount,
-        loanNumbers: emiInfo?.loanNumbers,
-        loanDetails: emiInfo?.loanDetails
-      });
       
-      // Debug log for EMI due dates
-      if (isEmiDue) {
-        debugLog(`Day ${day} has EMI`, {
-          date: formattedDate,
-          amount: emiInfo?.amount,
+      if (emiInfo) {
+        const statusForDisplay = selectedLoan === 'all' 
+          ? 'amount-only'
+          : emiInfo.status;
+        
+        return {
+          ...day,
+          isEmiDue: true,
           status: statusForDisplay,
-          loans: emiInfo?.loanNumbers
-        });
+          amount: emiInfo.amount,
+          loanNumbers: emiInfo.loanNumbers,
+          loanDetails: emiInfo.loanDetails
+        };
       }
-    }
+      
+      return day;
+    });
 
-    setCalendarDays(days);
+    setCalendarDays(updatedCalendarDays);
     debugLog('Calendar days set', { 
-      daysCount: days.length, 
-      emiDays: days.filter(d => d.isEmiDue).length,
+      daysCount: updatedCalendarDays.length, 
+      emiDays: updatedCalendarDays.filter(d => d.isEmiDue).length,
       month: `${selectedMonth + 1}/${selectedYear}`,
-      today: todayFormatted
+      today: todayFormatted,
+      firstDay: formatToDDMMYYYY(updatedCalendarDays[0]?.date),
+      lastDay: formatToDDMMYYYY(updatedCalendarDays[updatedCalendarDays.length - 1]?.date)
     });
   }, [selectedMonth, selectedYear, customerLoans, selectedLoan, isOpen]);
 
@@ -466,7 +581,8 @@ export default function EMICalendarModal({
     selectedLoan,
     selectedMonth: monthNames[selectedMonth],
     selectedYear,
-    todayFormatted: formatToDDMMYYYY(getTodayIST())
+    todayFormatted: formatToDDMMYYYY(getTodayIST()),
+    customerLoansCount: customerLoans.length
   });
 
   return (
@@ -492,7 +608,7 @@ export default function EMICalendarModal({
                     {monthNames[selectedMonth]} {selectedYear} • Selected: {selectedLoan === 'all' ? 'All Loans' : selectedLoan}
                   </p>
                   {/* ============================================================================
-                  // ADDED: Today's date display in DD/MM/YYYY
+                  // FIXED: Today's date display in DD/MM/YYYY
                   // ============================================================================ */}
                   <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200">
                     Today: {formatToDDMMYYYY(getTodayIST())}
@@ -524,7 +640,7 @@ export default function EMICalendarModal({
                 </h2>
                 
                 {/* ============================================================================
-                // ADDED: Month dates in DD/MM/YYYY format
+                // FIXED: Month dates in DD/MM/YYYY format
                 // ============================================================================ */}
                 <p className="text-sm text-gray-600 mt-1">
                   {formatToDDMMYYYY(new Date(selectedYear, selectedMonth, 1))} - {formatToDDMMYYYY(new Date(selectedYear, selectedMonth + 1, 0))}
@@ -578,23 +694,23 @@ export default function EMICalendarModal({
               {/* Calendar Days */}
               <div className="grid grid-cols-7">
                 {calendarDays.map((day, index) => {
-                  const isCurrentMonth = day.date.getMonth() === selectedMonth;
                   const formattedDate = formatToDDMMYYYY(day.date);
+                  const dayOfWeek = day.date.getDay();
                   
                   return (
                     <div
                       key={index}
                       className={`min-h-[120px] p-2 border border-gray-200 ${
-                        !isCurrentMonth ? 'bg-gray-50' : ''
+                        !day.isCurrentMonth ? 'bg-gray-50 opacity-60' : ''
                       } ${
                         day.isToday ? 'bg-blue-50' : ''
-                      }`}
+                      } ${dayOfWeek === 0 || dayOfWeek === 6 ? 'bg-red-50 bg-opacity-30' : ''}`}
                     >
                       <div className="flex flex-col h-full">
                         <div className="flex justify-between items-start mb-1">
                           <div>
                             <span className={`text-sm font-medium ${
-                              !isCurrentMonth ? 'text-gray-400' :
+                              !day.isCurrentMonth ? 'text-gray-400' :
                               day.isToday ? 'text-blue-600' :
                               day.isWeekend ? 'text-red-600' :
                               'text-gray-900'
@@ -602,11 +718,16 @@ export default function EMICalendarModal({
                               {day.date.getDate()}
                             </span>
                             {/* ============================================================================
-                            // ADDED: DD/MM/YYYY date display
+                            // FIXED: DD/MM/YYYY date display
                             // ============================================================================ */}
                             <div className="text-xs text-gray-500 mt-0.5">
                               {formattedDate}
                             </div>
+                            {!day.isCurrentMonth && (
+                              <div className="text-xs text-gray-400">
+                                {day.date.getMonth() < selectedMonth ? 'Prev month' : 'Next month'}
+                              </div>
+                            )}
                           </div>
                           {day.isEmiDue && day.status && (
                             <span className={`text-xs px-1.5 py-0.5 rounded-full border ${getStatusColor(day.status)}`}>
@@ -698,6 +819,10 @@ export default function EMICalendarModal({
                   <div className="w-4 h-4 bg-red-50 border border-red-200 rounded mr-2"></div>
                   <span className="text-sm text-gray-700">Weekend</span>
                 </div>
+                <div className="flex items-center">
+                  <div className="w-4 h-4 bg-gray-100 border border-gray-300 opacity-60 rounded mr-2"></div>
+                  <span className="text-sm text-gray-700">Other Month</span>
+                </div>
               </div>
             </div>
           </div>
@@ -709,10 +834,13 @@ export default function EMICalendarModal({
                   ? `Showing total EMI amounts per day for all loans in ${monthNames[selectedMonth]} ${selectedYear}`
                   : `Showing EMI schedule for ${selectedLoan} in ${monthNames[selectedMonth]} ${selectedYear}`}
                 {/* ============================================================================
-                // ADDED: Date range in DD/MM/YYYY format
+                // FIXED: Date range in DD/MM/YYYY format
                 // ============================================================================ */}
                 <div className="text-xs text-gray-500 mt-1">
                   Date Range: {formatToDDMMYYYY(new Date(selectedYear, selectedMonth, 1))} - {formatToDDMMYYYY(new Date(selectedYear, selectedMonth + 1, 0))}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  Calendar: {calendarDays.length} days ({Math.ceil(calendarDays.length / 7)} weeks)
                 </div>
               </div>
               <button

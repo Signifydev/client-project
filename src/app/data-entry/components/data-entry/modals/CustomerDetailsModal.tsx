@@ -80,9 +80,42 @@ const getLastPaymentDate = (loan: Loan): string | null => {
 };
 
 // ============================================================================
-// REMOVED: Custom safeFormatDate function (lines 79-99)
-// Now using imported safeFormatDate from dateCalculations.ts
+// FIXED: Helper function to format dates - handles YYYY-MM-DD strings directly
 // ============================================================================
+const formatLoanDate = (dateValue: any): string => {
+  if (!dateValue) return 'N/A';
+  
+  // If it's already a Date object (legacy data)
+  if (dateValue instanceof Date) {
+    return formatToDDMMYYYY(dateValue);
+  }
+  
+  // If it's a string in YYYY-MM-DD format (from API)
+  if (typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+    // Convert YYYY-MM-DD to DD/MM/YYYY directly - NO Date object creation
+    const [year, month, day] = dateValue.split('-');
+    return `${day}/${month}/${year}`;
+  }
+  
+  // If it's a string in other format
+  if (typeof dateValue === 'string') {
+    // Try to parse as IST date
+    try {
+      const dateObj = parseISTDateString(dateValue);
+      return formatToDDMMYYYY(dateObj);
+    } catch {
+      // If parsing fails, try to extract date parts
+      const dateMatch = dateValue.match(/(\d{4})-(\d{2})-(\d{2})/);
+      if (dateMatch) {
+        const [, year, month, day] = dateMatch;
+        return `${day}/${month}/${year}`;
+      }
+    }
+  }
+  
+  // Fallback to safeFormatDate for other formats
+  return safeFormatDate(dateValue);
+};
 
 // Helper function to get EMI type display text
 const getEMITypeDisplay = (loan: Loan): string => {
@@ -132,13 +165,6 @@ const getLoanTotalAmount = (loan: Loan): number => {
   
   // Fallback to amount field
   return loan.amount || 0;
-};
-
-// ============================================================================
-// NEW: Helper function to format dates specifically for this component
-// ============================================================================
-const formatDateForDisplay = (dateValue: any): string => {
-  return safeFormatDate(dateValue);
 };
 
 // ============================================================================
@@ -215,8 +241,9 @@ export default function CustomerDetailsModal({
           loanNumber: loan.loanNumber,
           emiStartDate: loan.emiStartDate,
           nextEmiDate: loan.nextEmiDate,
-          formattedEmiStartDate: safeFormatDate(loan.emiStartDate),
-          formattedNextEmiDate: safeFormatDate(loan.nextEmiDate)
+          formattedEmiStartDate: formatLoanDate(loan.emiStartDate),
+          formattedNextEmiDate: formatLoanDate(loan.nextEmiDate),
+          dateType: typeof loan.emiStartDate
         }))
       });
       
@@ -421,12 +448,12 @@ export default function CustomerDetailsModal({
                           const emiTypeBadgeClass = getEMITypeBadgeClass(loan);
                           
                           // ============================================================================
-                          // FORMAT DATES USING safeFormatDate
+                          // FIXED: Use formatLoanDate to handle YYYY-MM-DD strings directly
                           // ============================================================================
-                          const formattedNextEmiDate = safeFormatDate(loan.nextEmiDate);
-                          const formattedLastPaymentDate = lastPaymentDate ? safeFormatDate(lastPaymentDate) : 'N/A';
-                          const formattedEmiStartDate = safeFormatDate(loan.emiStartDate);
-                          const formattedDateApplied = safeFormatDate(loan.dateApplied);
+                          const formattedNextEmiDate = formatLoanDate(loan.nextEmiDate);
+                          const formattedLastPaymentDate = lastPaymentDate ? formatLoanDate(lastPaymentDate) : 'N/A';
+                          const formattedEmiStartDate = formatLoanDate(loan.emiStartDate);
+                          const formattedDateApplied = formatLoanDate(loan.dateApplied);
                           
                           return (
                             <div 
@@ -470,7 +497,7 @@ export default function CustomerDetailsModal({
                               </div>
 
                               {/* ============================================================================
-                              // ADDED: Loan Dates Summary (NEW SECTION)
+                              // FIXED: Loan Dates Summary with proper date handling
                               // ============================================================================ */}
                               <div className="mb-4 bg-gray-50 p-3 rounded-lg border border-gray-200">
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -620,10 +647,10 @@ export default function CustomerDetailsModal({
                                           {loan.emiHistory.slice(0, 5).map((payment: EMIHistory, idx: number) => (
                                             <tr key={idx}>
                                               {/* ============================================================================
-                                              // UPDATED: Uses safeFormatDate for consistent formatting
+                                              // FIXED: Use formatLoanDate for consistent formatting
                                               // ============================================================================ */}
                                               <td className="px-3 py-2 text-xs font-medium">
-                                                {safeFormatDate(payment.paymentDate)}
+                                                {formatLoanDate(payment.paymentDate)}
                                               </td>
                                               <td className="px-3 py-2 text-xs font-medium">₹{payment.amount}</td>
                                               <td className="px-3 py-2 text-xs">

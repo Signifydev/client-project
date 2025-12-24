@@ -4,7 +4,42 @@ import Customer from '@/lib/models/Customer';
 import Request from '@/lib/models/Request';
 import { connectDB } from '@/lib/db';
 
-// POST method to add new loan
+// ==============================================
+// SIMPLE DATE UTILITY FUNCTIONS - STRING BASED
+// ==============================================
+
+/**
+ * Validate date string is in YYYY-MM-DD format
+ */
+function isValidYYYYMMDD(dateString) {
+  if (!dateString || typeof dateString !== 'string') return false;
+  
+  const pattern = /^\d{4}-\d{2}-\d{2}$/;
+  if (!pattern.test(dateString)) return false;
+  
+  const [year, month, day] = dateString.split('-').map(Number);
+  
+  if (year < 2000 || year > 2100) return false;
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && 
+         date.getMonth() === month - 1 && 
+         date.getDate() === day;
+}
+
+/**
+ * Get today's date as YYYY-MM-DD string
+ */
+function getTodayDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // POST method to add new loan REQUEST (not create loan directly)
 export async function POST(request) {
   try {
@@ -99,9 +134,43 @@ export async function POST(request) {
     const loanCount = existingLoans.length;
     const proposedLoanNumber = `L${loanCount + 1}`;
 
-    // Calculate additional loan fields for the request
-    const dateApplied = new Date(loanData.dateApplied || new Date());
-    const endDate = new Date(dateApplied);
+    // ==============================================
+    // CRITICAL FIX: USE STRING DATES, NOT DATE OBJECTS
+    // ==============================================
+    
+    let dateAppliedStr;
+    let emiStartDateStr;
+    
+    // Handle dateApplied - use string directly
+    if (loanData.dateApplied && isValidYYYYMMDD(loanData.dateApplied)) {
+      dateAppliedStr = loanData.dateApplied;
+    } else {
+      dateAppliedStr = getTodayDateString();
+    }
+    
+    // Handle emiStartDate - use string directly
+    if (loanData.emiStartDate && isValidYYYYMMDD(loanData.emiStartDate)) {
+      emiStartDateStr = loanData.emiStartDate;
+    } else {
+      emiStartDateStr = dateAppliedStr;
+    }
+    
+    // Ensure emiStartDate is not before dateApplied (lexical comparison)
+    if (emiStartDateStr < dateAppliedStr) {
+      console.log('⚠️ Adjusting EMI start date to match loan date');
+      emiStartDateStr = dateAppliedStr;
+    }
+    
+    console.log('📅 DEBUG - Date strings for loan addition:', {
+      dateAppliedStr,
+      emiStartDateStr,
+      isValidDateApplied: isValidYYYYMMDD(dateAppliedStr),
+      isValidEmiStartDate: isValidYYYYMMDD(emiStartDateStr)
+    });
+
+    // Calculate end date for backward compatibility (Date object)
+    const dateAppliedDate = new Date(dateAppliedStr + 'T00:00:00');
+    const endDate = new Date(dateAppliedDate);
     endDate.setDate(endDate.getDate() + parseInt(loanDays));
 
     // Calculate daily EMI based on loan type
@@ -113,6 +182,17 @@ export async function POST(request) {
     }
 
     const totalEMI = parseInt(loanDays) * dailyEMI;
+    
+    // Calculate total loan amount based on EMI type
+    let totalLoanAmount;
+    if (loanData.emiType === 'custom' && loanData.loanType !== 'Daily') {
+      const fixedPeriods = parseInt(loanDays) - 1;
+      const fixedAmount = emiAmount * fixedPeriods;
+      const lastAmount = parseFloat(loanData.customEmiAmount || emiAmount);
+      totalLoanAmount = fixedAmount + lastAmount;
+    } else {
+      totalLoanAmount = emiAmount * parseInt(loanDays);
+    }
 
     // Create approval request for the new loan (DO NOT CREATE LOAN YET)
     const approvalRequest = new Request({
@@ -127,26 +207,38 @@ export async function POST(request) {
         customerName: customer.name,
         customerNumber: finalCustomerNumber,
         loanNumber: proposedLoanNumber,
-        amount: parseFloat(loanAmount),
-        loanAmount: parseFloat(loanAmount),
+        amount: parseFloat(loanAmount), // Principal amount
+        loanAmount: parseFloat(loanAmount), // Total amount
         emiAmount: parseFloat(emiAmount),
         loanType: loanData.loanType || 'Monthly',
-        dateApplied: dateApplied,
+        dateApplied: dateAppliedStr, // ✅ STORE AS STRING
         loanDays: parseInt(loanDays),
         
         // New EMI fields
-        emiStartDate: loanData.emiStartDate ? new Date(loanData.emiStartDate) : dateApplied,
+        emiStartDate: emiStartDateStr, // ✅ STORE AS STRING
         emiType: loanData.emiType || 'fixed',
         customEmiAmount: loanData.customEmiAmount ? parseFloat(loanData.customEmiAmount) : null,
+        
+        // Additional loan fields for consistency
+        totalEmiCount: parseInt(loanDays),
+        emiPaidCount: 0,
+        lastEmiDate: null,
+        nextEmiDate: emiStartDateStr, // ✅ STORE AS STRING (same as emiStartDate for new loans)
+        totalPaidAmount: 0,
+        remainingAmount: parseFloat(loanAmount),
+        totalLoanAmount: totalLoanAmount,
         
         // Backward compatibility fields
         interestRate: loanData.interestRate || 0,
         tenure: parseInt(loanDays),
         tenureType: (loanData.loanType || 'Monthly').toLowerCase(),
-        startDate: dateApplied,
+        startDate: dateAppliedDate, // Date object for backward compatibility
         endDate: endDate,
         dailyEMI: dailyEMI,
         totalEMI: totalEMI,
+        emiPaid: 0,
+        emiPending: totalLoanAmount,
+        totalPaid: 0,
         
         // System fields
         status: 'active',
@@ -164,6 +256,13 @@ export async function POST(request) {
     await approvalRequest.save();
 
     console.log('✅ Loan addition request created successfully. Waiting for admin approval. Request ID:', approvalRequest._id);
+    
+    console.log('📅 Loan request date details:', {
+      dateApplied: dateAppliedStr,
+      emiStartDate: emiStartDateStr,
+      nextEmiDate: emiStartDateStr,
+      storedAs: 'YYYY-MM-DD strings'
+    });
 
     return NextResponse.json({ 
       success: true,
@@ -174,8 +273,11 @@ export async function POST(request) {
         customerNumber: finalCustomerNumber,
         proposedLoanNumber: proposedLoanNumber,
         loanAmount: parseFloat(loanAmount),
+        dateApplied: dateAppliedStr,
+        emiStartDate: emiStartDateStr,
         // IMPORTANT: Return request data, not loan data
-        isPendingApproval: true
+        isPendingApproval: true,
+        dateFormat: 'YYYY-MM-DD strings'
       }
     });
     

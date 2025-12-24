@@ -4,6 +4,82 @@ import Customer from '@/lib/models/Customer';
 import Request from '@/lib/models/Request';
 import { connectDB } from '@/lib/db';
 
+// Helper function to validate YYYY-MM-DD date string
+function isValidYYYYMMDD(dateString) {
+  if (!dateString || typeof dateString !== 'string') return false;
+  
+  const pattern = /^\d{4}-\d{2}-\d{2}$/;
+  if (!pattern.test(dateString)) return false;
+  
+  const [year, month, day] = dateString.split('-').map(Number);
+  
+  // Basic validation
+  if (year < 2000 || year > 2100) return false;
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  
+  // More accurate validation
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && 
+         date.getMonth() === month - 1 && 
+         date.getDate() === day;
+}
+
+// Helper function to get today's date as YYYY-MM-DD string
+function getTodayDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Helper function to convert YYYY-MM-DD string to Date for calculation
+function parseDateString(dateString) {
+  if (!dateString || !isValidYYYYMMDD(dateString)) {
+    return new Date(); // Return current date if invalid
+  }
+  const [year, month, day] = dateString.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+// Helper function to calculate next EMI date
+const getNextEmiDateForNewLoan = (emiStartDateStr, loanType, emiPaidCount = 0) => {
+  // For NEW loans with NO payments, next EMI date should be the EMI start date itself
+  if (emiPaidCount === 0) {
+    // Parse string to Date object
+    if (typeof emiStartDateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(emiStartDateStr)) {
+      const [year, month, day] = emiStartDateStr.split('-').map(Number);
+      return new Date(year, month - 1, day);
+    }
+    return new Date(emiStartDateStr); // Fallback for Date objects
+  }
+  
+  // For loans with payments, calculate next date based on loan type
+  let date;
+  if (typeof emiStartDateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(emiStartDateStr)) {
+    const [year, month, day] = emiStartDateStr.split('-').map(Number);
+    date = new Date(year, month - 1, day);
+  } else {
+    date = new Date(emiStartDateStr);
+  }
+  
+  switch(loanType) {
+    case 'Daily':
+      date.setDate(date.getDate() + 1);
+      break;
+    case 'Weekly':
+      date.setDate(date.getDate() + 7);
+      break;
+    case 'Monthly':
+      date.setMonth(date.getMonth() + 1);
+      break;
+    default:
+      date.setDate(date.getDate() + 1);
+  }
+  return date;
+};
+
 // POST method to add multiple loans in a single request
 export async function POST(request) {
   try {
@@ -71,6 +147,15 @@ export async function POST(request) {
           (!loan.customEmiAmount || parseFloat(loan.customEmiAmount) <= 0)) {
         validationErrors.push(`Loan ${index + 1}: Custom EMI amount is required for custom EMI type`);
       }
+      
+      // Validate date formats if provided
+      if (loan.dateApplied && !isValidYYYYMMDD(loan.dateApplied)) {
+        validationErrors.push(`Loan ${index + 1}: Invalid date format for dateApplied. Use YYYY-MM-DD format`);
+      }
+      
+      if (loan.emiStartDate && !isValidYYYYMMDD(loan.emiStartDate)) {
+        validationErrors.push(`Loan ${index + 1}: Invalid date format for emiStartDate. Use YYYY-MM-DD format`);
+      }
     });
 
     if (validationErrors.length > 0) {
@@ -80,8 +165,6 @@ export async function POST(request) {
         details: validationErrors
       }, { status: 400 });
     }
-
-
 
     /*
     // Check for existing pending loan addition request for this customer
@@ -97,14 +180,41 @@ export async function POST(request) {
         error: 'A pending loan addition request already exists for this customer. Please wait for admin approval.'
       }, { status: 409 });
     }
-
     */
 
     // Prepare loan data for each loan in the batch
     const loanRequests = batchData.loans.map((loanData, index) => {
       const loanNumber = loanData.loanNumber.trim().toUpperCase();
-      const dateApplied = new Date(loanData.dateApplied || new Date());
-      const endDate = new Date(dateApplied);
+      
+      // ==============================================
+      // CRITICAL FIX: USE STRING DATES, NOT DATE OBJECTS
+      // ==============================================
+      let dateAppliedStr;
+      let emiStartDateStr;
+      
+      // Handle dateApplied - use string directly
+      if (loanData.dateApplied && isValidYYYYMMDD(loanData.dateApplied)) {
+        dateAppliedStr = loanData.dateApplied;
+      } else {
+        dateAppliedStr = getTodayDateString();
+      }
+      
+      // Handle emiStartDate - use string directly
+      if (loanData.emiStartDate && isValidYYYYMMDD(loanData.emiStartDate)) {
+        emiStartDateStr = loanData.emiStartDate;
+      } else {
+        emiStartDateStr = dateAppliedStr;
+      }
+      
+      // Ensure emiStartDate is not before dateApplied (lexical comparison)
+      if (emiStartDateStr < dateAppliedStr) {
+        console.log(`⚠️ Adjusting EMI start date to match loan date for loan ${loanNumber}`);
+        emiStartDateStr = dateAppliedStr;
+      }
+      
+      // Calculate end date for backward compatibility (Date object)
+      const dateAppliedDate = parseDateString(dateAppliedStr);
+      const endDate = new Date(dateAppliedDate);
       endDate.setDate(endDate.getDate() + parseInt(loanData.loanDays));
 
       // Calculate daily EMI based on loan type
@@ -116,6 +226,21 @@ export async function POST(request) {
       }
 
       const totalEMI = parseInt(loanData.loanDays) * dailyEMI;
+      
+      // Calculate total loan amount based on EMI type
+      let totalLoanAmount;
+      if (loanData.emiType === 'custom' && loanData.loanType !== 'Daily') {
+        const fixedPeriods = parseInt(loanData.loanDays) - 1;
+        const fixedAmount = parseFloat(loanData.emiAmount) * fixedPeriods;
+        const lastAmount = parseFloat(loanData.customEmiAmount || loanData.emiAmount);
+        totalLoanAmount = fixedAmount + lastAmount;
+      } else {
+        totalLoanAmount = parseFloat(loanData.emiAmount) * parseInt(loanData.loanDays);
+      }
+      
+      // Calculate next EMI date (should be same as emiStartDate for new loans)
+      const nextEmiDate = getNextEmiDateForNewLoan(emiStartDateStr, loanData.loanType || 'Monthly', 0);
+      const nextEmiDateStr = nextEmiDate.toISOString().split('T')[0]; // Store as YYYY-MM-DD string
 
       return {
         // Basic loan info
@@ -123,26 +248,38 @@ export async function POST(request) {
         customerName: customer.name,
         customerNumber: customer.customerNumber,
         loanNumber: loanNumber,
-        amount: parseFloat(loanData.amount || loanData.loanAmount),
-        loanAmount: parseFloat(loanData.amount || loanData.loanAmount),
+        amount: parseFloat(loanData.amount || loanData.loanAmount || totalLoanAmount),
+        loanAmount: parseFloat(loanData.amount || loanData.loanAmount || totalLoanAmount),
         emiAmount: parseFloat(loanData.emiAmount),
         loanType: loanData.loanType || 'Monthly',
-        dateApplied: dateApplied,
+        dateApplied: dateAppliedStr, // STORE AS STRING
         loanDays: parseInt(loanData.loanDays),
         
         // New EMI fields
-        emiStartDate: loanData.emiStartDate ? new Date(loanData.emiStartDate) : dateApplied,
+        emiStartDate: emiStartDateStr, // STORE AS STRING
         emiType: loanData.emiType || 'fixed',
         customEmiAmount: loanData.customEmiAmount ? parseFloat(loanData.customEmiAmount) : null,
+        
+        // Additional loan fields for consistency
+        totalEmiCount: parseInt(loanData.loanDays),
+        emiPaidCount: 0,
+        lastEmiDate: null,
+        nextEmiDate: nextEmiDateStr, // STORE AS STRING
+        totalPaidAmount: 0,
+        remainingAmount: parseFloat(loanData.amount || loanData.loanAmount || totalLoanAmount),
+        totalLoanAmount: totalLoanAmount,
         
         // Backward compatibility fields
         interestRate: loanData.interestRate || 0,
         tenure: parseInt(loanData.loanDays),
         tenureType: (loanData.loanType || 'Monthly').toLowerCase(),
-        startDate: dateApplied,
+        startDate: dateAppliedDate, // Date object for backward compatibility
         endDate: endDate,
         dailyEMI: dailyEMI,
         totalEMI: totalEMI,
+        emiPaid: 0,
+        emiPending: totalLoanAmount,
+        totalPaid: 0,
         
         // System fields
         status: 'active',
@@ -180,6 +317,17 @@ export async function POST(request) {
     await approvalRequest.save();
 
     console.log(`✅ Batch loan addition request created successfully for ${loanRequests.length} loans. Request ID:`, approvalRequest._id);
+    
+    // Log date information for debugging
+    console.log('📅 Batch loan date details:', {
+      loanCount: loanRequests.length,
+      dateExamples: loanRequests.slice(0, 3).map(loan => ({
+        loanNumber: loan.loanNumber,
+        dateApplied: loan.dateApplied,
+        emiStartDate: loan.emiStartDate,
+        nextEmiDate: loan.nextEmiDate
+      }))
+    });
 
     return NextResponse.json({ 
       success: true,
@@ -192,7 +340,12 @@ export async function POST(request) {
         loanNumbers: loanRequests.map(loan => loan.loanNumber),
         totalAmount: loanRequests.reduce((sum, loan) => sum + loan.amount, 0),
         isPendingApproval: true,
-        isBatchRequest: true
+        isBatchRequest: true,
+        dateDetails: {
+          datesStoredAs: 'YYYY-MM-DD strings',
+          exampleDate: loanRequests[0]?.dateApplied || 'N/A',
+          exampleEMIStartDate: loanRequests[0]?.emiStartDate || 'N/A'
+        }
       }
     });
     

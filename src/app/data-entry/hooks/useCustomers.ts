@@ -15,8 +15,10 @@ interface UseCustomersReturn {
 
 // Cache implementation
 const customersCache = new Map<string, { data: Customer[]; timestamp: number }>();
+const customerDetailsCache = new Map<string, { data: CustomerDetails; timestamp: number }>();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 const pendingRequests = new Map<string, Promise<Customer[]>>();
+const pendingDetailsRequests = new Map<string, Promise<CustomerDetails | null>>();
 
 export const useCustomers = (currentUserOffice?: string, refreshKey = 0): UseCustomersReturn => {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -94,7 +96,7 @@ export const useCustomers = (currentUserOffice?: string, refreshKey = 0): UseCus
     
     pendingRequests.set(cacheKey, requestPromise);
     return requestPromise;
-  }, [currentUserOffice, refreshKey]); // Add refreshKey dependency
+  }, [currentUserOffice, refreshKey]);
 
   const refetch = useCallback(async (force = false) => {
     setLoading(true);
@@ -113,23 +115,95 @@ export const useCustomers = (currentUserOffice?: string, refreshKey = 0): UseCus
     }
   }, [fetchCustomers]);
 
+  // ============================================================================
+  // FIXED: fetchCustomerDetails function with better error handling
+  // ============================================================================
   const fetchCustomerDetails = useCallback(async (customerId: string): Promise<CustomerDetails | null> => {
-    setLoading(true);
-    try {
-      const response = await fetch(`/api/data-entry/customers/${customerId}`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          return data.data;
-        }
-      }
-      return null;
-    } catch (error) {
-      console.error('Error fetching customer details:', error);
-      return null;
-    } finally {
-      setLoading(false);
+    // Check cache first
+    const cacheKey = `customer_details_${customerId}`;
+    const cached = customerDetailsCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      console.log('✅ Using cached customer details for:', customerId);
+      return cached.data;
     }
+    
+    // Check for pending request
+    if (pendingDetailsRequests.has(cacheKey)) {
+      console.log('⏳ Pending details request found for:', customerId);
+      return pendingDetailsRequests.get(cacheKey)!;
+    }
+    
+    console.log('🔍 Fetching customer details for:', customerId);
+    
+    // Create new request
+    const requestPromise = (async () => {
+      try {
+        const response = await fetch(`/api/data-entry/customers/${customerId}`, {
+          headers: {
+            'Cache-Control': 'no-cache'
+          }
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`❌ HTTP ${response.status} fetching customer details:`, errorText);
+          
+          // Try to parse as JSON if possible
+          try {
+            const errorData = JSON.parse(errorText);
+            throw new Error(errorData.error || `Failed to fetch customer details: ${response.status}`);
+          } catch {
+            throw new Error(`Failed to fetch customer details: ${response.status} ${response.statusText}`);
+          }
+        }
+        
+        const responseText = await response.text();
+        console.log('📄 Raw response for customer details:', responseText.substring(0, 200) + '...');
+        
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (parseError) {
+          console.error('❌ Failed to parse JSON response:', parseError);
+          throw new Error('Server returned invalid JSON response');
+        }
+        
+        if (!data.success) {
+          console.error('❌ API returned unsuccessful response:', data.error);
+          throw new Error(data.error || 'Failed to fetch customer details');
+        }
+        
+        if (!data.data) {
+          console.error('❌ API response missing data field:', data);
+          throw new Error('Customer data not found in response');
+        }
+        
+        const customerDetails = data.data;
+        console.log('✅ Customer details fetched successfully:', {
+          id: customerDetails._id,
+          name: customerDetails.name,
+          customerNumber: customerDetails.customerNumber,
+          hasLoans: customerDetails.loans?.length || 0
+        });
+        
+        // Update cache
+        customerDetailsCache.set(cacheKey, {
+          data: customerDetails,
+          timestamp: Date.now()
+        });
+        
+        return customerDetails;
+      } catch (error) {
+        console.error('❌ Error fetching customer details:', error);
+        // Don't cache errors
+        return null;
+      } finally {
+        pendingDetailsRequests.delete(cacheKey);
+      }
+    })();
+    
+    pendingDetailsRequests.set(cacheKey, requestPromise);
+    return requestPromise;
   }, []);
 
   const searchCustomers = useCallback((query: string, filters: Filters): Customer[] => {
@@ -180,8 +254,9 @@ export const useCustomers = (currentUserOffice?: string, refreshKey = 0): UseCus
         }
       }
 
-      // Clear cache and refresh after adding
+      // Clear caches and refresh after adding
       customersCache.clear();
+      customerDetailsCache.clear();
       await refetch(true);
       return data.success;
     } catch (err) {
@@ -217,8 +292,9 @@ export const useCustomers = (currentUserOffice?: string, refreshKey = 0): UseCus
         throw new Error(data.error || `HTTP error! status: ${response.status}`);
       }
 
-      // Clear cache and refresh after editing
+      // Clear caches and refresh after editing
       customersCache.clear();
+      customerDetailsCache.clear();
       await refetch(true);
       return data.success;
     } catch (err) {
@@ -233,19 +309,17 @@ export const useCustomers = (currentUserOffice?: string, refreshKey = 0): UseCus
 
   const refreshCustomer = useCallback(async (customerId: string): Promise<CustomerDetails | null> => {
     try {
-      const response = await fetch(`/api/data-entry/customers/${customerId}`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          return data.data;
-        }
-      }
-      return null;
+      // Clear cache for this customer
+      const cacheKey = `customer_details_${customerId}`;
+      customerDetailsCache.delete(cacheKey);
+      
+      // Fetch fresh data
+      return await fetchCustomerDetails(customerId);
     } catch (error) {
       console.error('Error refreshing customer data:', error);
       return null;
     }
-  }, []);
+  }, [fetchCustomerDetails]);
 
   // Initial fetch - runs when currentUserOffice OR refreshKey changes
   useEffect(() => {
@@ -256,7 +330,7 @@ export const useCustomers = (currentUserOffice?: string, refreshKey = 0): UseCus
         abortControllerRef.current.abort();
       }
     };
-  }, [refetch, refreshKey]); // Add refreshKey dependency
+  }, [refetch, refreshKey]);
 
   return {
     customers,

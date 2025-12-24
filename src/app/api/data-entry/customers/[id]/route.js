@@ -5,124 +5,109 @@ import EMIPayment from '@/lib/models/EMIPayment';
 import { connectDB } from '@/lib/db';
 
 // ==============================================
-// DATE UTILITY FUNCTIONS - FIXED FOR IST TIMEZONE
+// FIXED DATE UTILITY FUNCTIONS - HANDLES BOTH STRINGS AND DATE OBJECTS
 // ==============================================
 
 /**
- * Convert UTC date to IST for display
- * @param {Date} utcDate - Date in UTC
- * @returns {Date} Date in IST
+ * Validate if a string is in YYYY-MM-DD format
  */
-function convertUTCToIST(utcDate) {
-  if (!utcDate) return null;
+function isValidYYYYMMDD(dateString) {
+  if (!dateString || typeof dateString !== 'string') return false;
   
-  try {
-    const istDate = new Date(utcDate);
-    istDate.setHours(istDate.getHours() + 5);
-    istDate.setMinutes(istDate.getMinutes() + 30);
-    
-    return istDate;
-  } catch (error) {
-    console.error('❌ Error converting UTC to IST:', error);
-    return null;
-  }
+  const pattern = /^\d{4}-\d{2}-\d{2}$/;
+  if (!pattern.test(dateString)) return false;
+  
+  const [year, month, day] = dateString.split('-').map(Number);
+  
+  // Basic validation
+  if (year < 2000 || year > 2100) return false;
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  
+  return true;
 }
 
 /**
- * Format date to DD/MM/YYYY for display (returns IST date)
- * @param {Date} date - Date object
- * @returns {string} Date string in DD/MM/YYYY format (IST)
+ * Convert any date input to YYYY-MM-DD string
  */
-function formatToDDMMYYYY(date) {
-  if (!date) return '';
+function toYYYYMMDD(dateInput) {
+  if (!dateInput) return '';
   
   try {
-    // Create a copy to avoid modifying original
-    let displayDate = new Date(date);
-    
-    // If date is stored as UTC, convert to IST
-    if (date.toISOString().includes('Z')) {
-      displayDate = convertUTCToIST(date);
-      if (!displayDate) return '';
+    // If it's already a valid YYYY-MM-DD string
+    if (typeof dateInput === 'string' && isValidYYYYMMDD(dateInput)) {
+      return dateInput;
     }
     
-    const day = String(displayDate.getDate()).padStart(2, '0');
-    const month = String(displayDate.getMonth() + 1).padStart(2, '0');
-    const year = displayDate.getFullYear();
+    // If it's a Date object
+    if (dateInput instanceof Date && !isNaN(dateInput.getTime())) {
+      const year = dateInput.getFullYear();
+      const month = String(dateInput.getMonth() + 1).padStart(2, '0');
+      const day = String(dateInput.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
     
-    return `${day}/${month}/${year}`;
+    // If it's another string format, try to parse
+    if (typeof dateInput === 'string') {
+      const date = new Date(dateInput);
+      if (!isNaN(date.getTime())) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      }
+    }
   } catch (error) {
-    console.error('❌ Error formatting date to DD/MM/YYYY:', error);
+    console.error('❌ Error converting to YYYY-MM-DD:', error);
+  }
+  
+  return '';
+}
+
+/**
+ * Format date to DD/MM/YYYY for display - HANDLES BOTH STRINGS AND DATE OBJECTS
+ */
+function formatToDDMMYYYY(dateInput) {
+  if (!dateInput) return '';
+  
+  try {
+    // If it's a string in YYYY-MM-DD format (from new loans)
+    if (typeof dateInput === 'string' && isValidYYYYMMDD(dateInput)) {
+      const [year, month, day] = dateInput.split('-');
+      return `${day}/${month}/${year}`;
+    }
+    
+    // If it's a Date object (legacy data)
+    if (dateInput instanceof Date && !isNaN(dateInput.getTime())) {
+      const day = String(dateInput.getDate()).padStart(2, '0');
+      const month = String(dateInput.getMonth() + 1).padStart(2, '0');
+      const year = dateInput.getFullYear();
+      return `${day}/${month}/${year}`;
+    }
+    
+    // If it's another string, try to parse
+    if (typeof dateInput === 'string') {
+      const date = new Date(dateInput);
+      if (!isNaN(date.getTime())) {
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        return `${day}/${month}/${year}`;
+      }
+    }
+    
     return '';
-  }
-}
-
-/**
- * Format date to YYYY-MM-DD for HTML date input
- * @param {Date} date - Date object
- * @returns {string} Date string in YYYY-MM-DD format
- */
-function formatForDateInput(date) {
-  if (!date) return '';
-  
-  try {
-    let displayDate = new Date(date);
-    
-    // If date is stored as UTC, convert to IST
-    if (date.toISOString().includes('Z')) {
-      displayDate = convertUTCToIST(date);
-      if (!displayDate) return '';
-    }
-    
-    const year = displayDate.getFullYear();
-    const month = String(displayDate.getMonth() + 1).padStart(2, '0');
-    const day = String(displayDate.getDate()).padStart(2, '0');
-    
-    return `${year}-${month}-${day}`;
   } catch (error) {
-    console.error('❌ Error formatting date for input:', error);
+    console.error('❌ Error formatting date to DD/MM/YYYY:', error, 'input:', dateInput);
     return '';
   }
 }
 
 /**
  * Safely format a date that might be string or Date object
- * @param {any} dateInput - Date input (string or Date object)
- * @returns {string} Formatted date in DD/MM/YYYY or empty string
  */
 function safeFormatDate(dateInput) {
-  if (!dateInput) return '';
-  
-  try {
-    // If it's already a Date object
-    if (dateInput instanceof Date && !isNaN(dateInput.getTime())) {
-      return formatToDDMMYYYY(dateInput);
-    }
-    
-    // If it's a string, try to parse it
-    if (typeof dateInput === 'string') {
-      // Try ISO format first
-      let date = new Date(dateInput);
-      if (!isNaN(date.getTime())) {
-        return formatToDDMMYYYY(date);
-      }
-      
-      // Try DD/MM/YYYY format
-      const parts = dateInput.split('/');
-      if (parts.length === 3) {
-        const [day, month, year] = parts.map(Number);
-        date = new Date(year, month - 1, day);
-        if (!isNaN(date.getTime())) {
-          return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`;
-        }
-      }
-    }
-    
-    return '';
-  } catch (error) {
-    console.error('❌ Error in safeFormatDate:', error, 'input:', dateInput);
-    return '';
-  }
+  return formatToDDMMYYYY(dateInput);
 }
 
 // GET method for fetching single customer details by ID
@@ -203,7 +188,11 @@ export async function GET(request, { params }) {
       profilePicture: customer.profilePicture,
       fiDocuments: customer.fiDocuments || {},
       loans: sortedLoans.map(loan => {
-        // Format loan dates for display
+        // ==============================================
+        // FIXED: Handle both string and Date object dates
+        // ==============================================
+        
+        // Get raw date values
         const dateApplied = loan.dateApplied;
         const emiStartDate = loan.emiStartDate || loan.dateApplied;
         const lastEmiDate = loan.lastEmiDate || loan.dateApplied;
@@ -211,7 +200,15 @@ export async function GET(request, { params }) {
         const createdAt = loan.createdAt;
         const updatedAt = loan.updatedAt;
         
-        // Format dates to DD/MM/YYYY
+        // Convert to YYYY-MM-DD strings for consistency
+        const dateAppliedStr = toYYYYMMDD(dateApplied);
+        const emiStartDateStr = toYYYYMMDD(emiStartDate);
+        const lastEmiDateStr = toYYYYMMDD(lastEmiDate);
+        const nextEmiDateStr = toYYYYMMDD(nextEmiDate);
+        const createdAtStr = toYYYYMMDD(createdAt);
+        const updatedAtStr = toYYYYMMDD(updatedAt);
+        
+        // Format dates to DD/MM/YYYY for display
         const dateAppliedDisplay = safeFormatDate(dateApplied);
         const emiStartDateDisplay = safeFormatDate(emiStartDate);
         const lastEmiDateDisplay = safeFormatDate(lastEmiDate);
@@ -220,20 +217,25 @@ export async function GET(request, { params }) {
         const updatedAtDisplay = safeFormatDate(updatedAt);
         
         // Also format dates for input fields (YYYY-MM-DD)
-        const dateAppliedInput = formatForDateInput(dateApplied);
-        const emiStartDateInput = formatForDateInput(emiStartDate);
-        const lastEmiDateInput = formatForDateInput(lastEmiDate);
-        const nextEmiDateInput = formatForDateInput(nextEmiDate);
+        const dateAppliedInput = dateAppliedStr;
+        const emiStartDateInput = emiStartDateStr;
+        const lastEmiDateInput = lastEmiDateStr;
+        const nextEmiDateInput = nextEmiDateStr;
         
         console.log('📅 Loan Date Debug:', {
           loanNumber: loan.loanNumber,
-          dateApplied: dateApplied?.toISOString(),
+          dateApplied: dateApplied,
+          dateAppliedStr,
           dateAppliedDisplay,
-          emiStartDate: emiStartDate?.toISOString(),
+          emiStartDate: emiStartDate,
+          emiStartDateStr,
           emiStartDateDisplay,
-          nextEmiDate: nextEmiDate?.toISOString(),
+          nextEmiDate: nextEmiDate,
+          nextEmiDateStr,
           nextEmiDateDisplay,
-          shouldMatch: dateAppliedDisplay === emiStartDateDisplay
+          dateType: typeof dateApplied,
+          isString: typeof dateApplied === 'string',
+          isValidYYYYMMDD: isValidYYYYMMDD(dateApplied)
         });
         
         return {
@@ -245,20 +247,20 @@ export async function GET(request, { params }) {
           amount: loan.amount,
           emiAmount: loan.emiAmount,
           loanType: loan.loanType,
-          // Original dates (as stored in UTC)
-          dateApplied: dateApplied,
-          emiStartDate: emiStartDate,
+          // Store dates as strings for consistency
+          dateApplied: dateAppliedStr,
+          emiStartDate: emiStartDateStr,
           loanDays: loan.loanDays,
           status: loan.status,
           totalEmiCount: loan.totalEmiCount || loan.loanDays || 30,
           emiPaidCount: loan.emiPaidCount || 0,
-          lastEmiDate: lastEmiDate,
-          nextEmiDate: nextEmiDate,
+          lastEmiDate: lastEmiDateStr,
+          nextEmiDate: nextEmiDateStr,
           totalPaidAmount: loan.totalPaidAmount || 0,
           remainingAmount: loan.remainingAmount || loan.amount,
           emiHistory: loan.emiHistory || [],
-          createdAt: createdAt,
-          updatedAt: updatedAt,
+          createdAt: createdAtStr,
+          updatedAt: updatedAtStr,
           // Include renewal tracking fields
           isRenewed: loan.isRenewed || false,
           renewedLoanNumber: loan.renewedLoanNumber || '',
@@ -280,13 +282,11 @@ export async function GET(request, { params }) {
           emiStartDateInput: emiStartDateInput,
           lastEmiDateInput: lastEmiDateInput,
           nextEmiDateInput: nextEmiDateInput,
-          // Debug info (optional, can remove in production)
-          _debug: {
-            dateAppliedISO: dateApplied?.toISOString(),
-            emiStartDateISO: emiStartDate?.toISOString(),
-            nextEmiDateISO: nextEmiDate?.toISOString(),
-            timezone: 'IST',
-            displayFormat: 'DD/MM/YYYY'
+          // Add original date for backward compatibility
+          _rawDates: {
+            dateApplied: dateApplied,
+            emiStartDate: emiStartDate,
+            nextEmiDate: nextEmiDate
           }
         };
       })
@@ -303,9 +303,11 @@ export async function GET(request, { params }) {
       // Add EMI payments to response
       customerWithLoans.emiPayments = emiPayments.map(payment => {
         const paymentDate = payment.paymentDate;
+        const paymentDateStr = toYYYYMMDD(paymentDate);
         const paymentDateDisplay = safeFormatDate(paymentDate);
-        const paymentDateInput = formatForDateInput(paymentDate);
+        const paymentDateInput = paymentDateStr;
         const createdAt = payment.createdAt;
+        const createdAtStr = toYYYYMMDD(createdAt);
         const createdAtDisplay = safeFormatDate(createdAt);
         
         return {
@@ -316,14 +318,14 @@ export async function GET(request, { params }) {
           loanNumber: payment.loanNumber,
           emiNumber: payment.emiNumber,
           amount: payment.amount,
-          paymentDate: paymentDate,
+          paymentDate: paymentDateStr,
           paymentDateDisplay: paymentDateDisplay,
           paymentDateInput: paymentDateInput,
           paymentMethod: payment.paymentMethod || 'cash',
           collectedBy: payment.collectedBy || '',
           status: payment.status || 'paid',
           remarks: payment.remarks || '',
-          createdAt: createdAt,
+          createdAt: createdAtStr,
           createdAtDisplay: createdAtDisplay
         };
       });
@@ -332,20 +334,19 @@ export async function GET(request, { params }) {
       customerWithLoans.emiPayments = [];
     }
 
-    console.log('✅ Customer details with sorted loans and formatted dates prepared successfully');
+    console.log('✅ Customer details prepared successfully');
     
     // Log sample dates for debugging
     if (customerWithLoans.loans.length > 0) {
       const sampleLoan = customerWithLoans.loans[0];
       console.log('📋 Sample Loan Date Verification:', {
         loanNumber: sampleLoan.loanNumber,
-        dateApplied: sampleLoan.dateApplied?.toISOString(),
+        dateApplied: sampleLoan.dateApplied,
         dateAppliedDisplay: sampleLoan.dateAppliedDisplay,
-        emiStartDate: sampleLoan.emiStartDate?.toISOString(),
+        emiStartDate: sampleLoan.emiStartDate,
         emiStartDateDisplay: sampleLoan.emiStartDateDisplay,
-        nextEmiDate: sampleLoan.nextEmiDate?.toISOString(),
-        nextEmiDateDisplay: sampleLoan.nextEmiDateDisplay,
-        formatCorrect: sampleLoan.dateAppliedDisplay === '10/12/2025' ? 'YES (Expected)' : 'CHECK'
+        nextEmiDate: sampleLoan.nextEmiDate,
+        nextEmiDateDisplay: sampleLoan.nextEmiDateDisplay
       });
     }
 
@@ -384,24 +385,15 @@ export async function PUT(request, { params }) {
       );
     }
 
-    // Handle date fields if present
+    // Handle date fields if present - ensure they're stored as strings
     if (updateData.dateApplied && typeof updateData.dateApplied === 'string') {
-      try {
-        // Parse date string to Date object
-        updateData.dateApplied = new Date(updateData.dateApplied);
-        console.log('📅 Parsed dateApplied:', updateData.dateApplied);
-      } catch (dateError) {
-        console.error('❌ Error parsing dateApplied:', dateError);
-      }
+      // Already a string, keep it as is
+      console.log('📅 Keeping dateApplied as string:', updateData.dateApplied);
     }
     
     if (updateData.emiStartDate && typeof updateData.emiStartDate === 'string') {
-      try {
-        updateData.emiStartDate = new Date(updateData.emiStartDate);
-        console.log('📅 Parsed emiStartDate:', updateData.emiStartDate);
-      } catch (dateError) {
-        console.error('❌ Error parsing emiStartDate:', dateError);
-      }
+      // Already a string, keep it as is
+      console.log('📅 Keeping emiStartDate as string:', updateData.emiStartDate);
     }
 
     const customer = await Customer.findByIdAndUpdate(
