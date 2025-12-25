@@ -20,6 +20,9 @@ import {
   convertUTCToIST
 } from '@/src/app/data-entry/utils/dateCalculations';
 
+// Import the separated EMITransactionsModal
+import EMITransactionsModal, { EMITransaction } from './EMITransactionsModal';
+
 interface CustomerDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -52,31 +55,6 @@ const getCustomerLoans = (customer: Customer | CustomerDetails, customerDetails?
   }
   
   return [];
-};
-
-// Helper function to calculate total loan amount from loans array
-const calculateTotalLoanAmountFromLoans = (loans: Loan[]): number => {
-  if (!loans || loans.length === 0) return 0;
-  
-  return loans.reduce((total, loan) => {
-    // Use loanAmount if available, otherwise calculate it
-    const loanAmount = loan.loanAmount || calculateTotalLoanAmount(loan) || loan.amount || 0;
-    return total + loanAmount;
-  }, 0);
-};
-
-// Helper function to get last payment date from EMI history
-const getLastPaymentDate = (loan: Loan): string | null => {
-  if (loan.emiHistory && loan.emiHistory.length > 0) {
-    // Sort by payment date to get the most recent
-    const sortedHistory = [...loan.emiHistory].sort((a, b) => {
-      const dateA = new Date(a.paymentDate).getTime();
-      const dateB = new Date(b.paymentDate).getTime();
-      return dateB - dateA;
-    });
-    return sortedHistory[0].paymentDate;
-  }
-  return null;
 };
 
 // ============================================================================
@@ -168,16 +146,59 @@ const getLoanTotalAmount = (loan: Loan): number => {
 };
 
 // ============================================================================
-// NEW: Function to check if date is valid before formatting
+// NEW: Function to fetch EMI transactions for a customer
 // ============================================================================
-const isValidDate = (dateValue: any): boolean => {
-  if (!dateValue) return false;
-  
+const fetchEMITransactions = async (customerId: string): Promise<EMITransaction[]> => {
   try {
-    const date = new Date(dateValue);
-    return !isNaN(date.getTime());
-  } catch {
-    return false;
+    console.log('📥 Fetching EMI transactions for customer:', customerId);
+    
+    // First try the new API endpoint
+    let response = await fetch(`/api/data-entry/emi-payments?customerId=${customerId}&limit=100`);
+    
+    if (!response.ok) {
+      console.log('⚠️ Trying alternative API endpoint...');
+      // Try alternative endpoint
+      response = await fetch(`/api/emi/payments?customerId=${customerId}&limit=100`);
+    }
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch EMI transactions: ${response.status} ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    console.log('📊 EMI transactions API response:', data);
+    
+    if (data.success && data.data && data.data.payments) {
+      return data.data.payments.map((payment: any) => ({
+        _id: payment._id,
+        paymentDate: payment.paymentDate,
+        amount: payment.amount,
+        loanNumber: payment.loanNumber || 'N/A',
+        collectedBy: payment.collectedBy || 'Unknown',
+        status: payment.status || 'Paid',
+        paymentMethod: payment.paymentMethod,
+        notes: payment.notes
+      }));
+    } else if (data.success && Array.isArray(data.data)) {
+      // Alternative response format
+      return data.data.map((payment: any) => ({
+        _id: payment._id,
+        paymentDate: payment.paymentDate,
+        amount: payment.amount,
+        loanNumber: payment.loanNumber || 'N/A',
+        collectedBy: payment.collectedBy || 'Unknown',
+        status: payment.status || 'Paid',
+        paymentMethod: payment.paymentMethod,
+        notes: payment.notes
+      }));
+    }
+    
+    console.log('⚠️ No transactions found in response');
+    return [];
+  } catch (error) {
+    console.error('❌ Error fetching EMI transactions:', error);
+    // Return empty array instead of throwing to prevent UI crash
+    return [];
   }
 };
 
@@ -197,8 +218,13 @@ export default function CustomerDetailsModal({
   const [customerDetails, setCustomerDetails] = useState<CustomerDetails | null>(null);
   const [customerLoans, setCustomerLoans] = useState<Loan[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
+  
+  // NEW: State for EMI Transactions modal
+  const [showEMITransactions, setShowEMITransactions] = useState(false);
+  const [emiTransactions, setEmiTransactions] = useState<EMITransaction[]>([]);
+  const [loadingTransactions, setLoadingTransactions] = useState(false);
 
-  const { fetchCustomerDetails } = useCustomers(currentUserOffice);
+  const { fetchCustomerDetails, clearCustomerCache } = useCustomers(currentUserOffice);
 
   // Load customer details when modal opens
   useEffect(() => {
@@ -211,6 +237,7 @@ export default function CustomerDetailsModal({
   useEffect(() => {
     if (!isOpen) {
       setIsDeleting(false);
+      setShowEMITransactions(false);
     }
   }, [isOpen]);
 
@@ -224,6 +251,9 @@ export default function CustomerDetailsModal({
         return;
       }
 
+      // Clear cache first to ensure fresh data
+      clearCustomerCache(customerId);
+      
       const details = await fetchCustomerDetails(customerId);
       setCustomerDetails(details);
       
@@ -231,26 +261,37 @@ export default function CustomerDetailsModal({
       const loans = getCustomerLoans(customer, details);
       setCustomerLoans(loans);
       
-      // ============================================================================
-      // DEBUG: Check date formats in loaded data
-      // ============================================================================
-      console.log('📅 Customer Details Modal - Loaded Data:', {
+      console.log('✅ Customer details loaded:', {
         customerName: details?.name,
-        loansCount: loans.length,
-        loanDates: loans.map(loan => ({
-          loanNumber: loan.loanNumber,
-          emiStartDate: loan.emiStartDate,
-          nextEmiDate: loan.nextEmiDate,
-          formattedEmiStartDate: formatLoanDate(loan.emiStartDate),
-          formattedNextEmiDate: formatLoanDate(loan.nextEmiDate),
-          dateType: typeof loan.emiStartDate
-        }))
+        loansCount: loans.length
       });
       
     } catch (error: any) {
-      console.error('Error fetching customer details:', error);
+      console.error('❌ Error fetching customer details:', error);
+      alert('Failed to load customer details. Please try again.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // NEW: Handle EMI Transactions button click
+  const handleEMITransactionsClick = async () => {
+    if (!customerDetails) {
+      alert('Customer details not loaded. Please wait...');
+      return;
+    }
+    
+    setLoadingTransactions(true);
+    try {
+      const transactions = await fetchEMITransactions(customerDetails._id);
+      setEmiTransactions(transactions);
+      setShowEMITransactions(true);
+      console.log(`✅ Loaded ${transactions.length} EMI transactions`);
+    } catch (error) {
+      console.error('❌ Error loading EMI transactions:', error);
+      alert('Failed to load EMI transactions. Please check the console for details.');
+    } finally {
+      setLoadingTransactions(false);
     }
   };
 
@@ -260,6 +301,13 @@ export default function CustomerDetailsModal({
     setIsDeleting(true);
     if (onDeleteLoan) {
       onDeleteLoan(loan);
+    }
+  };
+
+  // Handle refresh after successful operation
+  const handleRefreshData = async () => {
+    if (customerDetails) {
+      await loadCustomerDetails();
     }
   };
 
@@ -288,6 +336,13 @@ export default function CustomerDetailsModal({
                   )}
                 </div>
                 <div className="flex space-x-3">
+                  <button
+                    onClick={handleRefreshData}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium transition-colors flex items-center"
+                    title="Refresh customer data"
+                  >
+                    <span className="mr-2">🔄</span> Refresh
+                  </button>
                   {onEditCustomer && displayCustomer && (
                     <button
                       onClick={() => onEditCustomer(displayCustomer as CustomerDetails)}
@@ -341,7 +396,7 @@ export default function CustomerDetailsModal({
                               </span>
                             </div>
                             
-                            {/* Phone numbers positioned right below the name and category */}
+                            {/* Phone numbers */}
                             <div className="space-y-2 mt-4">
                               <div>
                                 <p className="text-xs font-medium text-gray-500">Primary Phone</p>
@@ -388,19 +443,14 @@ export default function CustomerDetailsModal({
                   </div>
                   <div className="p-6">
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                      {/* Business Name Column */}
                       <div>
                         <p className="text-xs font-medium text-gray-500 mb-1">Business Name</p>
                         <p className="font-bold text-gray-900 text-sm">{displayCustomer.businessName || 'N/A'}</p>
                       </div>
-
-                      {/* Area/Location Column */}
                       <div>
                         <p className="text-xs font-medium text-gray-500 mb-1">Area/Location</p>
                         <p className="font-bold text-gray-900 text-sm">{displayCustomer.area || 'N/A'}</p>
                       </div>
-
-                      {/* Address Column */}
                       <div>
                         <p className="text-xs font-medium text-gray-500 mb-1">Business Address</p>
                         <p className="font-bold text-gray-900 text-sm whitespace-pre-line">
@@ -415,14 +465,31 @@ export default function CustomerDetailsModal({
                 <div className="bg-white shadow-sm rounded-xl border border-gray-200 mb-8">
                   <div className="px-8 py-4 border-b border-gray-200 flex justify-between items-center">
                     <h4 className="text-lg font-bold text-gray-900">Loan Information</h4>
-                    {onAddLoan && (
+                    <div className="flex space-x-3">
+                      {/* NEW: EMI Transactions Button */}
                       <button
-                        onClick={onAddLoan}
-                        className="px-5 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium transition-colors"
+                        onClick={handleEMITransactionsClick}
+                        disabled={loadingTransactions}
+                        className="px-5 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium transition-colors disabled:bg-purple-400 disabled:cursor-not-allowed flex items-center"
                       >
-                        Add New Loan (Requires Approval)
+                        {loadingTransactions ? (
+                          <>
+                            <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></span>
+                            Loading...
+                          </>
+                        ) : (
+                          'EMI Transactions'
+                        )}
                       </button>
-                    )}
+                      {onAddLoan && (
+                        <button
+                          onClick={onAddLoan}
+                          className="px-5 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium transition-colors"
+                        >
+                          Add New Loan
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="p-6">
                     {loans.length > 0 ? (
@@ -434,7 +501,6 @@ export default function CustomerDetailsModal({
                             ? paymentBehaviorResult 
                             : paymentBehaviorResult.behaviorRating;
                           const isRenewed = loan.isRenewed || loan.status === 'renewed';
-                          const lastPaymentDate = getLastPaymentDate(loan);
                           
                           // Calculate remaining amount and EMIs
                           const totalLoanAmount = getLoanTotalAmount(loan);
@@ -447,11 +513,9 @@ export default function CustomerDetailsModal({
                           const emiTypeDisplay = getEMITypeDisplay(loan);
                           const emiTypeBadgeClass = getEMITypeBadgeClass(loan);
                           
-                          // ============================================================================
-                          // FIXED: Use formatLoanDate to handle YYYY-MM-DD strings directly
-                          // ============================================================================
+                          // Format dates
                           const formattedNextEmiDate = formatLoanDate(loan.nextEmiDate);
-                          const formattedLastPaymentDate = lastPaymentDate ? formatLoanDate(lastPaymentDate) : 'N/A';
+                          const formattedLastPaymentDate = loan.lastEmiDate ? formatLoanDate(loan.lastEmiDate) : 'N/A';
                           const formattedEmiStartDate = formatLoanDate(loan.emiStartDate);
                           const formattedDateApplied = formatLoanDate(loan.dateApplied);
                           
@@ -488,7 +552,6 @@ export default function CustomerDetailsModal({
                                     }`}>
                                       {loan.loanType}
                                     </span>
-                                    {/* EMI Type Badge */}
                                     <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-semibold border ${emiTypeBadgeClass}`}>
                                       {emiTypeDisplay}
                                     </span>
@@ -496,9 +559,7 @@ export default function CustomerDetailsModal({
                                 </div>
                               </div>
 
-                              {/* ============================================================================
-                              // FIXED: Loan Dates Summary with proper date handling
-                              // ============================================================================ */}
+                              {/* Loan Dates Summary */}
                               <div className="mb-4 bg-gray-50 p-3 rounded-lg border border-gray-200">
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                   <div>
@@ -582,104 +643,6 @@ export default function CustomerDetailsModal({
                                 </div>
                               </div>
 
-                              {/* Loan Details Section */}
-                              <div className="mb-6 bg-gray-50 p-4 rounded-xl border border-gray-200">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                  <div>
-                                    <p className="text-xs font-medium text-gray-500 mb-1">Principal Amount</p>
-                                    <p className="font-semibold text-gray-900 text-sm">
-                                      ₹{(loan.amount || 0).toLocaleString()}
-                                    </p>
-                                  </div>
-                                  <div>
-                                    <p className="text-xs font-medium text-gray-500 mb-1">Total Loan Amount</p>
-                                    <p className="font-semibold text-green-700 text-sm">
-                                      ₹{totalLoanAmount.toLocaleString()}
-                                    </p>
-                                    {loan.amount !== totalLoanAmount && (
-                                      <p className="text-xs text-gray-500 mt-1">
-                                        (Includes interest/charges)
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-                                {/* Show calculation breakdown for custom EMI */}
-                                {loan.emiType === 'custom' && loan.customEmiAmount && loan.loanType !== 'Daily' && (
-                                  <div className="mt-3 pt-3 border-t border-gray-300">
-                                    <p className="text-xs font-medium text-gray-700 mb-1">Calculation Breakdown:</p>
-                                    <div className="text-xs text-gray-600">
-                                      <div className="flex justify-between">
-                                        <span>Fixed EMI ({loan.loanDays - 1} periods × ₹{loan.emiAmount}):</span>
-                                        <span>₹{(loan.emiAmount * (loan.loanDays - 1)).toLocaleString()}</span>
-                                      </div>
-                                      <div className="flex justify-between">
-                                        <span>Last EMI (Custom amount):</span>
-                                        <span>₹{loan.customEmiAmount.toLocaleString()}</span>
-                                      </div>
-                                      <div className="flex justify-between font-semibold mt-1">
-                                        <span>Total:</span>
-                                        <span>₹{totalLoanAmount.toLocaleString()}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* View EMI History Button */}
-                              {loan.emiHistory && loan.emiHistory.length > 0 && (
-                                <div className="mb-6">
-                                  <details className="group">
-                                    <summary className="flex justify-between items-center cursor-pointer list-none text-sm font-semibold text-blue-700 hover:text-blue-800 p-2 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors">
-                                      <span>View EMI History ({loan.emiHistory.length} payments)</span>
-                                      <span className="transition-transform group-open:rotate-180 text-xs">▼</span>
-                                    </summary>
-                                    <div className="mt-2 border border-gray-200 rounded-lg overflow-hidden">
-                                      <table className="min-w-full divide-y divide-gray-200">
-                                        <thead className="bg-gray-50">
-                                          <tr>
-                                            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Date (DD/MM/YYYY)</th>
-                                            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Amount</th>
-                                            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Status</th>
-                                            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Collected By</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody className="bg-white divide-y divide-gray-200">
-                                          {loan.emiHistory.slice(0, 5).map((payment: EMIHistory, idx: number) => (
-                                            <tr key={idx}>
-                                              {/* ============================================================================
-                                              // FIXED: Use formatLoanDate for consistent formatting
-                                              // ============================================================================ */}
-                                              <td className="px-3 py-2 text-xs font-medium">
-                                                {formatLoanDate(payment.paymentDate)}
-                                              </td>
-                                              <td className="px-3 py-2 text-xs font-medium">₹{payment.amount}</td>
-                                              <td className="px-3 py-2 text-xs">
-                                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                                                  payment.status === 'Paid' ? 'bg-green-100 text-green-800' :
-                                                  payment.status === 'Partial' ? 'bg-yellow-100 text-yellow-800' :
-                                                  payment.status === 'Advance' ? 'bg-blue-100 text-blue-800' :
-                                                  'bg-gray-100 text-gray-800'
-                                                }`}>
-                                                  {payment.status}
-                                                </span>
-                                              </td>
-                                              <td className="px-3 py-2 text-xs">{payment.collectedBy}</td>
-                                            </tr>
-                                          ))}
-                                        </tbody>
-                                      </table>
-                                      {loan.emiHistory.length > 5 && (
-                                        <div className="px-3 py-2 bg-gray-50 text-center">
-                                          <p className="text-xs text-gray-500">
-                                            Showing 5 of {loan.emiHistory.length} payments
-                                          </p>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </details>
-                                </div>
-                              )}
-
                               {/* Action Buttons */}
                               <div className="flex space-x-2 border-t border-gray-200 pt-4">
                                 {onEditLoan && !isRenewed && (
@@ -738,14 +701,31 @@ export default function CustomerDetailsModal({
 
             <div className="sticky bottom-0 bg-white px-8 py-5 border-t border-gray-200">
               <div className="flex justify-between">
-                {onViewEMICalendar && (
+                <div className="flex space-x-3">
+                  {onViewEMICalendar && (
+                    <button
+                      onClick={() => onViewEMICalendar(customer as Customer)}
+                      className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium transition-colors"
+                    >
+                      View EMI Calendar
+                    </button>
+                  )}
+                  {/* NEW: EMI Transactions Button in footer */}
                   <button
-                    onClick={() => onViewEMICalendar(customer as Customer)}
-                    className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium transition-colors"
+                    onClick={handleEMITransactionsClick}
+                    disabled={loadingTransactions}
+                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors disabled:bg-blue-400 disabled:cursor-not-allowed flex items-center"
                   >
-                    View EMI Calendar
+                    {loadingTransactions ? (
+                      <>
+                        <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></span>
+                        Loading...
+                      </>
+                    ) : (
+                      'View EMI Transactions'
+                    )}
                   </button>
-                )}
+                </div>
                 <button
                   onClick={onClose}
                   className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors"
@@ -756,6 +736,16 @@ export default function CustomerDetailsModal({
             </div>
           </div>
         </div>
+      )}
+      
+      {/* NEW: EMI Transactions Modal */}
+      {showEMITransactions && customerDetails && (
+        <EMITransactionsModal
+          isOpen={showEMITransactions}
+          onClose={() => setShowEMITransactions(false)}
+          customer={customerDetails}
+          transactions={emiTransactions}
+        />
       )}
     </>
   );

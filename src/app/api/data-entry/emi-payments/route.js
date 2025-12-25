@@ -5,6 +5,94 @@ import Loan from '@/lib/models/Loan';
 import { connectDB } from '@/lib/db';
 import mongoose from 'mongoose';
 
+// ==============================================
+// DATE UTILITY FUNCTIONS (SAME AS IN MODELS)
+// ==============================================
+
+function getCurrentDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function isValidYYYYMMDD(dateString) {
+  if (!dateString || typeof dateString !== 'string') return false;
+  
+  const pattern = /^\d{4}-\d{2}-\d{2}$/;
+  if (!pattern.test(dateString)) return false;
+  
+  const [year, month, day] = dateString.split('-').map(Number);
+  
+  if (year < 2000 || year > 2100) return false;
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && 
+         date.getMonth() === month - 1 && 
+         date.getDate() === day;
+}
+
+function parseDateString(dateString) {
+  if (!isValidYYYYMMDD(dateString)) {
+    console.error('Invalid date string:', dateString);
+    return new Date();
+  }
+  
+  const [year, month, day] = dateString.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function formatToYYYYMMDD(dateInput) {
+  if (!dateInput) return '';
+  
+  try {
+    // If already a valid YYYY-MM-DD string
+    if (typeof dateInput === 'string' && isValidYYYYMMDD(dateInput)) {
+      return dateInput;
+    }
+    
+    // If it's a Date object
+    if (dateInput instanceof Date && !isNaN(dateInput.getTime())) {
+      const year = dateInput.getFullYear();
+      const month = String(dateInput.getMonth() + 1).padStart(2, '0');
+      const day = String(dateInput.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    
+    // If it's another string format, try to parse
+    if (typeof dateInput === 'string') {
+      const date = new Date(dateInput);
+      if (!isNaN(date.getTime())) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      }
+    }
+    
+    return '';
+  } catch (error) {
+    console.error('Error converting to YYYY-MM-DD:', error);
+    return '';
+  }
+}
+
+function formatToDDMMYYYY(dateString) {
+  if (!isValidYYYYMMDD(dateString)) return '';
+  
+  const [year, month, day] = dateString.split('-');
+  return `${day}/${month}/${year}`;
+}
+
+function addDays(dateString, days) {
+  const date = parseDateString(dateString);
+  date.setDate(date.getDate() + days);
+  return formatToYYYYMMDD(date);
+}
+
 // Helper function to clean IDs by removing suffixes
 function cleanId(id) {
   if (!id) return id;
@@ -34,62 +122,46 @@ function validateAndCleanObjectId(id, fieldName = 'ID') {
   };
 }
 
-// Helper to convert Date to YYYY-MM-DD string
-function toYYYYMMDD(dateInput) {
-  if (!dateInput) return '';
-  
-  try {
-    // If already a valid YYYY-MM-DD string
-    if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
-      return dateInput;
-    }
-    
-    // If it's a Date object
-    if (dateInput instanceof Date && !isNaN(dateInput.getTime())) {
-      const year = dateInput.getFullYear();
-      const month = String(dateInput.getMonth() + 1).padStart(2, '0');
-      const day = String(dateInput.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    }
-    
-    return '';
-  } catch (error) {
-    console.error('Error converting to YYYY-MM-DD:', error);
-    return '';
-  }
-}
-
 // CORRECTED: Calculate next scheduled EMI date based on last scheduled EMI date
 function calculateNextScheduledEmiDate(lastScheduledEmiDate, loanType, emiStartDate) {
-  if (!lastScheduledEmiDate) return emiStartDate;
+  if (!lastScheduledEmiDate) return emiStartDate || getCurrentDateString();
   
-  const date = new Date(lastScheduledEmiDate);
-  date.setHours(0, 0, 0, 0);
+  if (!isValidYYYYMMDD(lastScheduledEmiDate)) {
+    console.error('Invalid lastScheduledEmiDate:', lastScheduledEmiDate);
+    return emiStartDate || getCurrentDateString();
+  }
+  
+  let nextDate;
   
   switch(loanType) {
     case 'Daily':
-      date.setDate(date.getDate() + 1);
+      nextDate = addDays(lastScheduledEmiDate, 1);
       break;
     case 'Weekly':
-      date.setDate(date.getDate() + 7);
+      nextDate = addDays(lastScheduledEmiDate, 7);
       break;
     case 'Monthly':
+      const date = parseDateString(lastScheduledEmiDate);
       date.setMonth(date.getMonth() + 1);
+      nextDate = formatToYYYYMMDD(date);
       break;
     default:
-      date.setDate(date.getDate() + 1);
+      nextDate = addDays(lastScheduledEmiDate, 1);
   }
   
-  return date.toISOString().split('T')[0];
+  return nextDate;
 }
 
 // NEW: Calculate last scheduled EMI date (not payment date)
 function calculateLastScheduledEmiDate(emiStartDate, loanType, totalEmisPaid) {
   if (!emiStartDate || totalEmisPaid <= 0) return emiStartDate;
   
-  const startDate = new Date(emiStartDate);
-  startDate.setHours(0, 0, 0, 0);
+  if (!isValidYYYYMMDD(emiStartDate)) {
+    console.error('Invalid emiStartDate:', emiStartDate);
+    return emiStartDate;
+  }
   
+  const startDate = parseDateString(emiStartDate);
   let lastScheduledDate = new Date(startDate);
   
   switch(loanType) {
@@ -106,12 +178,13 @@ function calculateLastScheduledEmiDate(emiStartDate, loanType, totalEmisPaid) {
       lastScheduledDate.setDate(startDate.getDate() + (totalEmisPaid - 1));
   }
   
-  return lastScheduledDate.toISOString().split('T')[0];
+  return formatToYYYYMMDD(lastScheduledDate);
 }
 
 // Enhanced duplicate payment check for both single and advance payments
 const checkForDuplicatePayments = async (cleanedCustomerId, finalLoanId, finalLoanNumber, paymentType, paymentDate, advanceFromDate, advanceToDate) => {
-  const formattedPaymentDate = new Date(paymentDate).toISOString().split('T')[0];
+  // Ensure paymentDate is in YYYY-MM-DD format
+  const formattedPaymentDate = formatToYYYYMMDD(paymentDate);
   
   if (paymentType === 'single') {
     const existingPayment = await EMIPayment.findOne({
@@ -119,17 +192,14 @@ const checkForDuplicatePayments = async (cleanedCustomerId, finalLoanId, finalLo
         { loanId: finalLoanId },
         { customerId: cleanedCustomerId, loanNumber: finalLoanNumber }
       ],
-      paymentDate: {
-        $gte: new Date(formattedPaymentDate + 'T00:00:00.000Z'),
-        $lt: new Date(formattedPaymentDate + 'T23:59:59.999Z')
-      },
+      paymentDate: formattedPaymentDate,
       status: { $ne: 'cancelled' }
     });
 
     return existingPayment;
   } else if (paymentType === 'advance') {
-    const advanceFrom = new Date(advanceFromDate);
-    const advanceTo = new Date(advanceToDate);
+    const advanceFromStr = formatToYYYYMMDD(advanceFromDate);
+    const advanceToStr = formatToYYYYMMDD(advanceToDate);
     
     const existingPayments = await EMIPayment.find({
       $or: [
@@ -137,16 +207,14 @@ const checkForDuplicatePayments = async (cleanedCustomerId, finalLoanId, finalLo
         { customerId: cleanedCustomerId, loanNumber: finalLoanNumber }
       ],
       paymentDate: {
-        $gte: advanceFrom,
-        $lte: advanceTo
+        $gte: advanceFromStr,
+        $lte: advanceToStr
       },
       status: { $ne: 'cancelled' }
     });
 
     if (existingPayments.length > 0) {
-      const conflictingDates = existingPayments.map(p => 
-        new Date(p.paymentDate).toISOString().split('T')[0]
-      );
+      const conflictingDates = existingPayments.map(p => p.paymentDate);
       
       return {
         isDuplicate: true,
@@ -193,6 +261,15 @@ export async function POST(request) {
       }, { status: 400 });
     }
 
+    // Validate payment date format
+    const paymentDateStr = formatToYYYYMMDD(paymentDate);
+    if (!paymentDateStr || !isValidYYYYMMDD(paymentDateStr)) {
+      return NextResponse.json({ 
+        success: false,
+        error: 'Invalid payment date format. Must be YYYY-MM-DD'
+      }, { status: 400 });
+    }
+
     // Handle advance payments validation
     if (paymentType === 'advance') {
       if (!advanceFromDate || !advanceToDate) {
@@ -202,7 +279,17 @@ export async function POST(request) {
         }, { status: 400 });
       }
 
-      if (new Date(advanceFromDate) > new Date(advanceToDate)) {
+      const advanceFromStr = formatToYYYYMMDD(advanceFromDate);
+      const advanceToStr = formatToYYYYMMDD(advanceToDate);
+      
+      if (!advanceFromStr || !advanceToStr) {
+        return NextResponse.json({ 
+          success: false,
+          error: 'Invalid advance date format. Must be YYYY-MM-DD'
+        }, { status: 400 });
+      }
+
+      if (advanceFromStr > advanceToStr) {
         return NextResponse.json({ 
           success: false,
           error: 'From date cannot be after to date for advance payments'
@@ -341,7 +428,7 @@ export async function POST(request) {
       if (paymentType === 'single') {
         return NextResponse.json({ 
           success: false,
-          error: `EMI payment for date ${new Date(paymentDate).toISOString().split('T')[0]} already exists. Please use a different date or edit the existing payment.`,
+          error: `EMI payment for date ${formatToDDMMYYYY(paymentDateStr)} already exists. Please use a different date or edit the existing payment.`,
           existingPayment: {
             id: duplicateCheck._id,
             amount: duplicateCheck.amount,
@@ -352,7 +439,7 @@ export async function POST(request) {
       } else if (paymentType === 'advance' && duplicateCheck.isDuplicate) {
         return NextResponse.json({ 
           success: false,
-          error: `Advance payment period conflicts with existing payments on dates: ${duplicateCheck.conflictingDates.join(', ')}`,
+          error: `Advance payment period conflicts with existing payments on dates: ${duplicateCheck.conflictingDates.map(d => formatToDDMMYYYY(d)).join(', ')}`,
           conflictingDates: duplicateCheck.conflictingDates,
           existingPayments: duplicateCheck.existingPayments.map(p => ({
             id: p._id,
@@ -366,40 +453,46 @@ export async function POST(request) {
 
     // Create EMI payment record(s)
     let payments = [];
-    const paymentDateObj = new Date(paymentDate);
 
     if (paymentType === 'advance') {
-      const advanceFrom = new Date(advanceFromDate);
-      const advanceTo = new Date(advanceToDate);
+      const advanceFromStr = formatToYYYYMMDD(advanceFromDate);
+      const advanceToStr = formatToYYYYMMDD(advanceToDate);
       
       let emiCount = 1;
-      let currentDate = new Date(advanceFrom);
+      let currentDateStr = advanceFromStr;
       
       if (loan) {
         switch(loan.loanType) {
           case 'Daily':
-            const dailyDiff = Math.ceil((advanceTo - advanceFrom) / (1000 * 60 * 60 * 24)) + 1;
+            // Calculate days between dates
+            const fromDate = parseDateString(advanceFromStr);
+            const toDate = parseDateString(advanceToStr);
+            const dailyDiff = Math.ceil((toDate - fromDate) / (1000 * 60 * 60 * 24)) + 1;
             emiCount = Math.max(dailyDiff, 1);
             break;
           case 'Weekly':
-            const weeklyDiff = Math.ceil((advanceTo - advanceFrom) / (1000 * 60 * 60 * 24 * 7)) + 1;
-            emiCount = Math.max(weeklyDiff, 1);
+            const weeklyFromDate = parseDateString(advanceFromStr);
+            const weeklyToDate = parseDateString(advanceToStr);
+            const weeksDiff = Math.ceil((weeklyToDate - weeklyFromDate) / (1000 * 60 * 60 * 24 * 7)) + 1;
+            emiCount = Math.max(weeksDiff, 1);
             break;
           case 'Monthly':
-            const monthDiff = (advanceTo.getFullYear() - advanceFrom.getFullYear()) * 12 + 
-                             (advanceTo.getMonth() - advanceFrom.getMonth()) + 1;
+            const monthFromDate = parseDateString(advanceFromStr);
+            const monthToDate = parseDateString(advanceToStr);
+            const monthDiff = (monthToDate.getFullYear() - monthFromDate.getFullYear()) * 12 + 
+                             (monthToDate.getMonth() - monthFromDate.getMonth()) + 1;
             emiCount = Math.max(monthDiff, 1);
             break;
           default:
             emiCount = parseInt(advanceEmiCount) || 1;
         }
       } else {
-        emiCount = parseInt(advanceEmiCount) || Math.ceil((advanceTo - advanceFrom) / (1000 * 60 * 60 * 24)) + 1;
+        emiCount = parseInt(advanceEmiCount) || 1;
       }
       
       console.log('📅 Advance Payment Calculation:', {
-        from: advanceFrom.toISOString(),
-        to: advanceTo.toISOString(),
+        from: advanceFromStr,
+        to: advanceToStr,
         loanType: loan?.loanType,
         calculatedEmiCount: emiCount,
         providedEmiCount: advanceEmiCount
@@ -408,24 +501,24 @@ export async function POST(request) {
       const singleEmiAmount = parseFloat(amount) / emiCount;
       let paymentsCreated = [];
       
-      currentDate = new Date(advanceFrom);
+      currentDateStr = advanceFromStr;
       
       for (let i = 0; i < emiCount; i++) {
         const paymentData = {
           customerId: cleanedCustomerId,
           customerName,
-          paymentDate: new Date(currentDate),
+          paymentDate: currentDateStr, // ✅ String date
           amount: singleEmiAmount,
           status: 'Advance',
           collectedBy,
           paymentMethod,
           transactionId: transactionId || null,
-          notes: `Advance EMI ${i + 1}/${emiCount} for period ${new Date(advanceFrom).toLocaleDateString()} to ${new Date(advanceTo).toLocaleDateString()}${notes ? ` - ${notes}` : ''}`,
+          notes: `Advance EMI ${i + 1}/${emiCount} for period ${formatToDDMMYYYY(advanceFromStr)} to ${formatToDDMMYYYY(advanceToStr)}${notes ? ` - ${notes}` : ''}`,
           isVerified: false,
           paymentType: 'advance',
           isAdvancePayment: true,
-          advanceFromDate: new Date(advanceFrom),
-          advanceToDate: new Date(advanceTo),
+          advanceFromDate: advanceFromStr, // ✅ String date
+          advanceToDate: advanceToStr, // ✅ String date
           advanceEmiCount: emiCount,
           advanceTotalAmount: parseFloat(amount)
         };
@@ -441,7 +534,7 @@ export async function POST(request) {
         await payment.save();
         payments.push(payment);
         paymentsCreated.push({
-          date: currentDate.toISOString().split('T')[0],
+          date: currentDateStr,
           amount: singleEmiAmount
         });
         
@@ -449,22 +542,25 @@ export async function POST(request) {
         if (loan) {
           switch(loan.loanType) {
             case 'Daily':
-              currentDate.setDate(currentDate.getDate() + 1);
+              currentDateStr = addDays(currentDateStr, 1);
               break;
             case 'Weekly':
-              currentDate.setDate(currentDate.getDate() + 7);
+              currentDateStr = addDays(currentDateStr, 7);
               break;
             case 'Monthly':
-              currentDate.setMonth(currentDate.getMonth() + 1);
+              const date = parseDateString(currentDateStr);
+              date.setMonth(date.getMonth() + 1);
+              currentDateStr = formatToYYYYMMDD(date);
               break;
             default:
-              currentDate.setDate(currentDate.getDate() + 1);
+              currentDateStr = addDays(currentDateStr, 1);
           }
         } else {
-          currentDate.setDate(currentDate.getDate() + 1);
+          currentDateStr = addDays(currentDateStr, 1);
         }
         
-        if (currentDate > new Date(advanceTo)) {
+        // Check if we've exceeded the end date
+        if (currentDateStr > advanceToStr) {
           break;
         }
       }
@@ -475,7 +571,7 @@ export async function POST(request) {
       const paymentData = {
         customerId: cleanedCustomerId,
         customerName,
-        paymentDate: paymentDateObj,
+        paymentDate: paymentDateStr, // ✅ String date
         amount: parseFloat(amount),
         status: status,
         collectedBy,
@@ -501,9 +597,12 @@ export async function POST(request) {
 
     // Update customer's last payment date and total paid
     if (payments.length > 0) {
+      const lastPaymentDate = payments[0].paymentDate; // Already a string
+      const totalPaymentAmount = payments.reduce((sum, p) => sum + p.amount, 0);
+      
       await Customer.findByIdAndUpdate(cleanedCustomerId, {
-        lastPaymentDate: payments[0].paymentDate,
-        $inc: { totalPaid: payments.reduce((sum, p) => sum + p.amount, 0) },
+        lastPaymentDate: lastPaymentDate,
+        $inc: { totalPaid: totalPaymentAmount },
         updatedAt: new Date()
       });
     }
@@ -538,17 +637,17 @@ export async function POST(request) {
           emiPaidCount: emiPaidCount,
           lastScheduledEmiDate: lastScheduledEmiDate,
           nextScheduledEmiDate: nextScheduledEmiDate,
-          lastPaymentDate: new Date(paymentDate)
+          lastPaymentDate: paymentDateStr
         });
 
-        // Update loan with CORRECT dates
+        // Update loan with CORRECT string dates
         const updateData = {
           emiPaidCount: emiPaidCount,
           totalPaidAmount: totalPaidAmount,
           remainingAmount: Math.max(loan.amount - totalPaidAmount, 0),
-          lastEmiDate: lastScheduledEmiDate,
-          nextEmiDate: nextScheduledEmiDate,
-          lastPaymentDate: new Date(paymentDate),
+          lastEmiDate: lastScheduledEmiDate, // ✅ String date
+          nextEmiDate: nextScheduledEmiDate, // ✅ String date
+          lastPaymentDate: paymentDateStr, // ✅ String date
           updatedAt: new Date()
         };
 
@@ -558,18 +657,16 @@ export async function POST(request) {
             emiHistory: {
               $each: payments.map(payment => ({
                 _id: payment._id,
-                paymentDate: toYYYYMMDD(payment.paymentDate), // ✅ Convert to string
+                paymentDate: payment.paymentDate, // ✅ Already string
                 amount: payment.amount,
                 status: payment.status,
                 collectedBy: payment.collectedBy,
                 notes: payment.notes,
-                createdAt: toYYYYMMDD(new Date()), // ✅ String
+                createdAt: getCurrentDateString(), // ✅ String date
                 isAdvance: payment.paymentType === 'advance',
                 paymentType: payment.paymentType,
-                advanceFromDate: payment.advanceFromDate ? 
-                  toYYYYMMDD(payment.advanceFromDate) : null,
-                advanceToDate: payment.advanceToDate ? 
-                  toYYYYMMDD(payment.advanceToDate) : null,
+                advanceFromDate: payment.advanceFromDate ? payment.advanceFromDate : null, // ✅ Already string
+                advanceToDate: payment.advanceToDate ? payment.advanceToDate : null, // ✅ Already string
                 advanceEmiCount: payment.advanceEmiCount
               }))
             }
@@ -582,7 +679,7 @@ export async function POST(request) {
           lastEmiDate: updateData.lastEmiDate,
           nextEmiDate: updateData.nextEmiDate,
           emiPaidCount: updateData.emiPaidCount,
-          emiHistoryDates: payments.map(p => toYYYYMMDD(p.paymentDate))
+          emiHistoryDates: payments.map(p => p.paymentDate)
         });
       } catch (loanUpdateError) {
         console.error('⚠️ Error updating loan statistics:', loanUpdateError);
@@ -594,7 +691,7 @@ export async function POST(request) {
     console.log('✅ EMI payment recorded successfully:', payments.length, 'payments created');
 
     const responseMessage = paymentType === 'advance' 
-      ? `Advance EMI payment of ₹${amount} recorded successfully as ${payments.length} payments for ${advanceEmiCount || 1} periods (${new Date(advanceFromDate).toLocaleDateString()} to ${new Date(advanceToDate).toLocaleDateString()})`
+      ? `Advance EMI payment of ₹${amount} recorded successfully as ${payments.length} payments for ${advanceEmiCount || 1} periods (${formatToDDMMYYYY(formatToYYYYMMDD(advanceFromDate))} to ${formatToDDMMYYYY(formatToYYYYMMDD(advanceToDate))})`
       : `EMI payment of ₹${amount} recorded successfully for ${customerName}${finalLoanId ? ` (Loan: ${finalLoanNumber})` : ' (Temporary - No Loan Record)'}`;
 
     return NextResponse.json({ 
@@ -605,15 +702,15 @@ export async function POST(request) {
         customerName: customerName,
         amount: amount,
         loanNumber: finalLoanNumber,
-        paymentDate: paymentDate,
+        paymentDate: paymentDateStr, // ✅ Return string date
         loanId: finalLoanId ? finalLoanId.toString() : null,
         collectedBy: collectedBy,
         hasLoanRecord: !!finalLoanId,
         paymentType: paymentType,
         isAdvance: paymentType === 'advance',
         paymentCount: payments.length,
-        advanceFromDate: advanceFromDate,
-        advanceToDate: advanceToDate,
+        advanceFromDate: advanceFromDate ? formatToYYYYMMDD(advanceFromDate) : null,
+        advanceToDate: advanceToDate ? formatToYYYYMMDD(advanceToDate) : null,
         advanceEmiCount: advanceEmiCount,
         advanceTotalAmount: amount
       }
@@ -670,16 +767,12 @@ export async function GET(request) {
       }
     }
 
-    // Filter by collection date
+    // Filter by collection date - now using string comparison
     if (date) {
-      const startDate = new Date(date);
-      const endDate = new Date(date);
-      endDate.setDate(endDate.getDate() + 1);
-      
-      query.paymentDate = {
-        $gte: startDate,
-        $lt: endDate
-      };
+      const dateStr = formatToYYYYMMDD(date);
+      if (dateStr) {
+        query.paymentDate = dateStr;
+      }
     }
 
     // Filter by collector
@@ -704,10 +797,8 @@ export async function GET(request) {
       .limit(limit);
 
     // Get today's total collection - INCLUDE 'Advance' status
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const today = getCurrentDateString();
+    const tomorrow = addDays(today, 1);
 
     const todayStats = await EMIPayment.aggregate([
       {
@@ -716,7 +807,7 @@ export async function GET(request) {
             $gte: today,
             $lt: tomorrow
           },
-          status: { $in: ['Paid', 'Partial', 'Advance'] } // INCLUDED 'Advance'
+          status: { $in: ['Paid', 'Partial', 'Advance'] }
         }
       },
       {
@@ -736,7 +827,7 @@ export async function GET(request) {
             $gte: today,
             $lt: tomorrow
           },
-          status: { $in: ['Paid', 'Partial', 'Advance'] } // INCLUDED 'Advance'
+          status: { $in: ['Paid', 'Partial', 'Advance'] }
         }
       },
       {
@@ -814,6 +905,15 @@ export async function PUT(request) {
       );
     }
 
+    // Validate payment date format
+    const paymentDateStr = formatToYYYYMMDD(paymentDate);
+    if (!paymentDateStr || !isValidYYYYMMDD(paymentDateStr)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid payment date format. Must be YYYY-MM-DD' },
+        { status: 400 }
+      );
+    }
+
     // Clean payment ID
     const cleanedPaymentId = cleanId(paymentId);
     if (!mongoose.Types.ObjectId.isValid(cleanedPaymentId)) {
@@ -841,7 +941,7 @@ export async function PUT(request) {
 
     // Update payment fields
     payment.amount = parseFloat(amount);
-    payment.paymentDate = new Date(paymentDate);
+    payment.paymentDate = paymentDateStr; // ✅ String date
     payment.status = status || payment.status;
     payment.notes = notes || payment.notes;
     payment.collectedBy = collectedBy || payment.collectedBy;
@@ -849,8 +949,8 @@ export async function PUT(request) {
 
     // Add edit history note
     const editNote = `Payment edited: Amount changed from ₹${originalAmount} to ₹${amount}`;
-    if (originalPaymentDate.toISOString() !== new Date(paymentDate).toISOString()) {
-      payment.notes = `${editNote}, Date changed from ${originalPaymentDate.toLocaleDateString()} to ${new Date(paymentDate).toLocaleDateString()}. ${payment.notes || ''}`;
+    if (originalPaymentDate !== paymentDateStr) {
+      payment.notes = `${editNote}, Date changed from ${formatToDDMMYYYY(originalPaymentDate)} to ${formatToDDMMYYYY(paymentDateStr)}. ${payment.notes || ''}`;
     } else {
       payment.notes = `${editNote}. ${payment.notes || ''}`;
     }

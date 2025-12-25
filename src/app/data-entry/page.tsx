@@ -34,6 +34,9 @@ import type {
   RenewLoanData
 } from '@/src/app/data-entry/types/dataEntry';
 
+// Import cache clearing function
+import { clearAllCustomerCache } from '@/src/app/data-entry/hooks/useCustomers';
+
 // Loading fallback component
 const SectionLoader = () => (
   <div className="flex justify-center items-center h-64">
@@ -444,6 +447,11 @@ const closeModal = useCallback((modalName: string) => {
   
 const handleModalSuccess = useCallback((keepCustomerDetailsOpen = false) => {
   console.log('✅ Modal action successful, refreshing data...');
+  
+  // 🚨 CRITICAL FIX: Clear all customer cache to force fresh data
+  clearAllCustomerCache();
+  
+  // Refresh data
   handleRefresh(); // This should already exist
   
   // Only close all modals if we're not keeping customer details open
@@ -466,7 +474,8 @@ const handleModalSuccess = useCallback((keepCustomerDetailsOpen = false) => {
   if (customerDetails) {
     const fetchUpdatedCustomer = async () => {
       try {
-        const response = await fetch(`/api/data-entry/customers/${customerDetails._id}`);
+        // Use cache-busting URL to ensure fresh data
+        const response = await fetch(`/api/data-entry/customers/${customerDetails._id}?t=${Date.now()}`);
         const data = await response.json();
         if (data.success) {
           setCustomerDetails(data.data);
@@ -522,6 +531,11 @@ const handleConfirmDeleteLoan = useCallback(async () => {
       console.log('✅ Loan deletion request submitted successfully');
       alert('Loan deletion request submitted successfully! Waiting for admin approval.');
       
+      // 🚨 Clear cache for this customer
+      if (customerDetails) {
+        clearAllCustomerCache();
+      }
+      
       // Only close delete confirmation modal, keep customer details open
       setShowDeleteConfirmation(false);
       setDeleteLoanData(null);
@@ -533,7 +547,7 @@ const handleConfirmDeleteLoan = useCallback(async () => {
       if (customerDetails) {
         const fetchUpdatedCustomer = async () => {
           try {
-            const response = await fetch(`/api/data-entry/customers/${customerDetails._id}`);
+            const response = await fetch(`/api/data-entry/customers/${customerDetails._id}?t=${Date.now()}`);
             const data = await response.json();
             if (data.success) {
               setCustomerDetails(data.data);
