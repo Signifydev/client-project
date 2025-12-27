@@ -1,9 +1,8 @@
-// app/api/data-entry/collection/route.js - UPDATED VERSION
-
+// app/api/data-entry/collection/route.js - COMPLETELY FIXED VERSION
 import { NextResponse } from 'next/server';
 import Customer from '@/lib/models/Customer';
 import EMIPayment from '@/lib/models/EMIPayment';
-import Loan from '@/lib/models/Loan'; // Import Loan model
+import Loan from '@/lib/models/Loan';
 import { connectDB } from '@/lib/db';
 
 export async function GET(request) {
@@ -21,45 +20,49 @@ export async function GET(request) {
       );
     }
 
-    console.log('📅 Fetching collection data for date:', date, 'office:', officeCategory);
+    console.log('📅 Fetching collection data for:', { date, officeCategory });
 
-    // Build base query for date range
-    const startDate = new Date(date);
-    startDate.setHours(0, 0, 0, 0);
-    
-    const endDate = new Date(date);
-    endDate.setHours(23, 59, 59, 999);
-
-    // First, let's get all customers for the specified office
-    const customerQuery = {};
-    if (officeCategory && officeCategory !== 'all') {
-      customerQuery.officeCategory = officeCategory;
-    }
-    
-    const customers = await Customer.find(customerQuery)
-      .select('_id name customerNumber phone businessName area officeCategory')
-      .lean();
-    
-    console.log(`👥 Found ${customers.length} customers for office: ${officeCategory || 'all'}`);
-
-    // Then get payments for the date
+    // ✅ FIX 1: Query using string date (YYYY-MM-DD) - MATCHES DATABASE FORMAT
     const paymentQuery = {
-      paymentDate: {
-        $gte: startDate,
-        $lte: endDate
-      },
+      paymentDate: date, // Direct string match, NOT Date object
       status: { $in: ['Paid', 'Partial', 'Advance'] }
     };
+
+    // Get payments for the exact date string
+    console.log('🔍 Payment query:', paymentQuery);
     
     const emiPayments = await EMIPayment.find(paymentQuery)
       .populate('customerId', 'name customerNumber officeCategory')
       .populate('loanId', 'loanNumber emiAmount loanType')
-      .sort({ paymentDate: -1 })
+      .sort({ createdAt: -1 })
       .lean();
 
     console.log(`💰 Found ${emiPayments.length} EMI payments for ${date}`);
 
-    // Process payments and group by customer
+    // If no payments found, return empty but success
+    if (emiPayments.length === 0) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          date: date,
+          payments: [],
+          customers: [],
+          statistics: {
+            todaysCollection: 0,
+            numberOfCustomersPaid: 0,
+            totalCollections: 0
+          },
+          summary: {
+            totalCollection: 0,
+            numberOfCustomersPaid: 0,
+            totalTransactions: 0
+          }
+        },
+        message: 'No payments found for this date'
+      });
+    }
+
+    // Process payments - SIMPLIFIED LOGIC
     const customerPaymentsMap = new Map();
     let totalCollection = 0;
     let paymentCount = 0;
@@ -67,24 +70,27 @@ export async function GET(request) {
     for (const payment of emiPayments) {
       const customerId = payment.customerId?._id?.toString();
       
-      if (!customerId) continue;
+      if (!customerId) {
+        console.warn('⚠️ Payment missing customerId:', payment._id);
+        continue;
+      }
       
-      // Skip if payment customer is not in our filtered customers
-      if (officeCategory && officeCategory !== 'all') {
-        const customer = customers.find(c => c._id.toString() === customerId);
-        if (!customer) continue;
+      // ✅ FIX 2: Handle office filtering correctly
+      const customerOffice = payment.customerId?.officeCategory;
+      if (officeCategory && officeCategory !== 'all' && customerOffice !== officeCategory) {
+        console.log(`⏩ Skipping payment - office mismatch: ${customerOffice} vs ${officeCategory}`);
+        continue;
       }
 
       paymentCount++;
       totalCollection += payment.amount || 0;
 
       if (!customerPaymentsMap.has(customerId)) {
-        const customer = customers.find(c => c._id.toString() === customerId) || payment.customerId;
         customerPaymentsMap.set(customerId, {
           customerId: customerId,
-          customerNumber: customer.customerNumber || 'N/A',
-          customerName: customer.name || 'N/A',
-          officeCategory: customer.officeCategory || 'Office 1',
+          customerNumber: payment.customerId?.customerNumber || payment.customerNumber || 'N/A',
+          customerName: payment.customerId?.name || payment.customerName || 'N/A',
+          officeCategory: customerOffice || 'Office 1',
           totalCollected: 0,
           payments: []
         });
@@ -93,6 +99,7 @@ export async function GET(request) {
       const customerData = customerPaymentsMap.get(customerId);
       customerData.totalCollected += payment.amount || 0;
       
+      // ✅ FIX 3: Use correct field names that frontend expects
       const paymentData = {
         _id: payment._id.toString(),
         customerId: customerId,
@@ -105,14 +112,15 @@ export async function GET(request) {
         paymentDate: payment.paymentDate,
         paymentMethod: payment.paymentMethod || 'Cash',
         officeCategory: customerData.officeCategory,
-        operatorName: payment.collectedBy || 'N/A',
+        operatorName: payment.collectedBy || 'N/A', // ✅ This field is EXPECTED by frontend
+        collectedBy: payment.collectedBy || 'N/A', // ✅ Also include original for consistency
         status: payment.status
       };
       
       customerData.payments.push(paymentData);
     }
 
-    // Convert map to array
+    // Convert map to arrays
     const customerPayments = Array.from(customerPaymentsMap.values());
     const numberOfCustomersPaid = customerPayments.length;
 
@@ -121,8 +129,8 @@ export async function GET(request) {
 
     const collectionData = {
       date: date,
-      payments: allPayments, // Direct payments array
-      customers: customerPayments, // Grouped by customer
+      payments: allPayments, // ✅ Frontend expects this at root level
+      customers: customerPayments, // ✅ Also include grouped version
       statistics: {
         todaysCollection: totalCollection,
         numberOfCustomersPaid: numberOfCustomersPaid,
@@ -135,12 +143,16 @@ export async function GET(request) {
       }
     };
 
-    console.log('✅ Final collection data summary:', {
+    console.log('✅ Collection data prepared:', {
       date,
       totalCollection,
       numberOfCustomersPaid,
-      paymentCount,
-      allPaymentsCount: allPayments.length
+      totalPayments: allPayments.length,
+      samplePayment: allPayments.length > 0 ? {
+        customerName: allPayments[0].customerName,
+        amount: allPayments[0].paidAmount,
+        operator: allPayments[0].operatorName
+      } : 'No payments'
     });
 
     return NextResponse.json({
@@ -149,12 +161,13 @@ export async function GET(request) {
     });
 
   } catch (error) {
-    console.error('❌ Error fetching collection data:', error);
+    console.error('❌ Error in collection API:', error);
     return NextResponse.json(
       { 
         success: false, 
-        error: 'Failed to fetch collection data: ' + error.message,
-        message: 'Please check if EMI payments exist for this date'
+        error: 'Failed to fetch collection data',
+        message: error.message,
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
       },
       { status: 500 }
     );

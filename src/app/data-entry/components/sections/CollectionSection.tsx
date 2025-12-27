@@ -86,74 +86,130 @@ export default function CollectionSection({
       console.log('📊 Fetching collection data:', { 
         url, 
         selectedDate, 
-        currentUserOffice
+        currentUserOffice,
+        currentOperator: currentOperator.name
       });
       
       const response = await fetch(url);
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        console.error('❌ API Response not OK:', { status: response.status, errorText });
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText.substring(0, 100)}`);
       }
       
       const result: CollectionApiResponse = await response.json();
-      console.log('📥 API Response received:', result);
+      console.log('📥 API Response received:', { 
+        success: result.success, 
+        hasData: !!result.data,
+        dataKeys: result.data ? Object.keys(result.data) : []
+      });
       
       if (result.success && result.data) {
-        // Handle different response structures from API
+        // ✅ FIXED DATA MAPPING: Handle both response structures
         let paymentsData: PaymentData[] = [];
         
-        // Check if data has payments array
+        // Check if data has direct payments array (PREFERRED)
         if (result.data.payments && Array.isArray(result.data.payments)) {
-          paymentsData = result.data.payments;
-          console.log(`✅ Using payments array with ${paymentsData.length} records`);
+          console.log(`✅ Using direct payments array with ${result.data.payments.length} records`);
+          
+          paymentsData = result.data.payments.map((payment: any) => ({
+            _id: payment._id?.toString() || `payment_${Date.now()}_${Math.random()}`,
+            customerId: payment.customerId?.toString() || payment.customerId || 'unknown',
+            customerNumber: payment.customerNumber || payment.customerId?.customerNumber || 'N/A',
+            customerName: payment.customerName || payment.customerId?.name || 'Unknown Customer',
+            loanId: payment.loanId?.toString() || payment.loanId || 'N/A',
+            loanNumber: payment.loanNumber || payment.loanId?.loanNumber || 'N/A',
+            emiAmount: payment.emiAmount || payment.loanId?.emiAmount || 0,
+            paidAmount: payment.paidAmount || payment.amount || 0,
+            paymentDate: payment.paymentDate || selectedDate,
+            paymentMethod: payment.paymentMethod || 'Cash',
+            officeCategory: payment.officeCategory || payment.customerId?.officeCategory || currentUserOffice,
+            // ✅ CRITICAL FIX: Handle both operatorName and collectedBy fields
+            operatorName: payment.operatorName || payment.collectedBy || currentOperator.name,
+            status: payment.status || 'Paid'
+          }));
+          
+          console.log(`💰 Mapped ${paymentsData.length} payments from direct array`);
         } 
-        // Check if data has customers array
+        // Check if data has customers array (ALTERNATIVE STRUCTURE)
         else if (result.data.customers && Array.isArray(result.data.customers)) {
-          // Flatten customer loans into payments array
+          console.log(`📊 Using customers array with ${result.data.customers.length} customers`);
+          
           paymentsData = result.data.customers.flatMap((customer: any) => {
             if (customer.payments && Array.isArray(customer.payments)) {
               return customer.payments.map((payment: any) => ({
-                _id: payment._id || `${customer.customerId}_${Date.now()}`,
-                customerId: customer.customerId,
-                customerNumber: customer.customerNumber,
-                customerName: customer.customerName,
-                loanId: payment.loanId || 'N/A',
+                _id: payment._id?.toString() || `payment_${customer.customerId}_${Date.now()}`,
+                customerId: customer.customerId?.toString() || customer.customerId || 'unknown',
+                customerNumber: customer.customerNumber || 'N/A',
+                customerName: customer.customerName || 'Unknown Customer',
+                loanId: payment.loanId?.toString() || payment.loanId || 'N/A',
                 loanNumber: payment.loanNumber || 'N/A',
                 emiAmount: payment.emiAmount || 0,
-                paidAmount: payment.paidAmount || 0,
+                paidAmount: payment.paidAmount || payment.amount || 0,
                 paymentDate: payment.paymentDate || selectedDate,
                 paymentMethod: payment.paymentMethod || 'Cash',
                 officeCategory: customer.officeCategory || currentUserOffice,
-                operatorName: payment.operatorName || currentOperator.name,
+                // ✅ CRITICAL FIX: Handle both operatorName and collectedBy fields
+                operatorName: payment.operatorName || payment.collectedBy || currentOperator.name,
                 status: payment.status || 'Paid'
               }));
             }
             return [];
           });
-          console.log(`✅ Flattened ${result.data.customers.length} customers into ${paymentsData.length} payments`);
+          
+          console.log(`📦 Flattened ${result.data.customers.length} customers into ${paymentsData.length} payments`);
+        }
+        // If no payments found but API returned success
+        else if (result.data.statistics) {
+          console.log('ℹ️ No payments array found, using statistics only');
+          paymentsData = [];
         }
         
-        console.log(`💰 Total payment records: ${paymentsData.length}`);
+        console.log(`💰 Total payment records after mapping: ${paymentsData.length}`);
+        
+        if (paymentsData.length > 0) {
+          console.log('📄 Sample payment data:', {
+            customerName: paymentsData[0].customerName,
+            amount: paymentsData[0].paidAmount,
+            operator: paymentsData[0].operatorName,
+            loanNumber: paymentsData[0].loanNumber
+          });
+        }
         
         setPayments(paymentsData);
         
-        // Calculate statistics
-        const todaysCollection = paymentsData.reduce((sum, payment) => 
-          sum + (payment.paidAmount || 0), 0
-        );
+        // Calculate statistics - use API statistics if available, otherwise calculate
+        let todaysCollection = 0;
+        let numberOfCustomersPaid = 0;
         
-        const uniqueCustomerIds = [...new Set(paymentsData.map(p => p.customerId))];
+        if (result.data.statistics) {
+          // Use API-provided statistics
+          todaysCollection = result.data.statistics.todaysCollection || 0;
+          numberOfCustomersPaid = result.data.statistics.numberOfCustomersPaid || 0;
+          console.log('📈 Using API statistics:', result.data.statistics);
+        } else {
+          // Calculate from payments data
+          todaysCollection = paymentsData.reduce((sum, payment) => 
+            sum + (payment.paidAmount || 0), 0
+          );
+          
+          const uniqueCustomerIds = [...new Set(paymentsData.map(p => p.customerId))];
+          numberOfCustomersPaid = uniqueCustomerIds.length;
+          console.log('🧮 Calculated statistics from payments:', { todaysCollection, numberOfCustomersPaid });
+        }
         
         setStats({
           todaysCollection: todaysCollection,
-          numberOfCustomersPaid: uniqueCustomerIds.length,
+          numberOfCustomersPaid: numberOfCustomersPaid,
           totalCollections: paymentsData.length
         });
         
       } else {
         const errorMsg = result.error || 'Failed to fetch collection data';
-        console.error('❌ API Error:', errorMsg);
-        setError(errorMsg);
+        const message = result.message || 'No data returned from server';
+        console.error('❌ API Error:', { errorMsg, message });
+        setError(`${errorMsg} - ${message}`);
         setPayments([]);
         setStats({
           todaysCollection: 0,
@@ -225,6 +281,11 @@ export default function CollectionSection({
     );
   };
 
+  // Format currency for display
+  const formatCurrency = (amount: number) => {
+    return `₹${amount.toLocaleString('en-IN')}`;
+  };
+
   if (loading) {
     return <LoadingSpinner />;
   }
@@ -241,7 +302,7 @@ export default function CollectionSection({
           
           <button
             onClick={() => fetchPaymentData()}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors duration-200"
           >
             <span>🔄</span>
             Refresh Data
@@ -286,6 +347,11 @@ export default function CollectionSection({
             <p className="text-lg font-semibold text-blue-700">
               Showing collections for: <span className="font-bold">{formatDisplayDate(selectedDate)}</span>
             </p>
+            {currentUserOffice && currentUserOffice !== 'all' && (
+              <p className="text-sm text-gray-600 mt-1">
+                Filtered by office: <span className="font-medium">{currentUserOffice}</span>
+              </p>
+            )}
           </div>
         </div>
 
@@ -299,7 +365,7 @@ export default function CollectionSection({
               <div>
                 <h3 className="text-sm font-medium text-blue-800 mb-2">Today's Collection</h3>
                 <p className="text-3xl font-bold text-blue-900">
-                  ₹{stats.todaysCollection.toLocaleString('en-IN')}
+                  {formatCurrency(stats.todaysCollection)}
                 </p>
                 <p className="text-sm text-blue-700 mt-2">
                   Total EMI collected on {selectedDate}
@@ -357,6 +423,11 @@ export default function CollectionSection({
             <p className="text-sm text-gray-600 mt-1">
               Showing {payments.length} payment{payments.length !== 1 ? 's' : ''} from {Object.keys(groupedPayments).length} customer{Object.keys(groupedPayments).length !== 1 ? 's' : ''}
             </p>
+            {stats.todaysCollection > 0 && (
+              <p className="text-sm font-medium text-green-700 mt-1">
+                Total Collection: {formatCurrency(stats.todaysCollection)}
+              </p>
+            )}
           </div>
 
           {payments.length === 0 ? (
@@ -408,6 +479,9 @@ export default function CollectionSection({
                               <div className="text-xs text-gray-500 mt-1">
                                 Customer ID: {customerId.substring(0, 8)}...
                               </div>
+                              <div className="text-xs text-green-600 font-medium mt-1">
+                                Total Paid: {formatCurrency(customerTotal)}
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -416,25 +490,30 @@ export default function CollectionSection({
                         <td className="px-6 py-5">
                           <div className="space-y-2">
                             {customerPayments.map((payment, index) => (
-                              <div key={payment._id || index} className="flex justify-between items-center">
+                              <div key={payment._id || index} className="flex justify-between items-center border-b border-gray-100 pb-2 last:border-0 last:pb-0">
                                 <div>
                                   <span className="text-sm font-medium text-gray-900">
                                     Loan: {payment.loanNumber || 'N/A'}
                                   </span>
                                   <span className="text-xs text-gray-500 ml-2">
-                                    EMI: ₹{payment.emiAmount?.toLocaleString('en-IN') || '0'}
+                                    EMI: {formatCurrency(payment.emiAmount || 0)}
                                   </span>
                                 </div>
-                                <div className="text-sm font-bold text-green-600">
-                                  ₹{(payment.paidAmount || 0).toLocaleString('en-IN')}
+                                <div className="text-right">
+                                  <div className="text-sm font-bold text-green-600">
+                                    {formatCurrency(payment.paidAmount || 0)}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {payment.paymentMethod || 'Cash'}
+                                  </div>
                                 </div>
                               </div>
                             ))}
-                            <div className="pt-2 border-t border-gray-200">
+                            <div className="pt-2 border-t border-gray-200 mt-2">
                               <div className="flex justify-between items-center">
                                 <span className="text-sm font-semibold text-gray-800">Customer Total:</span>
                                 <span className="text-lg font-bold text-blue-700">
-                                  ₹{customerTotal.toLocaleString('en-IN')}
+                                  {formatCurrency(customerTotal)}
                                 </span>
                               </div>
                             </div>
@@ -456,6 +535,17 @@ export default function CollectionSection({
                             </div>
                             <div className="text-xs text-gray-500">
                               <span className="font-medium">Date:</span> {new Date(firstPayment.paymentDate).toLocaleDateString()}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              <span className="font-medium">Status:</span> 
+                              <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                                firstPayment.status === 'Paid' ? 'bg-green-100 text-green-800' :
+                                firstPayment.status === 'Partial' ? 'bg-yellow-100 text-yellow-800' :
+                                firstPayment.status === 'Advance' ? 'bg-blue-100 text-blue-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {firstPayment.status || 'Paid'}
+                              </span>
                             </div>
                           </div>
                         </td>
@@ -497,11 +587,24 @@ export default function CollectionSection({
                 Showing {Object.keys(groupedPayments).length} customer{Object.keys(groupedPayments).length !== 1 ? 's' : ''} • {payments.length} transaction{payments.length !== 1 ? 's' : ''}
               </div>
               <div className="text-lg font-bold text-blue-700">
-                Daily Total: ₹{stats.todaysCollection.toLocaleString('en-IN')}
+                Daily Total: {formatCurrency(stats.todaysCollection)}
               </div>
+            </div>
+            <div className="text-xs text-gray-500 mt-2 text-center">
+              Last updated: {new Date().toLocaleTimeString()} • Operator: {currentOperator.name}
             </div>
           </div>
         </div>
+
+        {/* Debug Info (Remove in production) */}
+        {process.env.NODE_ENV === 'development' && payments.length > 0 && (
+          <div className="mt-8 p-4 bg-gray-900 text-gray-100 rounded-lg text-xs font-mono">
+            <div className="font-bold mb-2">🔍 Debug Info:</div>
+            <div>Total Payments: {payments.length}</div>
+            <div>First Payment Sample: {JSON.stringify(payments[0], null, 2)}</div>
+            <div>API Stats: {JSON.stringify(stats, null, 2)}</div>
+          </div>
+        )}
       </div>
     </div>
   );
