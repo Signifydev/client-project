@@ -121,28 +121,46 @@ const getEMITypeBadgeClass = (loan: Loan): string => {
   return 'bg-green-100 text-green-800 border-green-300';
 };
 
-// Helper function to calculate total loan amount for a loan
+// ============================================================================
+// FIXED: Helper function to calculate total loan amount for a loan
+// ============================================================================
 const getLoanTotalAmount = (loan: Loan): number => {
   // First try to use loanAmount from loan object
   if (loan.loanAmount) {
     return loan.loanAmount;
   }
   
-  // Calculate based on loan type and EMI type
-  if (loan.loanType === 'Daily') {
-    return (loan.emiAmount || 0) * (loan.loanDays || 0);
-  } else if (loan.loanType === 'Weekly' || loan.loanType === 'Monthly') {
-    if (loan.emiType === 'custom' && loan.customEmiAmount) {
-      const fixedPeriods = (loan.loanDays || 0) - 1;
-      const fixedAmount = (loan.emiAmount || 0) * fixedPeriods;
-      return fixedAmount + loan.customEmiAmount;
+  // For custom EMI loans - FIXED CALCULATION
+  if (loan.emiType === 'custom' && loan.customEmiAmount !== undefined && loan.customEmiAmount !== null) {
+    const totalPeriods = loan.loanDays || loan.totalEmiCount || 0;
+    const regularEmiCount = Math.max(0, totalPeriods - 1);
+    const regularAmount = (loan.emiAmount || 0) * regularEmiCount;
+    const totalAmount = regularAmount + (loan.customEmiAmount || 0);
+    return totalAmount;
+  }
+  
+  // For fixed EMI loans
+  const totalPeriods = loan.loanDays || loan.totalEmiCount || 0;
+  return (loan.emiAmount || 0) * totalPeriods;
+};
+
+// ============================================================================
+// NEW: Function to get EMI amount display text correctly
+// ============================================================================
+const getEMIAmountDisplay = (loan: Loan): string => {
+  if (loan.emiType === 'custom' && loan.customEmiAmount !== undefined && loan.customEmiAmount !== null) {
+    const totalPeriods = loan.loanDays || loan.totalEmiCount || 0;
+    const regularPeriods = Math.max(0, totalPeriods - 1);
+    
+    if (regularPeriods > 0) {
+      return `₹${(loan.emiAmount || 0).toLocaleString('en-IN')} × ${regularPeriods} weeks + ₹${loan.customEmiAmount.toLocaleString('en-IN')} (final)`;
     } else {
-      return (loan.emiAmount || 0) * (loan.loanDays || 0);
+      return `₹${loan.customEmiAmount.toLocaleString('en-IN')} (one-time)`;
     }
   }
   
-  // Fallback to amount field
-  return loan.amount || 0;
+  // For fixed EMI
+  return `₹${(loan.emiAmount || 0).toLocaleString('en-IN')}`;
 };
 
 // ============================================================================
@@ -466,21 +484,6 @@ export default function CustomerDetailsModal({
                   <div className="px-8 py-4 border-b border-gray-200 flex justify-between items-center">
                     <h4 className="text-lg font-bold text-gray-900">Loan Information</h4>
                     <div className="flex space-x-3">
-                      {/* NEW: EMI Transactions Button */}
-                      <button
-                        onClick={handleEMITransactionsClick}
-                        disabled={loadingTransactions}
-                        className="px-5 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium transition-colors disabled:bg-purple-400 disabled:cursor-not-allowed flex items-center"
-                      >
-                        {loadingTransactions ? (
-                          <>
-                            <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></span>
-                            Loading...
-                          </>
-                        ) : (
-                          'EMI Transactions'
-                        )}
-                      </button>
                       {onAddLoan && (
                         <button
                           onClick={onAddLoan}
@@ -512,12 +515,26 @@ export default function CustomerDetailsModal({
                           // Get EMI type display
                           const emiTypeDisplay = getEMITypeDisplay(loan);
                           const emiTypeBadgeClass = getEMITypeBadgeClass(loan);
+                          const emiAmountDisplay = getEMIAmountDisplay(loan);
                           
                           // Format dates
                           const formattedNextEmiDate = formatLoanDate(loan.nextEmiDate);
                           const formattedLastPaymentDate = loan.lastEmiDate ? formatLoanDate(loan.lastEmiDate) : 'N/A';
                           const formattedEmiStartDate = formatLoanDate(loan.emiStartDate);
                           const formattedDateApplied = formatLoanDate(loan.dateApplied);
+                          
+                          // Debug log for custom EMI loans
+                          if (loan.emiType === 'custom') {
+                            console.log('🔍 Custom EMI Loan Calculation:', {
+                              loanNumber: loan.loanNumber,
+                              emiAmount: loan.emiAmount,
+                              customEmiAmount: loan.customEmiAmount,
+                              loanDays: loan.loanDays,
+                              totalEmiCount: loan.totalEmiCount,
+                              calculatedTotal: totalLoanAmount,
+                              emiAmountDisplay: emiAmountDisplay
+                            });
+                          }
                           
                           return (
                             <div 
@@ -606,16 +623,16 @@ export default function CustomerDetailsModal({
                                 <div className="flex justify-between items-center text-xs">
                                   <div className="text-gray-600">
                                     <span>Paid: </span>
-                                    <span className="font-semibold">₹{Math.round(totalLoanAmount * (completion.completionPercentage/100))}</span>
+                                    <span className="font-semibold">₹{Math.round(totalLoanAmount * (completion.completionPercentage/100)).toLocaleString()}</span>
                                   </div>
                                   <div className="text-gray-600">
                                     <span>Remaining: </span>
-                                    <span className="font-semibold">₹{remainingAmount} of ₹{totalLoanAmount.toLocaleString()}</span>
+                                    <span className="font-semibold">₹{remainingAmount.toLocaleString()} of ₹{totalLoanAmount.toLocaleString()}</span>
                                   </div>
                                 </div>
                               </div>
 
-                              {/* Loan Stats Grid */}
+                              {/* Loan Stats Grid - FIXED EMI Amount Display */}
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                                 <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
                                   <p className="text-xs font-medium text-gray-500 mb-1">Total Loan Amount</p>
@@ -624,10 +641,17 @@ export default function CustomerDetailsModal({
                                   </p>
                                 </div>
                                 <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
-                                  <p className="text-xs font-medium text-gray-500 mb-1">EMI Amount</p>
-                                  <p className="font-semibold text-gray-900 text-sm">
-                                    ₹{(loan.emiAmount || 0).toLocaleString()}
+                                  <p className="text-xs font-medium text-gray-500 mb-1">
+                                    {loan.emiType === 'custom' ? 'EMI Structure' : 'EMI Amount'}
                                   </p>
+                                  <p className="font-semibold text-gray-900 text-sm">
+                                    {emiAmountDisplay}
+                                  </p>
+                                  {loan.emiType === 'custom' && (
+                                    <p className="text-xs text-gray-500 mt-1">
+                                      Total: ₹{totalLoanAmount.toLocaleString()}
+                                    </p>
+                                  )}
                                 </div>
                                 <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
                                   <p className="text-xs font-medium text-gray-500 mb-1">No. of {loan.loanType === 'Daily' ? 'Days' : loan.loanType === 'Weekly' ? 'Weeks' : 'Months'}</p>
@@ -710,7 +734,7 @@ export default function CustomerDetailsModal({
                       View EMI Calendar
                     </button>
                   )}
-                  {/* NEW: EMI Transactions Button in footer */}
+                  {/* EMI Transactions Button - ONLY in footer as requested */}
                   <button
                     onClick={handleEMITransactionsClick}
                     disabled={loadingTransactions}
