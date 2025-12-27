@@ -232,7 +232,7 @@ export async function POST(request) {
     await connectDB();
     const data = await request.json();
     
-    console.log('🟡 EMI Payment data received:', data);
+    console.log('🟡 EMI Payment data received:', JSON.stringify(data, null, 2));
     
     const {
       customerId,
@@ -495,10 +495,22 @@ export async function POST(request) {
         to: advanceToStr,
         loanType: loan?.loanType,
         calculatedEmiCount: emiCount,
-        providedEmiCount: advanceEmiCount
+        providedEmiCount: advanceEmiCount,
+        amountReceived: amount, // Should be TOTAL amount (e.g., 1500)
+        loanEmiAmount: loan?.emiAmount, // Should be single EMI (e.g., 300)
+        advanceTotalAmount: advanceTotalAmount // Additional check
       });
 
-      const singleEmiAmount = parseFloat(amount) / emiCount;
+      // ✅ CRITICAL FIX: Use loan's EMI amount instead of dividing received amount
+      const singleEmiAmount = loan?.emiAmount || (parseFloat(amount) / emiCount);
+      
+      console.log('🔍 Single EMI Amount Calculation:', {
+        usingLoanEMI: !!loan?.emiAmount,
+        loanEMI: loan?.emiAmount,
+        calculatedEMI: parseFloat(amount) / emiCount,
+        finalSingleEmiAmount: singleEmiAmount
+      });
+      
       let paymentsCreated = [];
       
       currentDateStr = advanceFromStr;
@@ -507,8 +519,8 @@ export async function POST(request) {
         const paymentData = {
           customerId: cleanedCustomerId,
           customerName,
-          paymentDate: currentDateStr, // ✅ String date
-          amount: singleEmiAmount,
+          paymentDate: currentDateStr,
+          amount: singleEmiAmount, // ✅ FIXED: Full EMI amount (e.g., 300)
           status: 'Advance',
           collectedBy,
           paymentMethod,
@@ -517,10 +529,10 @@ export async function POST(request) {
           isVerified: false,
           paymentType: 'advance',
           isAdvancePayment: true,
-          advanceFromDate: advanceFromStr, // ✅ String date
-          advanceToDate: advanceToStr, // ✅ String date
+          advanceFromDate: advanceFromStr,
+          advanceToDate: advanceToStr,
           advanceEmiCount: emiCount,
-          advanceTotalAmount: parseFloat(amount)
+          advanceTotalAmount: parseFloat(amount) // Store the TOTAL amount received
         };
 
         if (finalLoanId) {
@@ -535,7 +547,8 @@ export async function POST(request) {
         payments.push(payment);
         paymentsCreated.push({
           date: currentDateStr,
-          amount: singleEmiAmount
+          amount: singleEmiAmount,
+          paymentId: payment._id
         });
         
         // Move to next EMI date based on loan type
@@ -571,7 +584,7 @@ export async function POST(request) {
       const paymentData = {
         customerId: cleanedCustomerId,
         customerName,
-        paymentDate: paymentDateStr, // ✅ String date
+        paymentDate: paymentDateStr,
         amount: parseFloat(amount),
         status: status,
         collectedBy,
@@ -597,7 +610,7 @@ export async function POST(request) {
 
     // Update customer's last payment date and total paid
     if (payments.length > 0) {
-      const lastPaymentDate = payments[0].paymentDate; // Already a string
+      const lastPaymentDate = payments[0].paymentDate;
       const totalPaymentAmount = payments.reduce((sum, p) => sum + p.amount, 0);
       
       await Customer.findByIdAndUpdate(cleanedCustomerId, {
@@ -637,7 +650,8 @@ export async function POST(request) {
           emiPaidCount: emiPaidCount,
           lastScheduledEmiDate: lastScheduledEmiDate,
           nextScheduledEmiDate: nextScheduledEmiDate,
-          lastPaymentDate: paymentDateStr
+          lastPaymentDate: paymentDateStr,
+          totalPaidAmount: totalPaidAmount
         });
 
         // Update loan with CORRECT string dates
@@ -645,28 +659,28 @@ export async function POST(request) {
           emiPaidCount: emiPaidCount,
           totalPaidAmount: totalPaidAmount,
           remainingAmount: Math.max(loan.amount - totalPaidAmount, 0),
-          lastEmiDate: lastScheduledEmiDate, // ✅ String date
-          nextEmiDate: nextScheduledEmiDate, // ✅ String date
-          lastPaymentDate: paymentDateStr, // ✅ String date
+          lastEmiDate: lastScheduledEmiDate,
+          nextEmiDate: nextScheduledEmiDate,
+          lastPaymentDate: paymentDateStr,
           updatedAt: new Date()
         };
 
-        // 🔴🔴🔴 CRITICAL FIX: Convert all dates to YYYY-MM-DD strings for emiHistory
+        // Convert all dates to YYYY-MM-DD strings for emiHistory
         if (payments.length > 0) {
           updateData.$push = {
             emiHistory: {
               $each: payments.map(payment => ({
                 _id: payment._id,
-                paymentDate: payment.paymentDate, // ✅ Already string
+                paymentDate: payment.paymentDate,
                 amount: payment.amount,
                 status: payment.status,
                 collectedBy: payment.collectedBy,
                 notes: payment.notes,
-                createdAt: getCurrentDateString(), // ✅ String date
+                createdAt: getCurrentDateString(),
                 isAdvance: payment.paymentType === 'advance',
                 paymentType: payment.paymentType,
-                advanceFromDate: payment.advanceFromDate ? payment.advanceFromDate : null, // ✅ Already string
-                advanceToDate: payment.advanceToDate ? payment.advanceToDate : null, // ✅ Already string
+                advanceFromDate: payment.advanceFromDate ? payment.advanceFromDate : null,
+                advanceToDate: payment.advanceToDate ? payment.advanceToDate : null,
                 advanceEmiCount: payment.advanceEmiCount
               }))
             }
@@ -679,7 +693,8 @@ export async function POST(request) {
           lastEmiDate: updateData.lastEmiDate,
           nextEmiDate: updateData.nextEmiDate,
           emiPaidCount: updateData.emiPaidCount,
-          emiHistoryDates: payments.map(p => p.paymentDate)
+          emiHistoryDates: payments.map(p => p.paymentDate),
+          emiHistoryAmounts: payments.map(p => p.amount)
         });
       } catch (loanUpdateError) {
         console.error('⚠️ Error updating loan statistics:', loanUpdateError);
@@ -691,7 +706,7 @@ export async function POST(request) {
     console.log('✅ EMI payment recorded successfully:', payments.length, 'payments created');
 
     const responseMessage = paymentType === 'advance' 
-      ? `Advance EMI payment of ₹${amount} recorded successfully as ${payments.length} payments for ${advanceEmiCount || 1} periods (${formatToDDMMYYYY(formatToYYYYMMDD(advanceFromDate))} to ${formatToDDMMYYYY(formatToYYYYMMDD(advanceToDate))})`
+      ? `Advance EMI payment recorded successfully as ${payments.length} payments of ₹${loan?.emiAmount || (parseFloat(amount)/payments.length)} each for ${advanceEmiCount || 1} periods (${formatToDDMMYYYY(formatToYYYYMMDD(advanceFromDate))} to ${formatToDDMMYYYY(formatToYYYYMMDD(advanceToDate))})`
       : `EMI payment of ₹${amount} recorded successfully for ${customerName}${finalLoanId ? ` (Loan: ${finalLoanNumber})` : ' (Temporary - No Loan Record)'}`;
 
     return NextResponse.json({ 
@@ -700,9 +715,10 @@ export async function POST(request) {
       data: {
         paymentIds: payments.map(p => p._id),
         customerName: customerName,
-        amount: amount,
+        amount: paymentType === 'advance' ? (loan?.emiAmount || (parseFloat(amount)/payments.length)) : amount,
+        totalAmount: paymentType === 'advance' ? parseFloat(amount) : parseFloat(amount),
         loanNumber: finalLoanNumber,
-        paymentDate: paymentDateStr, // ✅ Return string date
+        paymentDate: paymentDateStr,
         loanId: finalLoanId ? finalLoanId.toString() : null,
         collectedBy: collectedBy,
         hasLoanRecord: !!finalLoanId,
@@ -712,7 +728,8 @@ export async function POST(request) {
         advanceFromDate: advanceFromDate ? formatToYYYYMMDD(advanceFromDate) : null,
         advanceToDate: advanceToDate ? formatToYYYYMMDD(advanceToDate) : null,
         advanceEmiCount: advanceEmiCount,
-        advanceTotalAmount: amount
+        advanceTotalAmount: amount,
+        perEmiAmount: paymentType === 'advance' ? (loan?.emiAmount || (parseFloat(amount)/payments.length)) : parseFloat(amount)
       }
     });
     
@@ -941,7 +958,7 @@ export async function PUT(request) {
 
     // Update payment fields
     payment.amount = parseFloat(amount);
-    payment.paymentDate = paymentDateStr; // ✅ String date
+    payment.paymentDate = paymentDateStr;
     payment.status = status || payment.status;
     payment.notes = notes || payment.notes;
     payment.collectedBy = collectedBy || payment.collectedBy;

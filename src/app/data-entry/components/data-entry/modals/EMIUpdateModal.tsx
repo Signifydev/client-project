@@ -111,6 +111,17 @@ export default function EMIUpdateModal({
   // Create our own updateEMI function
   const updateEMI = async (emiData: EMIUpdateType) => {
     try {
+      console.log('📤 Sending to API:', {
+        ...emiData,
+        operatorName: currentOperator.name,
+        officeCategory: selectedCustomer?.officeCategory || 'Office 1',
+        advanceFromDate: emiData.paymentType === 'advance' ? advanceFromDate : undefined,
+        advanceToDate: emiData.paymentType === 'advance' ? advanceToDate : undefined,
+        advanceEmiCount: emiData.paymentType === 'advance' ? numberOfEmis.toString() : undefined,
+        // ✅ CRITICAL FIX: Send total amount for advance payments
+        amount: emiData.paymentType === 'advance' ? totalAdvanceAmount.toString() : emiData.amount
+      });
+
       const response = await fetch('/api/data-entry/emi-payments', {
         method: 'POST',
         headers: {
@@ -122,7 +133,11 @@ export default function EMIUpdateModal({
           officeCategory: selectedCustomer?.officeCategory || 'Office 1',
           advanceFromDate: emiData.paymentType === 'advance' ? advanceFromDate : undefined,
           advanceToDate: emiData.paymentType === 'advance' ? advanceToDate : undefined,
-          advanceEmiCount: emiData.paymentType === 'advance' ? numberOfEmis.toString() : undefined
+          advanceEmiCount: emiData.paymentType === 'advance' ? numberOfEmis.toString() : undefined,
+          // ✅ CRITICAL FIX: Send total amount for advance payments
+          amount: emiData.paymentType === 'advance' ? totalAdvanceAmount.toString() : emiData.amount,
+          // ✅ Also send advanceTotalAmount explicitly
+          advanceTotalAmount: emiData.paymentType === 'advance' ? totalAdvanceAmount.toString() : undefined
         }),
       });
 
@@ -144,7 +159,7 @@ export default function EMIUpdateModal({
     if (selectedCustomer) {
       setEmiUpdate(prev => ({
         ...prev,
-        customerId: selectedCustomer._id || selectedCustomer.id || '',
+        customerId: selectedCustomer._id || '',
         customerName: selectedCustomer.name,
         customerNumber: selectedCustomer.customerNumber,
         collectedBy: currentOperator.fullName || currentOperator.name
@@ -160,7 +175,7 @@ export default function EMIUpdateModal({
       const emiAmount = selectedLoan.emiAmount || 0;
       setEmiUpdate(prev => ({
         ...prev,
-        loanId: selectedLoan._id || selectedLoan.id || '',
+        loanId: selectedLoan._id || '',
         loanNumber: selectedLoan.loanNumber,
         amount: emiAmount.toString(),
         paymentDate: new Date().toISOString().split('T')[0]
@@ -220,11 +235,11 @@ export default function EMIUpdateModal({
     const totalAmount = emiAmount * emiCount;
     setTotalAdvanceAmount(totalAmount);
     
-    // Update EMI update object
+    // ✅ CRITICAL FIX: Update emiUpdate with the TOTAL amount for advance payments
     setEmiUpdate(prev => ({
       ...prev,
-      amount: emiAmount.toString(),
-      totalAmount: totalAmount.toString(),
+      amount: emiAmount.toString(), // Keep single EMI amount for display
+      totalAmount: totalAmount.toString(), // Store total amount separately
       numberOfEmis: emiCount.toString()
     }));
   };
@@ -300,13 +315,26 @@ export default function EMIUpdateModal({
 
     setIsLoading(true);
     try {
-      await updateEMI({
+      // ✅ CRITICAL FIX: Prepare correct data for API
+      const paymentData = {
         ...emiUpdate,
         advanceFromDate: emiUpdate.paymentType === 'advance' ? advanceFromDate : undefined,
         advanceToDate: emiUpdate.paymentType === 'advance' ? advanceToDate : undefined,
         advanceEmiCount: emiUpdate.paymentType === 'advance' ? numberOfEmis.toString() : undefined,
-        advanceTotalAmount: emiUpdate.paymentType === 'advance' ? totalAdvanceAmount.toString() : undefined
+        advanceTotalAmount: emiUpdate.paymentType === 'advance' ? totalAdvanceAmount.toString() : undefined,
+        // ✅ For advance payments, send the TOTAL amount, not single EMI amount
+        amount: emiUpdate.paymentType === 'advance' ? totalAdvanceAmount.toString() : emiUpdate.amount
+      };
+
+      console.log('📤 Submitting payment:', {
+        paymentType: emiUpdate.paymentType,
+        amountSent: paymentData.amount,
+        totalAdvanceAmount,
+        emiCount: numberOfEmis,
+        perEmiAmount: selectedLoan?.emiAmount
       });
+
+      await updateEMI(paymentData);
       
       const message = emiUpdate.paymentType === 'advance' 
         ? `${numberOfEmis} Advance EMI payments of ₹${selectedLoan?.emiAmount || 0} each (Total: ₹${totalAdvanceAmount}) recorded successfully for period ${formatDateToDDMMYYYY(advanceFromDate)} to ${formatDateToDDMMYYYY(advanceToDate)}!`
@@ -332,6 +360,7 @@ export default function EMIUpdateModal({
       setTotalAdvanceAmount(0);
       
     } catch (error: any) {
+      console.error('❌ Payment error:', error);
       alert('Error: ' + (error.message || 'Failed to record payment'));
     } finally {
       setIsLoading(false);
@@ -350,14 +379,14 @@ export default function EMIUpdateModal({
     });
   }, [customers, searchQuery]);
 
-  // Helper function to get loan ID safely
+  // Helper function to get loan ID safely - FIXED: Use _id instead of id
   const getLoanId = (loan: Loan): string => {
-    return loan._id || loan.id || `loan-${Math.random().toString(36).substr(2, 9)}`;
+    return loan._id || `loan-${Math.random().toString(36).substr(2, 9)}`;
   };
 
-  // Helper function to get customer ID safely
+  // Helper function to get customer ID safely - FIXED: Use _id instead of id
   const getCustomerId = (customer: Customer): string => {
-    return customer._id || customer.id || `customer-${Math.random().toString(36).substr(2, 9)}`;
+    return customer._id || `customer-${Math.random().toString(36).substr(2, 9)}`;
   };
 
   if (!isOpen) return null;
@@ -596,17 +625,24 @@ export default function EMIUpdateModal({
                         </div>
                         <input
                           type="number"
-                          className="w-full pl-12 px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50"
+                          className={`w-full pl-12 px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                            emiUpdate.status === 'Paid' ? 'bg-gray-50' : 'bg-white'
+                          }`}
                           value={emiUpdate.amount}
                           onChange={(e) => setEmiUpdate(prev => ({ ...prev, amount: e.target.value }))}
                           placeholder={`Auto-filled: ₹${selectedLoan.emiAmount || 0}`}
                           min="0"
-                          readOnly // Auto-filled for single EMI
+                          readOnly={emiUpdate.status === 'Paid'} // ✅ Allow editing only for Partial
                         />
                       </div>
                       <div className="mt-2">
                         <p className="text-sm text-gray-500">
                           EMI Amount: <span className="font-medium">₹{selectedLoan.emiAmount || 0}</span>
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {emiUpdate.status === 'Paid' 
+                            ? 'Amount auto-filled for full payment' 
+                            : 'Enter partial amount manually'}
                         </p>
                       </div>
                     </div>
@@ -621,7 +657,14 @@ export default function EMIUpdateModal({
                           <button
                             key={status}
                             type="button"
-                            onClick={() => setEmiUpdate(prev => ({ ...prev, status: status as 'Paid' | 'Partial' }))}
+                            onClick={() => {
+                              setEmiUpdate(prev => ({ 
+                                ...prev, 
+                                status: status as 'Paid' | 'Partial',
+                                // Auto-fill amount for Paid, clear for Partial
+                                amount: status === 'Paid' ? selectedLoan.emiAmount?.toString() || '' : prev.amount
+                              }));
+                            }}
                             className={`px-4 py-3 rounded-lg border-2 transition-all duration-200 ${
                               emiUpdate.status === status
                                 ? status === 'Paid' 
@@ -688,7 +731,7 @@ export default function EMIUpdateModal({
                       </div>
                       
                       {/* Calculation Results */}
-                      {(advanceFromDate && advanceToDate && numberOfEmis > 0) && (
+                      {(advanceFromDate && advanceToDate) && (
                         <div className="mt-6 bg-white p-5 rounded-lg border border-blue-100">
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="text-center p-4 bg-gray-50 rounded-lg">
@@ -697,7 +740,9 @@ export default function EMIUpdateModal({
                             </div>
                             <div className="text-center p-4 bg-gray-50 rounded-lg">
                               <p className="text-xs text-gray-600 mb-1">Number of EMIs</p>
-                              <p className="font-semibold text-blue-900 text-xl">{numberOfEmis}</p>
+                              <p className="font-semibold text-blue-900 text-xl">
+                                {numberOfEmis > 0 ? numberOfEmis : 'Calculating...'}
+                              </p>
                             </div>
                             <div className="text-center p-4 bg-gray-50 rounded-lg">
                               <p className="text-xs text-gray-600 mb-1">Per EMI Amount</p>
@@ -705,30 +750,32 @@ export default function EMIUpdateModal({
                             </div>
                           </div>
                           
-                          <div className="mt-4 pt-4 border-t border-blue-100">
-                            <div className="flex justify-between items-center">
-                              <div>
-                                <p className="text-sm text-gray-600">Total Advance Amount</p>
-                                <p className="font-bold text-green-900 text-2xl">₹{totalAdvanceAmount.toLocaleString()}</p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-sm text-gray-600">
-                                  {numberOfEmis} × ₹{selectedLoan.emiAmount || 0}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  Period: {formatDateToDDMMYYYY(advanceFromDate)} to {formatDateToDDMMYYYY(advanceToDate)}
-                                </p>
+                          {numberOfEmis > 0 && (
+                            <div className="mt-4 pt-4 border-t border-blue-100">
+                              <div className="flex justify-between items-center">
+                                <div>
+                                  <p className="text-sm text-gray-600">Total Advance Amount</p>
+                                  <p className="font-bold text-green-900 text-2xl">₹{totalAdvanceAmount.toLocaleString()}</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-sm text-gray-600">
+                                    {numberOfEmis} × ₹{selectedLoan.emiAmount || 0}
+                                  </p>
+                                  <p className="text-xs text-gray-500">
+                                    Period: {formatDateToDDMMYYYY(advanceFromDate)} to {formatDateToDDMMYYYY(advanceToDate)}
+                                  </p>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </div>
-                      )}
-                      
-                      {advanceFromDate && advanceToDate && numberOfEmis === 0 && (
-                        <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                          <p className="text-sm text-yellow-800">
-                            ❌ Invalid date range. Please select valid dates.
-                          </p>
+                          )}
+                          
+                          {numberOfEmis === 0 && (
+                            <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                              <p className="text-sm text-yellow-800">
+                                ⚠️ Please select valid dates to calculate advance payment
+                              </p>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -847,12 +894,14 @@ export default function EMIUpdateModal({
                 {isLoading 
                   ? 'Processing...' 
                   : emiUpdate.paymentType === 'advance' 
-                    ? `Record ${numberOfEmis} Advance Payments` 
+                    ? `Record ${numberOfEmis} Advance Payments (₹${totalAdvanceAmount})` // ✅ Show total amount
                     : 'Record Payment'}
               </button>
             </div>
             <p className="text-xs text-gray-500 text-center mt-4">
-              EMI payments are recorded immediately and cannot be undone without admin approval.
+              {emiUpdate.paymentType === 'advance' 
+                ? `Advance payment will create ${numberOfEmis} individual payment records of ₹${selectedLoan?.emiAmount || 0} each.`
+                : 'EMI payments are recorded immediately and cannot be undone without admin approval.'}
             </p>
           </div>
         </div>
