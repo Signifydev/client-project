@@ -249,7 +249,7 @@ export const generateEmiSchedule = (
   monthEnd.setHours(23, 59, 59, 999);
   
   // Start from the first installment
-  let currentDate = new Date(startDate);
+  const currentDate = new Date(startDate);
   
   // Generate all installments
   for (let i = 1; i <= totalEmiCount; i++) {
