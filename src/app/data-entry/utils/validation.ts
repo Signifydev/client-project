@@ -274,15 +274,12 @@ export const validateStep1 = (step1Data: NewCustomerStep1, customers: Customer[]
     }
   }
 
-  // WhatsApp number
+  // WhatsApp number - CHANGED: Removed validation preventing same as phone number
   if (step1Data.whatsappNumber && step1Data.whatsappNumber.trim()) {
     if (!/^\d{10}$/.test(step1Data.whatsappNumber)) {
       errors.whatsappNumber = 'WhatsApp number must be a valid 10-digit number';
     }
-    
-    if (validPhones.some(phone => phone === step1Data.whatsappNumber)) {
-      errors.whatsappNumber = 'WhatsApp number cannot be the same as phone number';
-    }
+    // Removed: WhatsApp number cannot be same as phone number validation
   }
   
   // Business name

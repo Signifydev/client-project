@@ -2495,24 +2495,6 @@ export default function AddCustomerModal({
                 </div>
               </div>
 
-              {/* Cloudinary Upload Info */}
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <span className="text-purple-400 text-lg">☁️</span>
-                  </div>
-                  <div className="ml-3">
-                    <h3 className="text-sm font-medium text-purple-800">File Upload Information</h3>
-                    <ul className="text-sm text-purple-700 mt-1 space-y-1">
-                      <li>• Files will be uploaded to Cloudinary (secure cloud storage)</li>
-                      <li>• Profile pictures: Stored in <code>loan_app/profile_pictures/</code></li>
-                      <li>• FI documents: Stored in <code>loan_app/fi_documents/</code> folders</li>
-                      <li>• Only secure URLs will be saved in your database</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-
               {/* Approval Info */}
               <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
                 <div className="flex items-center">
