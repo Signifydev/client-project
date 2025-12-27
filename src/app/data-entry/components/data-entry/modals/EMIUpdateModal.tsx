@@ -111,6 +111,79 @@ const getCorrectEmiAmountForInstallment = (loan: Loan, installmentNumber: number
   return loan.emiAmount || 0;
 };
 
+// ✅ NEW: Calculate advance payment for custom EMI loans
+const calculateAdvancePaymentForCustomEMI = (
+  loan: Loan,
+  advanceFromDate: string,
+  advanceToDate: string
+): { emiCount: number; totalAmount: number; breakdown: Array<{ installment: number; amount: number; isCustom: boolean }> } => {
+  if (!loan || !advanceFromDate || !advanceToDate) {
+    return { emiCount: 0, totalAmount: 0, breakdown: [] };
+  }
+
+  // Calculate number of EMIs in the date range
+  const emiCount = calculateNumberOfEMIs(loan.loanType, advanceFromDate, advanceToDate);
+  
+  if (emiCount <= 0) {
+    return { emiCount: 0, totalAmount: 0, breakdown: [] };
+  }
+
+  // Get current installment number (first installment in the range)
+  const startInstallment = calculateCurrentInstallmentNumber(loan);
+  const breakdown = [];
+  let totalAmount = 0;
+
+  console.log('📅 Advance Payment Calculation for Custom EMI:', {
+    loanNumber: loan.loanNumber,
+    emiType: loan.emiType,
+    totalEmiCount: loan.totalEmiCount,
+    startInstallment: startInstallment,
+    emiCountInRange: emiCount,
+    advanceFromDate: advanceFromDate,
+    advanceToDate: advanceToDate
+  });
+
+  // Calculate each installment in the range
+  for (let i = 0; i < emiCount; i++) {
+    const installmentNumber = startInstallment + i;
+    
+    // Check if this installment exceeds total loan installments
+    if (installmentNumber > loan.totalEmiCount) {
+      console.log(`⚠️ Installment ${installmentNumber} exceeds total ${loan.totalEmiCount}, stopping calculation`);
+      break;
+    }
+
+    const amount = getCorrectEmiAmountForInstallment(loan, installmentNumber);
+    const isLastInstallment = installmentNumber === loan.totalEmiCount;
+    
+    breakdown.push({
+      installment: installmentNumber,
+      amount: amount,
+      isCustom: isLastInstallment && loan.emiType === 'custom' && loan.loanType !== 'Daily'
+    });
+    
+    totalAmount += amount;
+
+    console.log(`   Installment ${installmentNumber}: ₹${amount} ${isLastInstallment ? '(LAST - Custom)' : ''}`);
+  }
+
+  // Update actual emi count based on valid installments
+  const actualEmiCount = breakdown.length;
+
+  console.log('📊 Advance Payment Summary:', {
+    totalAmount: totalAmount,
+    actualEmiCount: actualEmiCount,
+    breakdown: breakdown,
+    expectedIfAllRegular: loan.emiAmount ? loan.emiAmount * actualEmiCount : 0
+  });
+
+  return {
+    emiCount: actualEmiCount,
+    totalAmount: totalAmount,
+    breakdown: breakdown
+  };
+};
+
 export default function EMIUpdateModal({
   isOpen,
   onClose,
@@ -141,6 +214,7 @@ export default function EMIUpdateModal({
   const [advanceToDate, setAdvanceToDate] = useState('');
   const [numberOfEmis, setNumberOfEmis] = useState<number>(0);
   const [totalAdvanceAmount, setTotalAdvanceAmount] = useState<number>(0);
+  const [advanceBreakdown, setAdvanceBreakdown] = useState<Array<{installment: number; amount: number; isCustom: boolean}>>([]);
 
   // Get the updateEMI function from useEMI hook
   const emiHook = useEMI(currentOperator.name);
@@ -276,26 +350,44 @@ export default function EMIUpdateModal({
     if (endDate < startDate) {
       setNumberOfEmis(0);
       setTotalAdvanceAmount(0);
+      setAdvanceBreakdown([]);
       return;
     }
 
-    // Calculate number of EMIs based on loan type
-    const emiCount = calculateNumberOfEMIs(selectedLoan.loanType, advanceFromDate, advanceToDate);
-    setNumberOfEmis(emiCount);
-    
-    // Calculate total amount - For advance payments, use standard EMI amount
-    // (Advance payments typically pay standard installments, not custom last installments)
-    const emiAmount = selectedLoan.emiAmount || 0;
-    const totalAmount = emiAmount * emiCount;
-    setTotalAdvanceAmount(totalAmount);
-    
-    // ✅ CRITICAL FIX: Update emiUpdate with the TOTAL amount for advance payments
-    setEmiUpdate(prev => ({
-      ...prev,
-      amount: emiAmount.toString(), // Keep single EMI amount for display
-      totalAmount: totalAmount.toString(), // Store total amount separately
-      numberOfEmis: emiCount.toString()
-    }));
+    // ✅ CRITICAL FIX: Use correct calculation for custom EMI loans
+    if (selectedLoan.emiType === 'custom' && selectedLoan.loanType !== 'Daily') {
+      const result = calculateAdvancePaymentForCustomEMI(selectedLoan, advanceFromDate, advanceToDate);
+      
+      setNumberOfEmis(result.emiCount);
+      setTotalAdvanceAmount(result.totalAmount);
+      setAdvanceBreakdown(result.breakdown);
+      
+      // ✅ CRITICAL FIX: Update emiUpdate with the CORRECT total amount
+      setEmiUpdate(prev => ({
+        ...prev,
+        amount: selectedLoan.emiAmount?.toString() || '0', // Keep standard amount for display
+        totalAmount: result.totalAmount.toString(), // Store CORRECT total amount
+        numberOfEmis: result.emiCount.toString()
+      }));
+    } else {
+      // For fixed EMI or daily loans, use simple calculation
+      const emiCount = calculateNumberOfEMIs(selectedLoan.loanType, advanceFromDate, advanceToDate);
+      setNumberOfEmis(emiCount);
+      
+      // Calculate total amount
+      const emiAmount = selectedLoan.emiAmount || 0;
+      const totalAmount = emiAmount * emiCount;
+      setTotalAdvanceAmount(totalAmount);
+      setAdvanceBreakdown([]); // No breakdown needed for fixed EMI
+      
+      // Update emiUpdate with the TOTAL amount for advance payments
+      setEmiUpdate(prev => ({
+        ...prev,
+        amount: emiAmount.toString(), // Keep single EMI amount for display
+        totalAmount: totalAmount.toString(), // Store total amount separately
+        numberOfEmis: emiCount.toString()
+      }));
+    }
   };
 
   const handleCustomerSearch = (customer: Customer) => {
@@ -391,14 +483,15 @@ export default function EMIUpdateModal({
           regularAmount: selectedLoan.emiAmount,
           customAmount: selectedLoan.customEmiAmount,
           currentInstallment: calculateCurrentInstallmentNumber(selectedLoan!),
-          totalInstallments: selectedLoan.totalEmiCount
+          totalInstallments: selectedLoan.totalEmiCount,
+          advanceBreakdown: advanceBreakdown
         } : null
       });
 
       await updateEMI(paymentData);
       
       const message = emiUpdate.paymentType === 'advance' 
-        ? `${numberOfEmis} Advance EMI payments of ₹${selectedLoan?.emiAmount || 0} each (Total: ₹${totalAdvanceAmount}) recorded successfully for period ${formatDateToDDMMYYYY(advanceFromDate)} to ${formatDateToDDMMYYYY(advanceToDate)}!`
+        ? `${numberOfEmis} Advance EMI payments recorded successfully for period ${formatDateToDDMMYYYY(advanceFromDate)} to ${formatDateToDDMMYYYY(advanceToDate)}! Total: ₹${totalAdvanceAmount}`
         : 'EMI payment recorded successfully!';
       
       alert(message);
@@ -419,6 +512,7 @@ export default function EMIUpdateModal({
       setAdvanceToDate('');
       setNumberOfEmis(0);
       setTotalAdvanceAmount(0);
+      setAdvanceBreakdown([]);
       
     } catch (error: any) {
       console.error('❌ Payment error:', error);
@@ -492,6 +586,66 @@ export default function EMIUpdateModal({
               ? `✅ This is the LAST installment. Amount should be ₹${customAmount.toLocaleString()} (custom amount)`
               : `✅ This is a regular installment. Amount should be ₹${regularAmount.toLocaleString()}`}
           </p>
+        </div>
+      </div>
+    );
+  };
+
+  // ✅ NEW: Helper to display advance payment breakdown
+  const renderAdvanceBreakdown = () => {
+    if (advanceBreakdown.length === 0 || emiUpdate.paymentType !== 'advance') {
+      return null;
+    }
+
+    return (
+      <div className="mt-6 bg-purple-50 border-2 border-purple-200 rounded-xl p-5">
+        <h4 className="font-medium text-purple-900 text-lg mb-3">Advance Payment Breakdown</h4>
+        <div className="space-y-3">
+          {advanceBreakdown.map((item, index) => (
+            <div key={index} className={`flex justify-between items-center p-3 rounded-lg ${
+              item.isCustom ? 'bg-yellow-50 border border-yellow-200' : 'bg-white border border-purple-100'
+            }`}>
+              <div className="flex items-center">
+                <div className={`w-8 h-8 flex items-center justify-center rounded-full mr-3 ${
+                  item.isCustom ? 'bg-yellow-100 text-yellow-800' : 'bg-purple-100 text-purple-800'
+                }`}>
+                  {item.installment}
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900">
+                    Installment {item.installment}
+                    {item.isCustom && <span className="ml-2 text-yellow-700 text-sm">(LAST - Custom)</span>}
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    {item.isCustom ? 'Custom Amount' : 'Regular Amount'}
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="font-bold text-lg">₹{item.amount.toLocaleString()}</p>
+                <p className="text-xs text-gray-500">
+                  {index + 1} of {advanceBreakdown.length}
+                </p>
+              </div>
+            </div>
+          ))}
+          
+          <div className="mt-4 pt-4 border-t border-purple-200">
+            <div className="flex justify-between items-center">
+              <div>
+                <p className="text-sm text-gray-600">Total Advance Amount</p>
+                <p className="font-bold text-green-900 text-2xl">₹{totalAdvanceAmount.toLocaleString()}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-gray-600">
+                  {advanceBreakdown.length} installments
+                </p>
+                <p className="text-xs text-gray-500">
+                  Includes {advanceBreakdown.filter(i => i.isCustom).length} custom installment(s)
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -885,27 +1039,47 @@ export default function EMIUpdateModal({
                             </div>
                             <div className="text-center p-4 bg-gray-50 rounded-lg">
                               <p className="text-xs text-gray-600 mb-1">Per EMI Amount</p>
-                              <p className="font-semibold text-green-900 text-xl">₹{selectedLoan.emiAmount || 0}</p>
+                              <p className="font-semibold text-green-900 text-xl">
+                                {selectedLoan.emiType === 'custom' && selectedLoan.loanType !== 'Daily'
+                                  ? `₹${selectedLoan.emiAmount || 0} (Regular)`
+                                  : `₹${selectedLoan.emiAmount || 0}`}
+                              </p>
                             </div>
                           </div>
                           
                           {numberOfEmis > 0 && (
-                            <div className="mt-4 pt-4 border-t border-blue-100">
-                              <div className="flex justify-between items-center">
-                                <div>
-                                  <p className="text-sm text-gray-600">Total Advance Amount</p>
-                                  <p className="font-bold text-green-900 text-2xl">₹{totalAdvanceAmount.toLocaleString()}</p>
-                                </div>
-                                <div className="text-right">
-                                  <p className="text-sm text-gray-600">
-                                    {numberOfEmis} × ₹{selectedLoan.emiAmount || 0}
-                                  </p>
-                                  <p className="text-xs text-gray-500">
-                                    Period: {formatDateToDDMMYYYY(advanceFromDate)} to {formatDateToDDMMYYYY(advanceToDate)}
-                                  </p>
+                            <>
+                              <div className="mt-4 pt-4 border-t border-blue-100">
+                                <div className="flex justify-between items-center">
+                                  <div>
+                                    <p className="text-sm text-gray-600">Total Advance Amount</p>
+                                    <p className="font-bold text-green-900 text-2xl">₹{totalAdvanceAmount.toLocaleString()}</p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-sm text-gray-600">
+                                      {advanceBreakdown.length > 0 
+                                        ? `${advanceBreakdown.length} installments (Custom EMI)`
+                                        : `${numberOfEmis} × ₹${selectedLoan.emiAmount || 0}`}
+                                    </p>
+                                    <p className="text-xs text-gray-500">
+                                      Period: {formatDateToDDMMYYYY(advanceFromDate)} to {formatDateToDDMMYYYY(advanceToDate)}
+                                    </p>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
+                              
+                              {/* ✅ Show warning if calculation might be different */}
+                              {selectedLoan.emiType === 'custom' && selectedLoan.loanType !== 'Daily' && (
+                                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                  <p className="text-sm text-yellow-800">
+                                    ⚠️ Custom EMI detected: Last installment has different amount (₹{selectedLoan.customEmiAmount || selectedLoan.emiAmount || 0})
+                                  </p>
+                                  <p className="text-xs text-yellow-700 mt-1">
+                                    Total calculated based on actual installment amounts in selected period.
+                                  </p>
+                                </div>
+                              )}
+                            </>
                           )}
                           
                           {numberOfEmis === 0 && (
@@ -917,6 +1091,9 @@ export default function EMIUpdateModal({
                           )}
                         </div>
                       )}
+                      
+                      {/* ✅ Show Advance Payment Breakdown for Custom EMI */}
+                      {renderAdvanceBreakdown()}
                     </div>
 
                     {/* Collected By - Auto-filled */}
@@ -997,7 +1174,7 @@ export default function EMIUpdateModal({
             </div>
             <p className="text-xs text-gray-500 text-center mt-4">
               {emiUpdate.paymentType === 'advance' 
-                ? `Advance payment will create ${numberOfEmis} individual payment records of ₹${selectedLoan?.emiAmount || 0} each.`
+                ? `Advance payment will create ${numberOfEmis} individual payment records.`
                 : 'EMI payments are recorded immediately and cannot be undone without admin approval.'}
             </p>
           </div>
