@@ -598,7 +598,7 @@ export default function CustomerDetailsModal({
                                 </div>
                               </div>
 
-                              {/* Completion Percentage */}
+                              {/* Completion Percentage - FIXED: Use actual paid amount */}
                               <div className="mb-6 bg-blue-50 p-4 rounded-xl border border-blue-100">
                                 <div className="flex justify-between items-center mb-2">
                                   <div>
@@ -623,11 +623,16 @@ export default function CustomerDetailsModal({
                                 <div className="flex justify-between items-center text-xs">
                                   <div className="text-gray-600">
                                     <span>Paid: </span>
-                                    <span className="font-semibold">₹{Math.round(totalLoanAmount * (completion.completionPercentage/100)).toLocaleString()}</span>
+                                    <span className="font-semibold">
+                                      {/* FIXED: Use totalPaid from completion object */}
+                                      ₹{(completion.totalPaid || 0).toLocaleString()}
+                                    </span>
                                   </div>
                                   <div className="text-gray-600">
                                     <span>Remaining: </span>
-                                    <span className="font-semibold">₹{remainingAmount.toLocaleString()} of ₹{totalLoanAmount.toLocaleString()}</span>
+                                    <span className="font-semibold">
+                                      ₹{remainingAmount.toLocaleString()} of ₹{totalLoanAmount.toLocaleString()}
+                                    </span>
                                   </div>
                                 </div>
                               </div>
