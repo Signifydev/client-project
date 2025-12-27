@@ -507,7 +507,7 @@ export default function CustomerDetailsModal({
                           
                           // Calculate remaining amount and EMIs
                           const totalLoanAmount = getLoanTotalAmount(loan);
-                          const remainingAmount = Math.round(totalLoanAmount * (1 - completion.completionPercentage/100));
+                          const remainingAmount = Math.max(totalLoanAmount - (completion.totalPaid || 0), 0);
                           const remainingEmis = completion.remainingEmis;
                           const totalEmis = loan.totalEmiCount || loan.loanDays || 30;
                           const paidEmis = loan.emiPaidCount || 0;
