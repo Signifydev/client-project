@@ -195,7 +195,15 @@ export async function GET(request, { params }) {
         // Get raw date values
         const dateApplied = loan.dateApplied;
         const emiStartDate = loan.emiStartDate || loan.dateApplied;
-        const lastEmiDate = loan.lastEmiDate || loan.dateApplied;
+const lastEmiDate = loan.lastEmiDate; // ← NO DEFAULT! Keep as null if no payments
+
+console.log('📅 Date Debug:', {
+  loanNumber: loan.loanNumber,
+  dateApplied: loan.dateApplied,
+  lastEmiDateInDB: loan.lastEmiDate,
+  emiPaidCount: loan.emiPaidCount,
+  totalPaidAmount: loan.totalPaidAmount
+});
         const nextEmiDate = loan.nextEmiDate;
         const createdAt = loan.createdAt;
         const updatedAt = loan.updatedAt;

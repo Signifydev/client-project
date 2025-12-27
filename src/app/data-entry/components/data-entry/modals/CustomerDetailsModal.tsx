@@ -519,7 +519,21 @@ export default function CustomerDetailsModal({
                           
                           // Format dates
                           const formattedNextEmiDate = formatLoanDate(loan.nextEmiDate);
-                          const formattedLastPaymentDate = loan.lastEmiDate ? formatLoanDate(loan.lastEmiDate) : 'N/A';
+
+// FIX: Only show last payment date if payments have actually been made
+// Check if there are any payments (emiPaidCount > 0 OR totalPaidAmount > 0)
+const hasPayments = (loan.emiPaidCount && loan.emiPaidCount > 0) || (loan.totalPaidAmount && loan.totalPaidAmount > 0);
+const formattedLastPaymentDate = hasPayments && loan.lastEmiDate ? formatLoanDate(loan.lastEmiDate) : 'N/A';
+
+// Debug log to verify the fix
+console.log('🔍 Payment Status Check:', {
+  loanNumber: loan.loanNumber,
+  emiPaidCount: loan.emiPaidCount,
+  totalPaidAmount: loan.totalPaidAmount,
+  lastEmiDate: loan.lastEmiDate,
+  hasPayments: hasPayments,
+  displayValue: formattedLastPaymentDate
+});
                           const formattedEmiStartDate = formatLoanDate(loan.emiStartDate);
                           const formattedDateApplied = formatLoanDate(loan.dateApplied);
                           
