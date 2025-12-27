@@ -40,6 +40,60 @@ function getTodayDateString() {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * Generate EMI schedule for a loan
+ */
+function generateEMISchedule(emiStartDate, loanType, totalInstallments, standardAmount, customAmount = null, customInstallmentNumber = null) {
+  const schedule = [];
+  
+  // Parse start date
+  const startDate = new Date(emiStartDate + 'T00:00:00');
+  
+  // Default custom installment to last if not specified
+  if (customAmount !== null && customInstallmentNumber === null) {
+    customInstallmentNumber = totalInstallments;
+  }
+  
+  for (let i = 1; i <= totalInstallments; i++) {
+    const dueDate = new Date(startDate);
+    
+    // Calculate due date based on loan type
+    if (loanType === 'Daily') {
+      dueDate.setDate(startDate.getDate() + (i - 1));
+    } else if (loanType === 'Weekly') {
+      dueDate.setDate(startDate.getDate() + ((i - 1) * 7));
+    } else if (loanType === 'Monthly') {
+      dueDate.setMonth(startDate.getMonth() + (i - 1));
+    }
+    
+    // Format date strings
+    const year = dueDate.getFullYear();
+    const month = String(dueDate.getMonth() + 1).padStart(2, '0');
+    const day = String(dueDate.getDate()).padStart(2, '0');
+    const dueDateStr = `${year}-${month}-${day}`;
+    const formattedDate = `${day}/${month}/${year}`;
+    
+    // Determine amount for this installment
+    let amount = standardAmount;
+    let isCustom = false;
+    
+    if (customInstallmentNumber !== null && i === customInstallmentNumber) {
+      amount = customAmount || standardAmount;
+      isCustom = true;
+    }
+    
+    schedule.push({
+      installmentNumber: i,
+      dueDate: dueDateStr,
+      amount: amount,
+      isCustom: isCustom,
+      formattedDate: formattedDate
+    });
+  }
+  
+  return schedule;
+}
+
 // POST method to add new loan REQUEST (not create loan directly)
 export async function POST(request) {
   try {
@@ -194,6 +248,52 @@ export async function POST(request) {
       totalLoanAmount = emiAmount * parseInt(loanDays);
     }
 
+    // ==============================================
+    // EMI SCHEDULE GENERATION FOR CALENDAR FIX
+    // ==============================================
+    
+    let emiScheduleDetails = null;
+    
+    // Generate EMI schedule for the loan
+    if (emiStartDateStr && loanData.loanType && loanDays && emiAmount) {
+      const customAmount = (loanData.emiType === 'custom' && loanData.loanType !== 'Daily') 
+        ? parseFloat(loanData.customEmiAmount || emiAmount) 
+        : null;
+      
+      const customInstallmentNumber = (loanData.emiType === 'custom' && loanData.loanType !== 'Daily') 
+        ? parseInt(loanDays) 
+        : null;
+      
+      const schedule = generateEMISchedule(
+        emiStartDateStr,
+        loanData.loanType || 'Monthly',
+        parseInt(loanDays),
+        parseFloat(emiAmount),
+        customAmount,
+        customInstallmentNumber
+      );
+      
+      emiScheduleDetails = {
+        emiType: loanData.emiType || 'fixed',
+        customEmiAmount: customAmount,
+        totalInstallments: parseInt(loanDays),
+        customInstallmentNumber: customInstallmentNumber,
+        standardAmount: parseFloat(emiAmount),
+        customAmount: customAmount,
+        schedule: schedule
+      };
+      
+      console.log('📅 Generated EMI Schedule:', {
+        totalInstallments: emiScheduleDetails.totalInstallments,
+        customInstallmentNumber: emiScheduleDetails.customInstallmentNumber,
+        standardAmount: emiScheduleDetails.standardAmount,
+        customAmount: emiScheduleDetails.customAmount,
+        scheduleLength: emiScheduleDetails.schedule.length,
+        firstInstallment: emiScheduleDetails.schedule[0],
+        lastInstallment: emiScheduleDetails.schedule[emiScheduleDetails.schedule.length - 1]
+      });
+    }
+
     // Create approval request for the new loan (DO NOT CREATE LOAN YET)
     const approvalRequest = new Request({
       type: 'Loan Addition',
@@ -218,6 +318,9 @@ export async function POST(request) {
         emiStartDate: emiStartDateStr, // ✅ STORE AS STRING
         emiType: loanData.emiType || 'fixed',
         customEmiAmount: loanData.customEmiAmount ? parseFloat(loanData.customEmiAmount) : null,
+        
+        // EMI SCHEDULE DETAILS - ADDED FOR CALENDAR FIX
+        emiScheduleDetails: emiScheduleDetails,
         
         // Additional loan fields for consistency
         totalEmiCount: parseInt(loanDays),
@@ -263,6 +366,14 @@ export async function POST(request) {
       nextEmiDate: emiStartDateStr,
       storedAs: 'YYYY-MM-DD strings'
     });
+    
+    console.log('📅 EMI Schedule stored:', emiScheduleDetails ? 'Yes' : 'No');
+    if (emiScheduleDetails) {
+      console.log('   - Total installments:', emiScheduleDetails.totalInstallments);
+      console.log('   - Custom installment:', emiScheduleDetails.customInstallmentNumber);
+      console.log('   - Standard amount:', emiScheduleDetails.standardAmount);
+      console.log('   - Custom amount:', emiScheduleDetails.customAmount);
+    }
 
     return NextResponse.json({ 
       success: true,
@@ -275,6 +386,7 @@ export async function POST(request) {
         loanAmount: parseFloat(loanAmount),
         dateApplied: dateAppliedStr,
         emiStartDate: emiStartDateStr,
+        emiScheduleGenerated: emiScheduleDetails ? true : false,
         // IMPORTANT: Return request data, not loan data
         isPendingApproval: true,
         dateFormat: 'YYYY-MM-DD strings'

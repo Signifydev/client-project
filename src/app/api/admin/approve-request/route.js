@@ -736,32 +736,30 @@ async function approveNewCustomer(requestDoc, reason, processedBy) {
         }
 
         const loanData = {
-          customerId: customer._id,
-          customerName: customer.name,
-          customerNumber: customer.customerNumber,
-          loanNumber: loanNumber,
-          amount: parseFloat(step2Data.amount) || 0, // FIX: Use amount (principal), NOT loanAmount
-          emiAmount: parseFloat(step2Data.emiAmount) || 0,
-          loanType: step2Data.loanType || 'Daily',
-          dateApplied: loanDateStr, // STORE AS STRING
-          loanDays: parseInt(step2Data.loanDays) || 30,
-          emiType: step2Data.emiType || 'fixed',
-          customEmiAmount: step2Data.customEmiAmount ? parseFloat(step2Data.customEmiAmount) : null,
-          emiStartDate: emiStartDateStr, // STORE AS STRING
-          totalEmiCount: parseInt(step2Data.loanDays) || 30,
-          emiPaidCount: 0,
-          lastEmiDate: null,
-          // FIXED: For new loans, nextEmiDate should be emiStartDate (no increment)
-          nextEmiDate: nextEmiDateStr, // STORE AS STRING
-          totalPaidAmount: 0,
-          remainingAmount: parseFloat(step2Data.amount) || 0, // FIX: Use amount (principal)
-          status: 'active',
-          createdBy: requestDoc.createdBy || 'system',
-          totalLoanAmount: totalLoanAmount,
-          // FIXED: Add startDate and endDate as STRINGS
-          startDate: startDateStr, // String, not Date object!
-          endDate: endDateStr, // String, not Date object!
-        };
+  customerId: customer._id,
+  customerName: customer.name,
+  customerNumber: customer.customerNumber,
+  loanNumber: loanNumber,
+  amount: parseFloat(step2Data.amount) || 0, // Principal amount (₹10,000) ✅
+  emiAmount: parseFloat(step2Data.emiAmount) || 0,
+  loanType: step2Data.loanType || 'Daily',
+  dateApplied: loanDateStr,
+  loanDays: parseInt(step2Data.loanDays) || 30,
+  emiType: step2Data.emiType || 'fixed',
+  customEmiAmount: step2Data.customEmiAmount ? parseFloat(step2Data.customEmiAmount) : null,
+  emiStartDate: emiStartDateStr,
+  totalEmiCount: parseInt(step2Data.loanDays) || 30,
+  emiPaidCount: 0,
+  lastEmiDate: null,
+  nextEmiDate: nextEmiDateStr,
+  totalPaidAmount: 0,
+  remainingAmount: totalLoanAmount, // ✅ FIXED LINE: Use totalLoanAmount, not amount
+  status: 'active',
+  createdBy: requestDoc.createdBy || 'system',
+  totalLoanAmount: totalLoanAmount,
+  startDate: startDateStr,
+  endDate: endDateStr,
+};
 
         console.log('🔍 DEBUG - Date fields validation:', {
           startDate: loanData.startDate,
@@ -1100,7 +1098,7 @@ async function approveLoanAddition(requestDoc, reason, processedBy) {
         // FIXED: For new loans, nextEmiDate should be emiStartDate (no increment)
         nextEmiDate: nextEmiDateStr, // STORE AS STRING
         totalPaidAmount: 0,
-        remainingAmount: loanAmount,
+        remainingAmount: totalLoanAmount || loanAmount,
         status: 'active',
         createdBy: requestDoc.createdBy || 'system',
         totalLoanAmount: totalLoanAmount || loanAmount,

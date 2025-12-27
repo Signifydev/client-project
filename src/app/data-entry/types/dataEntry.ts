@@ -43,7 +43,6 @@ export interface Customer {
   formattedDate?: string;
   submittedBy?: string;
   officeCategory?: string;
-
 }
 
 /**
@@ -96,7 +95,35 @@ export interface CloudinaryUploadResponse {
 }
 
 // =============================================
-// LOAN RELATED TYPES
+// EMI SCHEDULE DETAILS TYPES - NEW FOR CALENDAR FIX
+// =============================================
+
+/**
+ * EMI Schedule Item for detailed installment tracking
+ */
+export interface EMIScheduleItem {
+  installmentNumber: number;
+  dueDate: string;           // YYYY-MM-DD format
+  amount: number;
+  isCustom: boolean;
+  formattedDate: string;     // DD/MM/YYYY for display
+}
+
+/**
+ * EMI Schedule Details for custom EMI loans
+ */
+export interface EMIScheduleDetails {
+  emiType: 'fixed' | 'custom';
+  customEmiAmount?: number | null;
+  totalInstallments: number;
+  customInstallmentNumber?: number | null; // Which installment has custom amount
+  standardAmount: number;
+  customAmount?: number | null;
+  schedule: EMIScheduleItem[];
+}
+
+// =============================================
+// LOAN RELATED TYPES - UPDATED WITH SCHEDULE DETAILS
 // =============================================
 
 /**
@@ -162,6 +189,9 @@ export interface Loan {
   emiType?: 'fixed' | 'custom';
   customEmiAmount?: number;
   
+  // EMI SCHEDULE DETAILS - ADDED FOR CALENDAR FIX
+  emiScheduleDetails?: EMIScheduleDetails;
+  
   // Renewal tracking properties
   isRenewed?: boolean;
   renewedLoanNumber?: string;
@@ -172,6 +202,7 @@ export interface Loan {
   loanAmount?: number; // For backward compatibility
   lastPaymentDate?: string; // For backward compatibility
 }
+
 // =============================================
 // FORM DATA TYPES
 // =============================================
@@ -375,7 +406,7 @@ export interface TodayStats {
 }
 
 // =============================================
-// CALENDAR RELATED TYPES
+// CALENDAR RELATED TYPES - UPDATED FOR EMI CALENDAR FIX
 // =============================================
 
 /**
@@ -389,6 +420,9 @@ export interface CalendarDay {
   emiAmount?: number;
   loanNumbers?: string[];
   paymentHistory?: EMIHistory[];
+  // Added for custom EMI identification
+  isCustomInstallment?: boolean;
+  installmentNumber?: number;
 }
 
 /**

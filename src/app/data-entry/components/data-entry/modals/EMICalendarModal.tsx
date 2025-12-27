@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Customer, Loan } from '@/src/app/data-entry/types/dataEntry';
+import { Customer, Loan, EMIScheduleDetails } from '@/src/app/data-entry/types/dataEntry';
 
 // ============================================================================
 // IMPORT DATE UTILITIES
@@ -38,6 +38,8 @@ interface CalendarDay {
     loanNumber: string;
     amount: number;
     status: 'paid' | 'partial' | 'missed' | 'advance' | 'due';
+    isCustomInstallment?: boolean;
+    installmentNumber?: number;
   }[];
 }
 
@@ -49,12 +51,138 @@ interface EMIStatusInfo {
     loanNumber: string;
     amount: number;
     status: 'paid' | 'partial' | 'missed' | 'advance' | 'due';
+    isCustomInstallment?: boolean;
+    installmentNumber?: number;
   }[];
 }
 
 // Enhanced logging with DD/MM/YYYY formatting
 const debugLog = (label: string, data: unknown) => {
   console.log(`📅 [EMICalendar] ${label}:`, data);
+};
+
+// ============================================================================
+// NEW: Improved function to calculate installment number for any date
+// ============================================================================
+const calculateInstallmentNumberForDate = (loan: Loan, targetDate: Date): number | null => {
+  if (!loan.emiStartDate || !loan.loanType || !loan.totalEmiCount) {
+    return null;
+  }
+  
+  // Parse the EMI start date
+  const startDate = parseDateFromAPI(loan.emiStartDate);
+  const targetDateParsed = parseDateFromAPI(targetDate);
+  
+  // For Daily loans
+  if (loan.loanType === 'Daily') {
+    const daysDiff = Math.floor((targetDateParsed.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const installmentNumber = daysDiff + 1; // Installments start at 1
+    return installmentNumber >= 1 && installmentNumber <= loan.totalEmiCount ? installmentNumber : null;
+  }
+  
+  // For Weekly loans
+  if (loan.loanType === 'Weekly') {
+    const daysDiff = Math.floor((targetDateParsed.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const installmentNumber = Math.floor(daysDiff / 7) + 1;
+    return installmentNumber >= 1 && installmentNumber <= loan.totalEmiCount ? installmentNumber : null;
+  }
+  
+  // For Monthly loans - more accurate calculation
+  if (loan.loanType === 'Monthly') {
+    // Calculate months difference
+    const startYear = startDate.getFullYear();
+    const startMonth = startDate.getMonth();
+    const targetYear = targetDateParsed.getFullYear();
+    const targetMonth = targetDateParsed.getMonth();
+    
+    const monthsDiff = (targetYear - startYear) * 12 + (targetMonth - startMonth);
+    const installmentNumber = monthsDiff + 1;
+    
+    return installmentNumber >= 1 && installmentNumber <= loan.totalEmiCount ? installmentNumber : null;
+  }
+  
+  return null;
+};
+
+// ============================================================================
+// NEW: Function to get EMI amount for a specific date
+// ============================================================================
+const getEMIAmountForDate = (loan: Loan, date: Date): number => {
+  // First, try to use the emiScheduleDetails if available
+  if (loan.emiScheduleDetails && loan.emiScheduleDetails.schedule && loan.emiScheduleDetails.schedule.length > 0) {
+    const dateKey = getDateAsYYYYMMDD(date);
+    const scheduleItem = loan.emiScheduleDetails.schedule.find(
+      item => item.dueDate === dateKey
+    );
+    if (scheduleItem) {
+      debugLog(`Found schedule item for date ${dateKey}`, {
+        loanNumber: loan.loanNumber,
+        date: dateKey,
+        amount: scheduleItem.amount,
+        isCustom: scheduleItem.isCustom,
+        installmentNumber: scheduleItem.installmentNumber
+      });
+      return scheduleItem.amount;
+    }
+  }
+  
+  // If no schedule details, calculate installment number and get amount
+  const installmentNumber = calculateInstallmentNumberForDate(loan, date);
+  if (installmentNumber) {
+    debugLog(`Calculated installment ${installmentNumber} for date`, {
+      loanNumber: loan.loanNumber,
+      date: getDateAsYYYYMMDD(date),
+      installmentNumber,
+      emiType: loan.emiType,
+      isLastInstallment: installmentNumber === loan.totalEmiCount
+    });
+    
+    // Check if this is the last installment for custom EMI
+    if (loan.emiType === 'custom' && loan.loanType !== 'Daily' && installmentNumber === loan.totalEmiCount) {
+      debugLog(`Using custom amount for last installment`, {
+        loanNumber: loan.loanNumber,
+        installmentNumber,
+        customAmount: loan.customEmiAmount,
+        standardAmount: loan.emiAmount
+      });
+      return loan.customEmiAmount || loan.emiAmount;
+    }
+  }
+  
+  debugLog(`Using standard EMI amount`, {
+    loanNumber: loan.loanNumber,
+    date: getDateAsYYYYMMDD(date),
+    installmentNumber,
+    amount: loan.emiAmount
+  });
+  return loan.emiAmount;
+};
+
+// ============================================================================
+// NEW: Check if a date is a custom installment
+// ============================================================================
+const isCustomInstallmentDate = (loan: Loan, date: Date): boolean => {
+  // First, try to use the emiScheduleDetails if available
+  if (loan.emiScheduleDetails && loan.emiScheduleDetails.schedule && loan.emiScheduleDetails.schedule.length > 0) {
+    const dateKey = getDateAsYYYYMMDD(date);
+    const scheduleItem = loan.emiScheduleDetails.schedule.find(
+      item => item.dueDate === dateKey
+    );
+    if (scheduleItem) {
+      return scheduleItem.isCustom || false;
+    }
+  }
+  
+  // If no schedule details, calculate installment number
+  const installmentNumber = calculateInstallmentNumberForDate(loan, date);
+  if (installmentNumber) {
+    // Check if this is the last installment for custom EMI
+    return (loan.emiType === 'custom' && 
+            loan.loanType !== 'Daily' && 
+            installmentNumber === loan.totalEmiCount);
+  }
+  
+  return false;
 };
 
 // ============================================================================
@@ -124,8 +252,8 @@ const compareDates = (date1: any, date2: any): number => {
   const d1 = parseDateFromAPI(date1);
   const d2 = parseDateFromAPI(date2);
   
-  const date1Key = d1.toISOString().split('T')[0];
-  const date2Key = d2.toISOString().split('T')[0];
+  const date1Key = getDateAsYYYYMMDD(d1);
+  const date2Key = getDateAsYYYYMMDD(d2);
   
   if (date1Key < date2Key) return -1;
   if (date1Key > date2Key) return 1;
@@ -275,6 +403,44 @@ const debugEMIHistory = (loan: Loan) => {
   });
 };
 
+// ============================================================================
+// NEW: Helper to debug EMI schedule details
+// ============================================================================
+const debugEMIScheduleDetails = (loan: Loan) => {
+  if (!loan.emiScheduleDetails) {
+    debugLog(`No EMI schedule details for loan ${loan.loanNumber}`, {
+      emiType: loan.emiType,
+      hasCustomEmi: loan.emiType === 'custom',
+      customAmount: loan.customEmiAmount,
+      loanType: loan.loanType,
+      totalInstallments: loan.totalEmiCount
+    });
+    return;
+  }
+  
+  const details = loan.emiScheduleDetails;
+  debugLog(`EMI Schedule Details for ${loan.loanNumber}`, {
+    emiType: details.emiType,
+    customEmiAmount: details.customEmiAmount,
+    totalInstallments: details.totalInstallments,
+    customInstallmentNumber: details.customInstallmentNumber,
+    standardAmount: details.standardAmount,
+    customAmount: details.customAmount,
+    scheduleLength: details.schedule?.length || 0,
+    scheduleSample: details.schedule?.slice(0, 5).map(item => ({
+      installment: item.installmentNumber,
+      dueDate: item.dueDate,
+      amount: item.amount,
+      isCustom: item.isCustom
+    })),
+    customInstallments: details.schedule?.filter(item => item.isCustom).map(item => ({
+      installment: item.installmentNumber,
+      amount: item.amount,
+      dueDate: item.dueDate
+    }))
+  });
+};
+
 export default function EMICalendarModal({
   isOpen,
   onClose,
@@ -347,6 +513,9 @@ export default function EMICalendarModal({
             totalPaidAmount: customerData.totalPaidAmount || 0,
             remainingAmount: customerData.remainingAmount || customerData.loanAmount || 0,
             emiHistory: customerData.emiHistory || [],
+            emiType: customerData.emiType || 'fixed',
+            customEmiAmount: customerData.customEmiAmount || null,
+            emiScheduleDetails: customerData.emiScheduleDetails || null,
             status: 'active',
             isRenewed: false,
             renewedLoanNumber: '',
@@ -373,6 +542,11 @@ export default function EMICalendarModal({
         }))
       });
       
+      // Debug EMI schedule details for each loan
+      activeLoans.forEach(loan => {
+        debugEMIScheduleDetails(loan);
+      });
+      
       setCustomerLoans(activeLoans);
       
       // Create loan options
@@ -381,10 +555,18 @@ export default function EMICalendarModal({
       ];
       
       activeLoans.forEach((loan, index) => {
-        options.push({
-          value: loan.loanNumber || `L${index + 1}`,
-          label: loan.loanNumber || `L${index + 1}`
-        });
+        const label = `${loan.loanNumber || `L${index + 1}`}`;
+        if (loan.emiType === 'custom' && loan.loanType !== 'Daily') {
+          options.push({
+            value: loan.loanNumber || `L${index + 1}`,
+            label: `${label} ⭐ (Custom EMI - ₹${loan.emiAmount}/₹${loan.customEmiAmount})`
+          });
+        } else {
+          options.push({
+            value: loan.loanNumber || `L${index + 1}`,
+            label: label
+          });
+        }
       });
       
       setLoanOptions(options);
@@ -420,7 +602,12 @@ export default function EMICalendarModal({
         formattedEmiStartDate: safeFormatDate(l.emiStartDate),
         emiStartDateType: typeof l.emiStartDate,
         loanType: l.loanType,
-        emiAmount: l.emiAmount
+        emiAmount: l.emiAmount,
+        emiType: l.emiType,
+        customEmiAmount: l.customEmiAmount,
+        totalEmiCount: l.totalEmiCount,
+        hasScheduleDetails: !!l.emiScheduleDetails,
+        isWeeklyCustom: l.loanType === 'Weekly' && l.emiType === 'custom'
       }))
     });
 
@@ -446,16 +633,23 @@ export default function EMICalendarModal({
     loansToShow.forEach(loan => {
       // Debug EMI history for this loan
       debugEMIHistory(loan);
+      debugEMIScheduleDetails(loan);
       
       debugLog(`Processing loan ${loan.loanNumber}`, {
         emiStartDate: loan.emiStartDate,
         formattedEmiStartDate: safeFormatDate(loan.emiStartDate),
         emiStartDateType: typeof loan.emiStartDate,
         loanType: loan.loanType,
-        emiAmount: loan.emiAmount
+        emiAmount: loan.emiAmount,
+        emiType: loan.emiType,
+        customEmiAmount: loan.customEmiAmount,
+        totalEmiCount: loan.totalEmiCount,
+        loanDays: loan.loanDays,
+        hasScheduleDetails: !!loan.emiScheduleDetails,
+        isWeeklyCustom: loan.loanType === 'Weekly' && loan.emiType === 'custom'
       });
 
-      if (!loan.emiStartDate || !loan.loanType || !loan.emiAmount) {
+      if (!loan.emiStartDate || !loan.loanType) {
         debugLog(`Skipping loan - missing data`, loan);
         return;
       }
@@ -483,11 +677,14 @@ export default function EMICalendarModal({
         dates: emiSchedule.slice(0, 5).map(date => ({
           date: date.toLocaleDateString('en-IN'),
           formatted: formatDateToDDMMYYYY(date),
-          day: date.getDate()
-        }))
+          day: date.getDate(),
+          month: date.getMonth() + 1
+        })),
+        isWeeklyLoan: loan.loanType === 'Weekly'
       });
       
-      emiSchedule.forEach(scheduledDate => {
+      // Process each scheduled date
+      emiSchedule.forEach((scheduledDate) => {
         // ============================================================================
         // FIXED: Use consistent date formatting
         // ============================================================================
@@ -496,9 +693,29 @@ export default function EMICalendarModal({
         
         const existing = emiStatusMap.get(dateKey);
         
+        // ============================================================================
+        // FIXED: Get correct EMI amount for this specific date
+        // ============================================================================
+        const expectedEMIAmount = getEMIAmountForDate(loan, scheduledDate);
+        const isCustomInstallmentFlag = isCustomInstallmentDate(loan, scheduledDate);
+        const installmentNumber = calculateInstallmentNumberForDate(loan, scheduledDate);
+        
+        debugLog(`EMI Amount for date ${formattedDate}`, {
+          loanNumber: loan.loanNumber,
+          date: formattedDate,
+          dateKey,
+          expectedAmount: expectedEMIAmount,
+          isCustom: isCustomInstallmentFlag,
+          installmentNumber,
+          standardEmiAmount: loan.emiAmount,
+          customEmiAmount: loan.customEmiAmount,
+          loanType: loan.loanType,
+          emiType: loan.emiType
+        });
+        
         // Determine payment status
         let paymentStatus: 'paid' | 'partial' | 'missed' | 'advance' | 'due' | 'amount-only' = 'due';
-        let paymentAmount = loan.emiAmount;
+        let paymentAmount = expectedEMIAmount;
         
         // Check payment history
         if (loan.emiHistory && loan.emiHistory.length > 0) {
@@ -525,7 +742,7 @@ export default function EMICalendarModal({
           if (relevantPayments.length > 0) {
             const totalPaid = relevantPayments.reduce((sum, p) => sum + p.amount, 0);
             
-            if (totalPaid >= loan.emiAmount) {
+            if (totalPaid >= expectedEMIAmount) {
               paymentStatus = relevantPayments.some(p => p.status === 'Advance') ? 'advance' : 'paid';
             } else if (totalPaid > 0) {
               paymentStatus = 'partial';
@@ -556,7 +773,9 @@ export default function EMICalendarModal({
         const loanDetail = {
           loanNumber: loan.loanNumber || 'L1',
           amount: paymentAmount,
-          status: paymentStatus
+          status: paymentStatus,
+          isCustomInstallment: isCustomInstallmentFlag,
+          installmentNumber: installmentNumber || undefined
         };
         
         emiStatusMap.set(dateKey, {
@@ -592,13 +811,43 @@ export default function EMICalendarModal({
     });
 
     setCalendarDays(updatedCalendarDays);
+    
+    // Log details about custom EMI loans
+    const customEMILoans = loansToShow.filter(loan => 
+      loan.emiType === 'custom' && loan.loanType !== 'Daily'
+    );
+    
+    customEMILoans.forEach(loan => {
+      const customInstallments = updatedCalendarDays.filter(day => 
+        day.loanDetails?.some(ld => 
+          ld.loanNumber === loan.loanNumber && ld.isCustomInstallment
+        )
+      );
+      
+      debugLog(`Custom EMI Loan Summary: ${loan.loanNumber}`, {
+        loanType: loan.loanType,
+        emiAmount: loan.emiAmount,
+        customEmiAmount: loan.customEmiAmount,
+        totalInstallments: loan.totalEmiCount,
+        customInstallmentsFound: customInstallments.length,
+        customDates: customInstallments.map(day => ({
+          date: formatDateToDDMMYYYY(day.date),
+          amount: day.amount,
+          installmentNumber: day.loanDetails?.find(ld => ld.loanNumber === loan.loanNumber)?.installmentNumber
+        }))
+      });
+    });
+    
     debugLog('Calendar days set', { 
       daysCount: updatedCalendarDays.length, 
       emiDays: updatedCalendarDays.filter(d => d.isEmiDue).length,
       month: `${selectedMonth + 1}/${selectedYear}`,
       today: todayFormatted,
       firstDay: formatDateToDDMMYYYY(updatedCalendarDays[0]?.date),
-      lastDay: formatDateToDDMMYYYY(updatedCalendarDays[updatedCalendarDays.length - 1]?.date)
+      lastDay: formatDateToDDMMYYYY(updatedCalendarDays[updatedCalendarDays.length - 1]?.date),
+      customEMICount: updatedCalendarDays.filter(d => 
+        d.loanDetails?.some(ld => ld.isCustomInstallment)
+      ).length
     });
   }, [selectedMonth, selectedYear, customerLoans, selectedLoan, isOpen]);
 
@@ -707,6 +956,16 @@ export default function EMICalendarModal({
                     Today: {formatDateToDDMMYYYY(getTodayIST())}
                   </span>
                 </div>
+                {/* ============================================================================
+                // NEW: Custom EMI indicator
+                // ============================================================================ */}
+                {selectedLoan !== 'all' && customerLoans.find(l => l.loanNumber === selectedLoan)?.emiType === 'custom' && (
+                  <div className="mt-2">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-300">
+                      ⭐ Custom EMI Loan • Last installment has different amount
+                    </span>
+                  </div>
+                )}
               </div>
               <button
                 onClick={onClose}
@@ -789,6 +1048,8 @@ export default function EMICalendarModal({
                 {calendarDays.map((day, index) => {
                   const formattedDate = formatDateToDDMMYYYY(day.date);
                   const dayOfWeek = day.date.getDay();
+                  const hasCustomInstallments = day.loanDetails?.some(ld => ld.isCustomInstallment);
+                  const customInstallmentDetails = day.loanDetails?.filter(ld => ld.isCustomInstallment);
                   
                   return (
                     <div
@@ -797,7 +1058,9 @@ export default function EMICalendarModal({
                         !day.isCurrentMonth ? 'bg-gray-50 opacity-60' : ''
                       } ${
                         day.isToday ? 'bg-blue-50' : ''
-                      } ${dayOfWeek === 0 || dayOfWeek === 6 ? 'bg-red-50 bg-opacity-30' : ''}`}
+                      } ${dayOfWeek === 0 || dayOfWeek === 6 ? 'bg-red-50 bg-opacity-30' : ''} ${
+                        hasCustomInstallments ? 'bg-purple-50 border-purple-300' : ''
+                      }`}
                     >
                       <div className="flex flex-col h-full">
                         <div className="flex justify-between items-start mb-1">
@@ -806,6 +1069,7 @@ export default function EMICalendarModal({
                               !day.isCurrentMonth ? 'text-gray-400' :
                               day.isToday ? 'text-blue-600' :
                               day.isWeekend ? 'text-red-600' :
+                              hasCustomInstallments ? 'text-purple-600' :
                               'text-gray-900'
                             }`}>
                               {day.date.getDate()}
@@ -819,6 +1083,16 @@ export default function EMICalendarModal({
                             {!day.isCurrentMonth && (
                               <div className="text-xs text-gray-400">
                                 {day.date.getMonth() < selectedMonth ? 'Prev month' : 'Next month'}
+                              </div>
+                            )}
+                            {hasCustomInstallments && (
+                              <div className="text-xs text-purple-600 font-medium mt-0.5">
+                                ⭐ Custom Installment
+                                {customInstallmentDetails?.[0]?.installmentNumber && (
+                                  <span className="text-purple-400 ml-1">
+                                    (#{customInstallmentDetails[0].installmentNumber})
+                                  </span>
+                                )}
                               </div>
                             )}
                           </div>
@@ -842,14 +1116,22 @@ export default function EMICalendarModal({
                                     {day.loanNumbers.length > 2 && (
                                       <div className="text-gray-400">+{day.loanNumbers.length - 2} more</div>
                                     )}
+                                    {hasCustomInstallments && (
+                                      <div className="text-purple-600 text-xs mt-0.5">
+                                        Includes custom EMI
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>
                             ) : (
                               // Single Loan View: Show detailed status
                               <div className="text-xs">
-                                <div className="font-medium text-gray-700">
+                                <div className="font-medium text-gray-700 flex items-center gap-1">
                                   {getStatusText(day.status)} EMI
+                                  {hasCustomInstallments && (
+                                    <span className="text-purple-600">⭐</span>
+                                  )}
                                 </div>
                                 <div className={`font-bold ${
                                   day.status === 'paid' ? 'text-green-600' :
@@ -860,6 +1142,16 @@ export default function EMICalendarModal({
                                 }`}>
                                   ₹{day.amount?.toLocaleString() || '0'}
                                 </div>
+                                {hasCustomInstallments && (
+                                  <div className="text-purple-600 text-xs mt-0.5">
+                                    Custom amount (last installment)
+                                  </div>
+                                )}
+                                {customInstallmentDetails?.[0]?.installmentNumber && (
+                                  <div className="text-gray-500 text-xs">
+                                    Installment #{customInstallmentDetails[0].installmentNumber}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
@@ -876,10 +1168,16 @@ export default function EMICalendarModal({
               <h4 className="text-sm font-medium text-gray-900 mb-2">Legend</h4>
               <div className="flex flex-wrap gap-3">
                 {selectedLoan === 'all' ? (
-                  <div className="flex items-center">
-                    <div className="w-4 h-4 bg-purple-100 border border-purple-300 rounded mr-2"></div>
-                    <span className="text-sm text-gray-700">Total EMI Amount (Sum of all loans)</span>
-                  </div>
+                  <>
+                    <div className="flex items-center">
+                      <div className="w-4 h-4 bg-purple-100 border border-purple-300 rounded mr-2"></div>
+                      <span className="text-sm text-gray-700">Total EMI Amount (Sum of all loans)</span>
+                    </div>
+                    <div className="flex items-center">
+                      <div className="w-4 h-4 bg-purple-50 border border-purple-300 rounded mr-2"></div>
+                      <span className="text-sm text-gray-700">Day with Custom EMI</span>
+                    </div>
+                  </>
                 ) : (
                   <>
                     <div className="flex items-center">
@@ -901,6 +1199,10 @@ export default function EMICalendarModal({
                     <div className="flex items-center">
                       <div className="w-4 h-4 bg-gray-100 border border-gray-300 rounded mr-2"></div>
                       <span className="text-sm text-gray-700">Due</span>
+                    </div>
+                    <div className="flex items-center">
+                      <div className="w-4 h-4 bg-purple-50 border border-purple-300 rounded mr-2"></div>
+                      <span className="text-sm text-gray-700">Custom Installment</span>
                     </div>
                   </>
                 )}
@@ -935,6 +1237,14 @@ export default function EMICalendarModal({
                 <div className="text-xs text-gray-500 mt-1">
                   Calendar: {calendarDays.length} days ({Math.ceil(calendarDays.length / 7)} weeks)
                 </div>
+                {/* ============================================================================
+                // NEW: Custom EMI summary
+                // ============================================================================ */}
+                {selectedLoan !== 'all' && customerLoans.find(l => l.loanNumber === selectedLoan)?.emiType === 'custom' && (
+                  <div className="text-xs text-purple-600 mt-1 font-medium">
+                    ⭐ This loan has custom EMI: Last installment shows custom amount
+                  </div>
+                )}
               </div>
               <button
                 onClick={onClose}

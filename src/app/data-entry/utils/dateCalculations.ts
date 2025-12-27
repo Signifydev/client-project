@@ -225,7 +225,7 @@ export const calculateLastScheduledEmiDate = (
 };
 
 /**
- * Generate EMI schedule using IST dates
+ * Generate EMI schedule using IST dates - FIXED VERSION
  */
 export const generateEmiSchedule = (
   emiStartDate: string,
@@ -237,40 +237,66 @@ export const generateEmiSchedule = (
   const schedule: Date[] = [];
   if (!emiStartDate || !loanType || !totalEmiCount) return schedule;
   
+  // Parse start date as IST
   const startDate = parseISTDateString(emiStartDate);
+  
+  // Create month boundaries in local time (not UTC)
   const monthStart = new Date(year, month, 1);
   const monthEnd = new Date(year, month + 1, 0);
   
-  // Convert month bounds to IST for comparison
-  const monthStartIST = new Date(monthStart.getTime() + IST_OFFSET_MS);
-  const monthEndIST = new Date(monthEnd.getTime() + IST_OFFSET_MS);
+  // Reset times to beginning of day for comparison
+  monthStart.setHours(0, 0, 0, 0);
+  monthEnd.setHours(23, 59, 59, 999);
   
-  const mutableDate = new Date(startDate);
+  // Start from the first installment
+  let currentDate = new Date(startDate);
   
-  for (let i = 0; i < totalEmiCount; i++) {
-    if (i > 0) {
+  // Generate all installments
+  for (let i = 1; i <= totalEmiCount; i++) {
+    if (i > 1) {
+      // Calculate next installment date based on loan type
       switch(loanType) {
         case 'Daily':
-          mutableDate.setDate(mutableDate.getDate() + 1);
+          currentDate.setDate(currentDate.getDate() + 1);
           break;
         case 'Weekly':
-          mutableDate.setDate(mutableDate.getDate() + 7);
+          currentDate.setDate(currentDate.getDate() + 7);
           break;
         case 'Monthly':
-          mutableDate.setMonth(mutableDate.getMonth() + 1);
+          currentDate.setMonth(currentDate.getMonth() + 1);
           break;
         default:
-          mutableDate.setDate(mutableDate.getDate() + 1);
+          currentDate.setDate(currentDate.getDate() + 1);
       }
     }
     
-    // Check if within current month (using IST dates)
-    if (mutableDate >= monthStartIST && mutableDate <= monthEndIST) {
-      schedule.push(new Date(mutableDate));
+    // Create a clean date object for this installment
+    const installmentDate = new Date(currentDate);
+    
+    // Check if this installment falls within the requested month
+    if (installmentDate >= monthStart && installmentDate <= monthEnd) {
+      schedule.push(new Date(installmentDate));
     }
     
-    if (mutableDate > monthEndIST) break;
+    // If we've gone past the end of the month, we can stop
+    if (installmentDate > monthEnd) {
+      break;
+    }
   }
+  
+  // Debug logging
+  console.log('📅 generateEmiSchedule Debug:', {
+    emiStartDate,
+    loanType,
+    totalEmiCount,
+    year,
+    month: month + 1,
+    startDate: startDate.toISOString(),
+    monthStart: monthStart.toISOString(),
+    monthEnd: monthEnd.toISOString(),
+    scheduleLength: schedule.length,
+    scheduleDates: schedule.map(d => d.toISOString().split('T')[0])
+  });
   
   return schedule;
 };
@@ -294,6 +320,93 @@ export const getISTDateString = (date: Date): string => {
   const month = (istDate.getMonth() + 1).toString().padStart(2, '0');
   const day = istDate.getDate().toString().padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+
+// ============================================================================
+// NEW: Date utility functions for EMI calendar
+// ============================================================================
+
+/**
+ * Add days to a date string (YYYY-MM-DD format)
+ */
+export const addDaysToDateString = (dateString: string, days: number): string => {
+  const date = parseISTDateString(dateString);
+  date.setDate(date.getDate() + days);
+  return getISTDateString(date);
+};
+
+/**
+ * Add weeks to a date string (YYYY-MM-DD format)
+ */
+export const addWeeksToDateString = (dateString: string, weeks: number): string => {
+  const date = parseISTDateString(dateString);
+  date.setDate(date.getDate() + (weeks * 7));
+  return getISTDateString(date);
+};
+
+/**
+ * Add months to a date string (YYYY-MM-DD format)
+ */
+export const addMonthsToDateString = (dateString: string, months: number): string => {
+  const date = parseISTDateString(dateString);
+  date.setMonth(date.getMonth() + months);
+  return getISTDateString(date);
+};
+
+/**
+ * Generate complete EMI schedule for a loan
+ */
+export const generateCompleteEMISchedule = (
+  emiStartDate: string,
+  loanType: string,
+  totalInstallments: number,
+  standardAmount: number,
+  customAmount?: number,
+  customInstallmentNumber?: number
+): Array<{ installmentNumber: number; dueDate: string; amount: number; isCustom: boolean; formattedDate: string }> => {
+  const schedule = [];
+  
+  for (let i = 1; i <= totalInstallments; i++) {
+    let dueDate: Date;
+    
+    if (loanType === 'Daily') {
+      dueDate = parseISTDateString(addDaysToDateString(emiStartDate, i - 1));
+    } else if (loanType === 'Weekly') {
+      dueDate = parseISTDateString(addWeeksToDateString(emiStartDate, i - 1));
+    } else if (loanType === 'Monthly') {
+      dueDate = parseISTDateString(addMonthsToDateString(emiStartDate, i - 1));
+    } else {
+      dueDate = parseISTDateString(addDaysToDateString(emiStartDate, i - 1));
+    }
+    
+    const dueDateStr = getISTDateString(dueDate);
+    const formattedDate = formatToDDMMYYYY(dueDateStr);
+    
+    // Determine amount for this installment
+    let amount = standardAmount;
+    let isCustom = false;
+    
+    if (customAmount !== undefined && customInstallmentNumber !== undefined) {
+      if (customInstallmentNumber === i) {
+        amount = customAmount;
+        isCustom = true;
+      }
+    } else if (customAmount !== undefined && i === totalInstallments) {
+      // Default: last installment is custom
+      amount = customAmount;
+      isCustom = true;
+    }
+    
+    schedule.push({
+      installmentNumber: i,
+      dueDate: dueDateStr,
+      amount,
+      isCustom,
+      formattedDate
+    });
+  }
+  
+  return schedule;
 };
 
 // Keep existing functions with minor updates for consistency
@@ -383,4 +496,9 @@ export const testDateConversions = (): void => {
   const backToIST = convertUTCToIST(toUTC);
   console.log('Converted back to IST:', backToIST.toISOString());
   console.log('IST date components:', getISTDateFromUTC(toUTC));
+  
+  // Test weekly schedule generation
+  console.log('🧪 Testing Weekly EMI Schedule:');
+  const weeklySchedule = generateEmiSchedule('2025-01-01', 'Weekly', 4, 2025, 0); // Jan 2025
+  console.log('Weekly Schedule:', weeklySchedule.map(d => d.toISOString().split('T')[0]));
 };

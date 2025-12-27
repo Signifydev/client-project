@@ -238,6 +238,27 @@ export async function GET(request, { params }) {
           isValidYYYYMMDD: isValidYYYYMMDD(dateApplied)
         });
         
+        // ==============================================
+        // FIXED: Include emiScheduleDetails if it exists
+        // ==============================================
+        const emiScheduleDetails = loan.emiScheduleDetails || null;
+        
+        // If emiScheduleDetails exists but doesn't have schedule, generate it
+        let finalScheduleDetails = emiScheduleDetails;
+        if (!emiScheduleDetails && loan.emiType === 'custom' && loan.loanType !== 'Daily') {
+          // Generate schedule details for existing custom EMI loans
+          console.log(`🔧 Generating schedule for custom EMI loan: ${loan.loanNumber}`);
+          finalScheduleDetails = {
+            emiType: loan.emiType || 'fixed',
+            customEmiAmount: loan.customEmiAmount || null,
+            totalInstallments: loan.totalEmiCount || loan.loanDays || 30,
+            customInstallmentNumber: loan.totalEmiCount || loan.loanDays || 30, // Last installment
+            standardAmount: loan.emiAmount || 0,
+            customAmount: loan.customEmiAmount || null,
+            schedule: [] // Empty for now, can be generated on frontend
+          };
+        }
+        
         return {
           _id: loan._id,
           customerId: loan.customerId,
@@ -269,6 +290,8 @@ export async function GET(request, { params }) {
           // Include EMI type fields
           emiType: loan.emiType || 'fixed',
           customEmiAmount: loan.customEmiAmount || null,
+          // ========== FIX: INCLUDE EMI SCHEDULE DETAILS ==========
+          emiScheduleDetails: finalScheduleDetails,
           // ========== ADDED DATE DISPLAY FIELDS ==========
           // Display dates in DD/MM/YYYY format
           dateAppliedDisplay: dateAppliedDisplay,
@@ -336,7 +359,7 @@ export async function GET(request, { params }) {
 
     console.log('✅ Customer details prepared successfully');
     
-    // Log sample dates for debugging
+    // Log sample dates and EMI schedule details for debugging
     if (customerWithLoans.loans.length > 0) {
       const sampleLoan = customerWithLoans.loans[0];
       console.log('📋 Sample Loan Date Verification:', {
@@ -346,7 +369,31 @@ export async function GET(request, { params }) {
         emiStartDate: sampleLoan.emiStartDate,
         emiStartDateDisplay: sampleLoan.emiStartDateDisplay,
         nextEmiDate: sampleLoan.nextEmiDate,
-        nextEmiDateDisplay: sampleLoan.nextEmiDateDisplay
+        nextEmiDateDisplay: sampleLoan.nextEmiDateDisplay,
+        hasEMIScheduleDetails: !!sampleLoan.emiScheduleDetails,
+        emiType: sampleLoan.emiType,
+        customEmiAmount: sampleLoan.customEmiAmount
+      });
+      
+      // Log if any loans have custom EMI
+      const customEMILoans = customerWithLoans.loans.filter(loan => 
+        loan.emiType === 'custom' && loan.loanType !== 'Daily'
+      );
+      console.log(`📊 Found ${customEMILoans.length} custom EMI loans`);
+      
+      customEMILoans.forEach((loan, index) => {
+        console.log(`🔍 Custom EMI Loan ${index + 1}:`, {
+          loanNumber: loan.loanNumber,
+          emiType: loan.emiType,
+          emiAmount: loan.emiAmount,
+          customEmiAmount: loan.customEmiAmount,
+          hasScheduleDetails: !!loan.emiScheduleDetails,
+          scheduleDetails: loan.emiScheduleDetails ? {
+            totalInstallments: loan.emiScheduleDetails.totalInstallments,
+            customInstallmentNumber: loan.emiScheduleDetails.customInstallmentNumber,
+            scheduleLength: loan.emiScheduleDetails.schedule?.length || 0
+          } : null
+        });
       });
     }
 
@@ -357,10 +404,12 @@ export async function GET(request, { params }) {
 
   } catch (error) {
     console.error('❌ Error fetching customer details:', error);
+    console.error('❌ Stack trace:', error.stack);
     return NextResponse.json(
       { 
         success: false,
-        error: 'Failed to fetch customer details: ' + error.message 
+        error: 'Failed to fetch customer details: ' + error.message,
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
       },
       { status: 500 }
     );

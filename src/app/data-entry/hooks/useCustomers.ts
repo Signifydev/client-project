@@ -145,7 +145,7 @@ export const useCustomers = (currentUserOffice?: string, refreshKey = 0): UseCus
     }
   }, [fetchCustomers]);
 
-  // FIXED: fetchCustomerDetails with better error handling
+  // UPDATED: fetchCustomerDetails with better error handling and fallback
   const fetchCustomerDetails = useCallback(async (customerId: string): Promise<CustomerDetails | null> => {
     // Check cache first
     const cacheKey = `customer_details_${customerId}`;
@@ -166,10 +166,8 @@ export const useCustomers = (currentUserOffice?: string, refreshKey = 0): UseCus
     // Create new request
     const requestPromise = (async () => {
       try {
-        // IMPORTANT: Check if we're in development and handle the route differently
-        // For Next.js API routes, the correct path might be different
-        const baseUrl = process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : '';
-        const url = `${baseUrl}/api/data-entry/customers/${customerId}?t=${Date.now()}`;
+        // FIXED: Use relative URL in Next.js
+        const url = `/api/data-entry/customers/${customerId}?t=${Date.now()}`;
         
         console.log('🌐 Fetching customer details from:', url);
         
@@ -181,8 +179,16 @@ export const useCustomers = (currentUserOffice?: string, refreshKey = 0): UseCus
         });
         
         if (!response.ok) {
-          console.error(`❌ HTTP ${response.status} fetching customer details`);
-          throw new Error(`Failed to fetch customer details: ${response.status} ${response.statusText}`);
+          const errorText = await response.text();
+          console.error(`❌ HTTP ${response.status} fetching customer details:`, errorText);
+          
+          // Try to parse error if it's JSON
+          try {
+            const errorData = JSON.parse(errorText);
+            throw new Error(errorData.error || `HTTP ${response.status}: Failed to fetch customer details`);
+          } catch {
+            throw new Error(`HTTP ${response.status}: Failed to fetch customer details - ${response.statusText}`);
+          }
         }
         
         const data = await response.json();
@@ -225,7 +231,9 @@ export const useCustomers = (currentUserOffice?: string, refreshKey = 0): UseCus
               dateApplied: formatDateField(loan.dateApplied),
               emiStartDate: formatDateField(loan.emiStartDate),
               nextEmiDate: formatDateField(loan.nextEmiDate),
-              lastEmiDate: formatDateField(loan.lastEmiDate)
+              lastEmiDate: formatDateField(loan.lastEmiDate),
+              // Ensure emiScheduleDetails exists for custom EMI loans
+              emiScheduleDetails: loan.emiScheduleDetails || null
             };
           });
         }
@@ -233,7 +241,8 @@ export const useCustomers = (currentUserOffice?: string, refreshKey = 0): UseCus
         console.log('✅ Customer details fetched successfully:', {
           id: customerDetails._id,
           name: customerDetails.name,
-          hasLoans: customerDetails.loans?.length || 0
+          hasLoans: customerDetails.loans?.length || 0,
+          hasEMIScheduleDetails: customerDetails.loans?.some((l: any) => l.emiScheduleDetails) || false
         });
         
         // Update cache
@@ -245,10 +254,30 @@ export const useCustomers = (currentUserOffice?: string, refreshKey = 0): UseCus
         return customerDetails;
       } catch (error) {
         console.error('❌ Error fetching customer details:', error);
+        
+        // FALLBACK: If the customer details API fails, try to get from local cache
+        const cachedCustomers = customersCache.values().next().value?.data;
+        if (cachedCustomers) {
+          const fallbackCustomer = cachedCustomers.find((c: Customer) => c._id === customerId);
+          if (fallbackCustomer) {
+            console.log('⚠️ Using fallback customer data from cache');
+            return {
+              ...fallbackCustomer,
+              loans: fallbackCustomer.loans || [],
+              // Add minimal required fields
+              address: fallbackCustomer.address || '',
+              businessType: fallbackCustomer.businessType || '',
+              category: fallbackCustomer.category || '',
+              officeCategory: fallbackCustomer.officeCategory || '',
+              whatsappNumber: fallbackCustomer.whatsappNumber || '',
+              lastPaymentDate: fallbackCustomer.lastPaymentDate || ''
+            } as CustomerDetails;
+          }
+        }
+        
         // Don't cache errors
-        return null;
-      } finally {
         pendingDetailsRequests.delete(cacheKey);
+        return null;
       }
     })();
     
