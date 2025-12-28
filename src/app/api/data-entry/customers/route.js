@@ -611,7 +611,6 @@ export async function POST(request) {
       },
       
       description: `New customer request for ${name} - ${businessName} (${customerNumber})`,
-      priority: category === 'A' ? 'High' : category === 'B' ? 'Medium' : 'Low',
       createdAt: new Date(),
       updatedAt: new Date(),
       dateHandling: {

@@ -201,75 +201,75 @@ export default function PendingRequests({
   };
 
   const renderFieldValue = (label: string, value: any) => {
-  if (value === null || value === undefined || value === '') {
-    return 'N/A';
-  }
-  
-  // Handle objects (like documents)
-  if (typeof value === 'object' && value !== null) {
-    // If it's an array, handle each item
-    if (Array.isArray(value)) {
-      return (
-        <div className="space-y-1">
-          {value.map((item, index) => {
-            if (typeof item === 'object' && item !== null) {
-              // Handle document objects
-              if (item.url || item.filename) {
-                return (
-                  <div key={index} className="flex items-center space-x-1">
-                    <span>📄</span>
-                    <a 
-                      href={item.url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:text-blue-800 underline text-sm"
-                    >
-                      {item.originalName || item.filename || 'Document'}
-                    </a>
-                  </div>
-                );
+    if (value === null || value === undefined || value === '') {
+      return 'N/A';
+    }
+    
+    // Handle objects (like documents)
+    if (typeof value === 'object' && value !== null) {
+      // If it's an array, handle each item
+      if (Array.isArray(value)) {
+        return (
+          <div className="space-y-1">
+            {value.map((item, index) => {
+              if (typeof item === 'object' && item !== null) {
+                // Handle document objects
+                if (item.url || item.filename) {
+                  return (
+                    <div key={index} className="flex items-center space-x-1">
+                      <span>📄</span>
+                      <a 
+                        href={item.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 underline text-sm"
+                      >
+                        {item.displayName || item.originalName || item.filename || 'Document'}
+                      </a>
+                    </div>
+                  );
+                }
+                // For other objects, show as JSON string
+                return <span key={index} className="text-sm text-gray-600">{JSON.stringify(item)}</span>;
               }
-              // For other objects, show as JSON string
-              return <span key={index} className="text-sm text-gray-600">{JSON.stringify(item)}</span>;
-            }
-            // For non-object items
-            return <span key={index} className="text-sm">{String(item)}</span>;
-          })}
-        </div>
-      );
+              // For non-object items
+              return <span key={index} className="text-sm">{String(item)}</span>;
+            })}
+          </div>
+        );
+      }
+      
+      // Handle single object (like profilePicture)
+      if (value.url || value.filename) {
+        return (
+          <div className="flex items-center space-x-1">
+            <span>📄</span>
+            <a 
+              href={value.url} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:text-blue-800 underline text-sm"
+            >
+              {value.displayName || value.originalName || value.filename || 'Document'}
+            </a>
+          </div>
+        );
+      }
+      
+      // For other single objects, show as JSON string
+      return <span className="text-sm text-gray-600">{JSON.stringify(value)}</span>;
     }
     
-    // Handle single object (like profilePicture)
-    if (value.url || value.filename) {
-      return (
-        <div className="flex items-center space-x-1">
-          <span>📄</span>
-          <a 
-            href={value.url} 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="text-blue-600 hover:text-blue-800 underline text-sm"
-          >
-            {value.originalName || value.filename || 'Document'}
-          </a>
-        </div>
-      );
+    if (label.toLowerCase().includes('amount')) {
+      return `₹${Number(value).toLocaleString()}`;
     }
     
-    // For other single objects, show as JSON string
-    return <span className="text-sm text-gray-600">{JSON.stringify(value)}</span>;
-  }
-  
-  if (label.toLowerCase().includes('amount')) {
-    return `₹${Number(value).toLocaleString()}`;
-  }
-  
-  if (label.toLowerCase().includes('date') && !isNaN(Date.parse(value))) {
-    return new Date(value).toLocaleDateString();
-  }
-  
-  return String(value);
-};
+    if (label.toLowerCase().includes('date') && !isNaN(Date.parse(value))) {
+      return new Date(value).toLocaleDateString();
+    }
+    
+    return String(value);
+  };
 
   const getCustomerDetails = (request: any) => {
     // For New Customer requests, data is in step1Data, step2Data, step3Data
@@ -304,18 +304,18 @@ export default function PendingRequests({
         value: customerData.customerNumber || request.customerNumber || 'N/A'
       },
       { 
-  label: 'Primary Phone', 
-  value: (() => {
-    const phoneValue = customerData.phone || request.customerPhone;
-    if (Array.isArray(phoneValue)) {
-      return phoneValue[0] || 'N/A';
-    } else if (typeof phoneValue === 'object') {
-      // Handle if phone is somehow an object
-      return phoneValue.toString ? phoneValue.toString() : 'N/A';
-    }
-    return phoneValue || 'N/A';
-  })()
-},
+        label: 'Primary Phone', 
+        value: (() => {
+          const phoneValue = customerData.phone || request.customerPhone;
+          if (Array.isArray(phoneValue)) {
+            return phoneValue[0] || 'N/A';
+          } else if (typeof phoneValue === 'object') {
+            // Handle if phone is somehow an object
+            return phoneValue.toString ? phoneValue.toString() : 'N/A';
+          }
+          return phoneValue || 'N/A';
+        })()
+      },
       { 
         label: 'Secondary Phone', 
         value: Array.isArray(customerData.phone) && customerData.phone[1] 
@@ -396,14 +396,6 @@ export default function PendingRequests({
                   {getRequestTypeLabel(request.type)}
                 </span>
                 <span className="text-gray-600 text-sm">ID: {request._id?.substring(0, 8)}...</span>
-                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                  request.priority === 'High' ? 'bg-red-100 text-red-800' :
-                  request.priority === 'Urgent' ? 'bg-red-200 text-red-900' :
-                  request.priority === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
-                  'bg-blue-100 text-blue-800'
-                }`}>
-                  {request.priority || 'Medium'} Priority
-                </span>
               </div>
             </div>
             <div className="text-right">
@@ -566,9 +558,9 @@ export default function PendingRequests({
                           ? 'Uploaded' 
                           : 'Not Uploaded'}
                       </p>
-                      {customerData.profilePicture?.originalName && (
+                      {customerData.profilePicture?.displayName && (
                         <p className="text-xs text-gray-500 truncate max-w-[200px]">
-                          {customerData.profilePicture.originalName}
+                          {customerData.profilePicture.displayName}
                         </p>
                       )}
                     </div>
@@ -576,74 +568,74 @@ export default function PendingRequests({
                 </div>
 
                 {/* FI Documents */}
-<div className="space-y-3">
-  <p className="text-sm font-medium text-gray-600">FI Documents</p>
-  <div className="space-y-2">
-    {/* Shop FI Document */}
-    <div className="flex items-center justify-between">
-      <span className="text-gray-700">Shop FI Document</span>
-      <div>
-        {customerData.fiDocuments?.shop ? (
-          typeof customerData.fiDocuments.shop === 'object' ? (
-            <a 
-              href={customerData.fiDocuments.shop.url} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-blue-600 hover:text-blue-800 underline text-sm"
-            >
-              {customerData.fiDocuments.shop.originalName || 'View Document'}
-            </a>
-          ) : (
-            <a 
-              href={customerData.fiDocuments.shop} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-blue-600 hover:text-blue-800 underline text-sm"
-            >
-              View Document
-            </a>
-          )
-        ) : customerData.hasFiDocuments?.shop ? (
-          <span className="text-green-600 text-sm">Uploaded</span>
-        ) : (
-          <span className="text-gray-500 text-sm">Not Uploaded</span>
-        )}
-      </div>
-    </div>
-    
-    {/* Home FI Document */}
-    <div className="flex items-center justify-between">
-      <span className="text-gray-700">Home FI Document</span>
-      <div>
-        {customerData.fiDocuments?.home ? (
-          typeof customerData.fiDocuments.home === 'object' ? (
-            <a 
-              href={customerData.fiDocuments.home.url} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-blue-600 hover:text-blue-800 underline text-sm"
-            >
-              {customerData.fiDocuments.home.originalName || 'View Document'}
-            </a>
-          ) : (
-            <a 
-              href={customerData.fiDocuments.home} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-blue-600 hover:text-blue-800 underline text-sm"
-            >
-              View Document
-            </a>
-          )
-        ) : customerData.hasFiDocuments?.home ? (
-          <span className="text-green-600 text-sm">Uploaded</span>
-        ) : (
-          <span className="text-gray-500 text-sm">Not Uploaded</span>
-        )}
-      </div>
-    </div>
-  </div>
-</div>
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-gray-600">FI Documents</p>
+                  <div className="space-y-2">
+                    {/* Shop FI Document */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-700">Shop FI Document</span>
+                      <div>
+                        {customerData.fiDocuments?.shop ? (
+                          typeof customerData.fiDocuments.shop === 'object' ? (
+                            <a 
+                              href={customerData.fiDocuments.shop.url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 underline text-sm"
+                            >
+                              {customerData.fiDocuments.shop.displayName || 'View Document'}
+                            </a>
+                          ) : (
+                            <a 
+                              href={customerData.fiDocuments.shop} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 underline text-sm"
+                            >
+                              View Document
+                            </a>
+                          )
+                        ) : customerData.hasFiDocuments?.shop ? (
+                          <span className="text-green-600 text-sm">Uploaded</span>
+                        ) : (
+                          <span className="text-gray-500 text-sm">Not Uploaded</span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Home FI Document */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-700">Home FI Document</span>
+                      <div>
+                        {customerData.fiDocuments?.home ? (
+                          typeof customerData.fiDocuments.home === 'object' ? (
+                            <a 
+                              href={customerData.fiDocuments.home.url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 underline text-sm"
+                            >
+                              {customerData.fiDocuments.home.displayName || 'View Document'}
+                            </a>
+                          ) : (
+                            <a 
+                              href={customerData.fiDocuments.home} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 underline text-sm"
+                            >
+                              View Document
+                            </a>
+                          )
+                        ) : customerData.hasFiDocuments?.home ? (
+                          <span className="text-green-600 text-sm">Uploaded</span>
+                        ) : (
+                          <span className="text-gray-500 text-sm">Not Uploaded</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -923,14 +915,6 @@ export default function PendingRequests({
                           <span className="text-sm">{getRequestTypeIcon(request.type)}</span>
                           <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getRequestTypeColor(request.type)}`}>
                             {getRequestTypeLabel(request.type)}
-                          </span>
-                          <span className={`text-xs font-medium ${
-                            request.priority === 'High' ? 'text-red-600' :
-                            request.priority === 'Urgent' ? 'text-red-700' :
-                            request.priority === 'Medium' ? 'text-yellow-600' :
-                            'text-blue-600'
-                          }`}>
-                            {request.priority}
                           </span>
                         </div>
                         
