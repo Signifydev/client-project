@@ -103,7 +103,7 @@ interface CustomerRowProps {
   customer: Customer;
   expanded: boolean;
   onToggle: () => void;
-  onPayNow: (customer: Customer, loan?: Loan) => void;
+  onPayNow: (customer: Customer, loan?: Loan) => void; // FIXED: Made loan parameter optional
   loadingLoans?: boolean;
   customerLoans?: Loan[];
 }
@@ -534,7 +534,7 @@ const EMISection: React.FC<EMISectionProps> = React.memo(({
     setSearchTerm('');
   }, []);
 
-  const handlePayNow = useCallback((customer: Customer, loan: Loan) => {
+  const handlePayNow = useCallback((customer: Customer, loan?: Loan) => {
     onShowUpdateEMI(customer, loan);
   }, [onShowUpdateEMI]);
 

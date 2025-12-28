@@ -23,8 +23,10 @@ interface EMITransactionsModalProps {
 }
 
 // ============================================================================
-// NEW: Helper function to calculate total loan amount for a loan
+// HELPER FUNCTIONS
 // ============================================================================
+
+// Helper function to calculate total loan amount for a loan
 const calculateTotalLoanAmount = (loan: any): number => {
   // Check if virtual totalLoanAmount exists
   if (loan.totalLoanAmount !== undefined && loan.totalLoanAmount !== null) {
@@ -102,17 +104,6 @@ export default function EMITransactionsModal({
               <p className="text-sm text-gray-500 mt-1">
                 Customer Number: {customer.customerNumber} • Total Transactions: {transactions.length}
               </p>
-              <div className="mt-2 flex items-center gap-4">
-                <div className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200">
-                  Expected Total: ₹{totalExpectedAmount.toLocaleString('en-IN')}
-                </div>
-                <div className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded border border-green-200">
-                  Collected: ₹{totalAmount.toLocaleString('en-IN')}
-                </div>
-                <div className="text-xs bg-purple-50 text-purple-700 px-2 py-1 rounded border border-purple-200">
-                  Collection: {collectionPercentage.toFixed(1)}%
-                </div>
-              </div>
             </div>
             <button
               onClick={onClose}
@@ -165,24 +156,6 @@ export default function EMITransactionsModal({
             <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
               <p className="text-sm text-yellow-600 mb-1">Partial</p>
               <p className="text-2xl font-bold text-yellow-900">{partialCount}</p>
-            </div>
-          </div>
-
-          {/* Collection Progress Bar */}
-          <div className="mb-6">
-            <div className="flex justify-between text-sm text-gray-600 mb-1">
-              <span>Collection Progress</span>
-              <span>{collectionPercentage.toFixed(1)}%</span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2.5">
-              <div 
-                className="bg-green-600 h-2.5 rounded-full transition-all duration-500"
-                style={{ width: `${collectionPercentage}%` }}
-              ></div>
-            </div>
-            <div className="flex justify-between text-xs text-gray-500 mt-2">
-              <span>₹0</span>
-              <span>₹{totalExpectedAmount.toLocaleString('en-IN')}</span>
             </div>
           </div>
 
@@ -284,9 +257,6 @@ export default function EMITransactionsModal({
               <div className="text-right">
                 <p className="text-sm font-medium text-gray-700">Total Amount Shown:</p>
                 <p className="text-xl font-bold text-green-900">₹{totalAmount.toLocaleString('en-IN')}</p>
-                <p className="text-xs text-gray-600">
-                  {collectionPercentage.toFixed(1)}% of expected ₹{totalExpectedAmount.toLocaleString('en-IN')}
-                </p>
               </div>
             </div>
           </div>
