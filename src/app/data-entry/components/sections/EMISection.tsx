@@ -17,7 +17,31 @@ const ChevronUpIcon = () => (
   </svg>
 );
 
-// Helper function to safely get loan amount
+// ============================================================================
+// FIXED: Helper function to safely get TOTAL LOAN AMOUNT (not just EMI amount)
+// ============================================================================
+const getTotalLoanAmount = (loan: Loan): number => {
+  // First check if virtual totalLoanAmount exists (from Loan model)
+  if ((loan as any).totalLoanAmount !== undefined && (loan as any).totalLoanAmount !== null) {
+    return (loan as any).totalLoanAmount;
+  }
+  
+  // If not, calculate it manually considering custom EMI
+  const totalEmiCount = loan.totalEmiCount || loan.loanDays || 0;
+  
+  if (loan.emiType === 'custom' && loan.loanType !== 'Daily') {
+    const regularPeriods = totalEmiCount - 1;
+    const lastPeriod = 1;
+    const regularAmount = loan.emiAmount * regularPeriods;
+    const lastAmount = (loan.customEmiAmount || loan.emiAmount) * lastPeriod;
+    return regularAmount + lastAmount;
+  }
+  
+  // For fixed EMI or Daily loans
+  return loan.emiAmount * totalEmiCount;
+};
+
+// Helper function to safely get loan amount (principal)
 const getLoanAmount = (loan: Loan): number => {
   // First check the primary field 'amount'
   if (loan.amount !== undefined && loan.amount !== null) {
@@ -30,7 +54,7 @@ const getLoanAmount = (loan: Loan): number => {
   return 0;
 };
 
-// Helper function to safely get EMI amount
+// Helper function to safely get STANDARD EMI amount (per installment)
 const getEmiAmount = (loan: Loan): number => {
   return loan.emiAmount || 0;
 };
@@ -76,20 +100,20 @@ const CustomerRow: React.FC<CustomerRowProps> = React.memo(({
   loadingLoans = false,
   customerLoans = []
 }) => {
-  // Calculate total loans and total EMI amount - NOW ALWAYS CALCULATED
+  // Calculate total loans and total EMI amount - FIXED to use getTotalLoanAmount
   const { totalLoans, totalEMIAmount } = useMemo(() => {
     // Always calculate from customerLoans if available (even if not expanded)
     if (customerLoans && customerLoans.length > 0) {
       return {
         totalLoans: customerLoans.length,
-        totalEMIAmount: customerLoans.reduce((sum, loan) => sum + getEmiAmount(loan), 0)
+        totalEMIAmount: customerLoans.reduce((sum, loan) => sum + getTotalLoanAmount(loan), 0)
       };
     }
     
     // Fallback: use customer's own data
     return {
       totalLoans: customer.totalLoans || (customer.loanAmount ? 1 : 0),
-      totalEMIAmount: customer.emiAmount || 0
+      totalEMIAmount: getTotalLoanAmount(customer as any) || 0
     };
   }, [customerLoans, customer.totalLoans, customer.loanAmount, customer.emiAmount]);
 
@@ -148,10 +172,11 @@ const CustomerRow: React.FC<CustomerRowProps> = React.memo(({
             </div>
           ) : customerLoans && customerLoans.length > 0 ? (
             <div className="space-y-3">
-              {/* REMOVED: "Loan Details:" heading */}
               {customerLoans.map((loan) => {
                 // SAFELY get last EMI date
                 const lastEmiDate = getLastEmiDate(loan);
+                const totalLoanAmount = getTotalLoanAmount(loan);
+                const standardEmiAmount = getEmiAmount(loan);
                 
                 const isLoanActive = loan.status === 'active';
                 const canPay = isLoanActive && (loan.remainingAmount || getLoanAmount(loan)) > 0;
@@ -173,7 +198,14 @@ const CustomerRow: React.FC<CustomerRowProps> = React.memo(({
                       </div>
                       <div>
                         <span className="text-gray-600 block">EMI Amount:</span>
-                        <span className="font-medium">₹{getEmiAmount(loan).toLocaleString()}</span>
+                        <span className="font-medium">
+                          ₹{standardEmiAmount.toLocaleString()}
+                          {loan.emiType === 'custom' && loan.loanType !== 'Daily' && (
+                            <span className="text-xs text-purple-600 ml-1">
+                              (Custom: ₹{loan.customEmiAmount?.toLocaleString() || standardEmiAmount.toLocaleString()})
+                            </span>
+                          )}
+                        </span>
                       </div>
                       <div>
                         <span className="text-gray-600 block">Last EMI:</span>
@@ -213,14 +245,19 @@ const CustomerRow: React.FC<CustomerRowProps> = React.memo(({
                         </span>
                       </div>
                       <div>
-                        <span className="text-gray-500">Paid Amount:</span>
-                        <span className="ml-1 font-medium">₹{(loan.totalPaidAmount || 0).toLocaleString()}</span>
+                        <span className="text-gray-500">Total Amount:</span>
+                        <span className="ml-1 font-medium">
+                          ₹{totalLoanAmount.toLocaleString()}
+                          {loan.emiType === 'custom' && loan.loanType !== 'Daily' && (
+                            <span className="text-purple-600"> ⭐</span>
+                          )}
+                        </span>
                       </div>
                       <div>
                         <span className="text-gray-500">Remaining:</span>
                         <span className="ml-1 font-medium text-red-600">
-  ₹{(loan.remainingAmount || getLoanAmount(loan) || 0).toLocaleString()}
-</span>
+                          ₹{(loan.remainingAmount || getLoanAmount(loan) || 0).toLocaleString()}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -327,56 +364,56 @@ const EMISection: React.FC<EMISectionProps> = React.memo(({
 
   // Fetch loans for customers - ENHANCED with error handling
   const fetchCustomerLoansData = useCallback(async (customerId: string) => {
-  if (customerLoans[customerId]?.loans?.length > 0) {
-    return; // Already loaded
-  }
+    if (customerLoans[customerId]?.loans?.length > 0) {
+      return; // Already loaded
+    }
 
-  // Set loading state
-  setCustomerLoans(prev => ({
-    ...prev,
-    [customerId]: { loans: [], loading: true }
-  }));
+    // Set loading state
+    setCustomerLoans(prev => ({
+      ...prev,
+      [customerId]: { loans: [], loading: true }
+    }));
 
-  try {
-    console.log(`🔍 Fetching loans for customer: ${customerId}`);
-    const loans = await fetchCustomerLoans(customerId);
-    
-    // Validate and sanitize loan data
-    const validatedLoans = (loans || []).map(loan => {
-      const validatedLoan: Loan = {
-        ...loan,
-        // Ensure all required fields have safe defaults
-        amount: loan.amount || loan.loanAmount || 0,
-        emiAmount: loan.emiAmount || 0,
-        loanNumber: loan.loanNumber || 'N/A',
-        loanType: loan.loanType || 'Monthly',
-        status: loan.status || 'active',
-        totalPaidAmount: loan.totalPaidAmount || 0,
-        remainingAmount: loan.remainingAmount || (loan.amount || loan.loanAmount || 0),
-        emiPaidCount: loan.emiPaidCount || 0,
-        totalEmiCount: loan.totalEmiCount || loan.loanDays || 0,
-        // Handle optional fields
-        lastEmiDate: loan.lastEmiDate || loan.lastPaymentDate || undefined,
-        nextEmiDate: loan.nextEmiDate || new Date().toISOString().split('T')[0]
-      };
+    try {
+      console.log(`🔍 Fetching loans for customer: ${customerId}`);
+      const loans = await fetchCustomerLoans(customerId);
       
-      return validatedLoan;
-    });
-    
-    console.log(`✅ Loaded ${validatedLoans.length} loans for customer ${customerId}`);
-    
-    setCustomerLoans(prev => ({
-      ...prev,
-      [customerId]: { loans: validatedLoans, loading: false }
-    }));
-  } catch (error) {
-    console.error('Error fetching customer loans:', error);
-    setCustomerLoans(prev => ({
-      ...prev,
-      [customerId]: { loans: [], loading: false }
-    }));
-  }
-}, [customerLoans]);
+      // Validate and sanitize loan data
+      const validatedLoans = (loans || []).map(loan => {
+        const validatedLoan: Loan = {
+          ...loan,
+          // Ensure all required fields have safe defaults
+          amount: loan.amount || loan.loanAmount || 0,
+          emiAmount: loan.emiAmount || 0,
+          loanNumber: loan.loanNumber || 'N/A',
+          loanType: loan.loanType || 'Monthly',
+          status: loan.status || 'active',
+          totalPaidAmount: loan.totalPaidAmount || 0,
+          remainingAmount: loan.remainingAmount || (loan.amount || loan.loanAmount || 0),
+          emiPaidCount: loan.emiPaidCount || 0,
+          totalEmiCount: loan.totalEmiCount || loan.loanDays || 0,
+          // Handle optional fields
+          lastEmiDate: loan.lastEmiDate || loan.lastPaymentDate || undefined,
+          nextEmiDate: loan.nextEmiDate || new Date().toISOString().split('T')[0]
+        };
+        
+        return validatedLoan;
+      });
+      
+      console.log(`✅ Loaded ${validatedLoans.length} loans for customer ${customerId}`);
+      
+      setCustomerLoans(prev => ({
+        ...prev,
+        [customerId]: { loans: validatedLoans, loading: false }
+      }));
+    } catch (error) {
+      console.error('Error fetching customer loans:', error);
+      setCustomerLoans(prev => ({
+        ...prev,
+        [customerId]: { loans: [], loading: false }
+      }));
+    }
+  }, [customerLoans]);
 
   // Handle customer expansion
   const handleToggleCustomer = useCallback((customerId: string) => {
@@ -495,8 +532,6 @@ const EMISection: React.FC<EMISectionProps> = React.memo(({
 
   return (
     <div className="emi-section p-4">
-      
-
       {/* Search and Sort Bar */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         {/* Wider Search Bar */}
