@@ -18,28 +18,8 @@ const ChevronUpIcon = () => (
 );
 
 // ============================================================================
-// FIXED: Helper function to safely get TOTAL LOAN AMOUNT (not just EMI amount)
+// HELPER FUNCTIONS
 // ============================================================================
-const getTotalLoanAmount = (loan: Loan): number => {
-  // First check if virtual totalLoanAmount exists (from Loan model)
-  if ((loan as any).totalLoanAmount !== undefined && (loan as any).totalLoanAmount !== null) {
-    return (loan as any).totalLoanAmount;
-  }
-  
-  // If not, calculate it manually considering custom EMI
-  const totalEmiCount = loan.totalEmiCount || loan.loanDays || 0;
-  
-  if (loan.emiType === 'custom' && loan.loanType !== 'Daily') {
-    const regularPeriods = totalEmiCount - 1;
-    const lastPeriod = 1;
-    const regularAmount = loan.emiAmount * regularPeriods;
-    const lastAmount = (loan.customEmiAmount || loan.emiAmount) * lastPeriod;
-    return regularAmount + lastAmount;
-  }
-  
-  // For fixed EMI or Daily loans
-  return loan.emiAmount * totalEmiCount;
-};
 
 // Helper function to safely get loan amount (principal)
 const getLoanAmount = (loan: Loan): number => {
@@ -82,12 +62,48 @@ const getLastEmiDate = (loan: Loan): string => {
   return 'No EMI paid';
 };
 
-// Expanded Customer Component with Loan Details
+// ============================================================================
+// FIXED: Helper function to get TOTAL LOAN AMOUNT (considering custom EMI)
+// ============================================================================
+const getTotalLoanAmount = (loan: Loan): number => {
+  // First check if virtual totalLoanAmount exists (from Loan model)
+  if ((loan as any).totalLoanAmount !== undefined && (loan as any).totalLoanAmount !== null) {
+    return (loan as any).totalLoanAmount;
+  }
+  
+  // If not, calculate it manually considering custom EMI
+  const totalEmiCount = loan.totalEmiCount || loan.loanDays || 0;
+  
+  if (loan.emiType === 'custom' && loan.loanType !== 'Daily') {
+    const regularPeriods = totalEmiCount - 1;
+    const lastPeriod = 1;
+    const regularAmount = loan.emiAmount * regularPeriods;
+    const lastAmount = (loan.customEmiAmount || loan.emiAmount) * lastPeriod;
+    return regularAmount + lastAmount;
+  }
+  
+  // For fixed EMI or Daily loans
+  return loan.emiAmount * totalEmiCount;
+};
+
+// ============================================================================
+// FIXED: Helper function to calculate remaining amount correctly
+// ============================================================================
+const calculateRemainingAmount = (loan: Loan): number => {
+  const totalLoanAmount = getTotalLoanAmount(loan);
+  const totalPaidAmount = loan.totalPaidAmount || 0;
+  return Math.max(totalLoanAmount - totalPaidAmount, 0);
+};
+
+// ============================================================================
+// EXPANDED CUSTOMER COMPONENT WITH LOAN DETAILS
+// ============================================================================
+
 interface CustomerRowProps {
   customer: Customer;
   expanded: boolean;
   onToggle: () => void;
-  onPayNow: (customer: Customer, loan: Loan) => void;
+  onPayNow: (customer: Customer, loan?: Loan) => void;
   loadingLoans?: boolean;
   customerLoans?: Loan[];
 }
@@ -173,13 +189,15 @@ const CustomerRow: React.FC<CustomerRowProps> = React.memo(({
           ) : customerLoans && customerLoans.length > 0 ? (
             <div className="space-y-3">
               {customerLoans.map((loan) => {
-                // SAFELY get last EMI date
+                // Get all required values
                 const lastEmiDate = getLastEmiDate(loan);
                 const totalLoanAmount = getTotalLoanAmount(loan);
                 const standardEmiAmount = getEmiAmount(loan);
+                const principalAmount = getLoanAmount(loan);
+                const remainingAmount = calculateRemainingAmount(loan);
                 
                 const isLoanActive = loan.status === 'active';
-                const canPay = isLoanActive && (loan.remainingAmount || getLoanAmount(loan)) > 0;
+                const canPay = isLoanActive && remainingAmount > 0;
 
                 return (
                   <div key={loan._id || loan.loanNumber} className="bg-white p-4 rounded-lg border border-gray-200">
@@ -190,7 +208,7 @@ const CustomerRow: React.FC<CustomerRowProps> = React.memo(({
                       </div>
                       <div>
                         <span className="text-gray-600 block">Amount:</span>
-                        <span className="font-medium">₹{getLoanAmount(loan).toLocaleString()}</span>
+                        <span className="font-medium">₹{principalAmount.toLocaleString()}</span>
                       </div>
                       <div>
                         <span className="text-gray-600 block">Loan Type:</span>
@@ -256,7 +274,7 @@ const CustomerRow: React.FC<CustomerRowProps> = React.memo(({
                       <div>
                         <span className="text-gray-500">Remaining:</span>
                         <span className="ml-1 font-medium text-red-600">
-                          ₹{(loan.remainingAmount || getLoanAmount(loan) || 0).toLocaleString()}
+                          ₹{remainingAmount.toLocaleString()}
                         </span>
                       </div>
                     </div>
@@ -286,6 +304,10 @@ const CustomerRow: React.FC<CustomerRowProps> = React.memo(({
 });
 
 CustomerRow.displayName = 'CustomerRow';
+
+// ============================================================================
+// MAIN EMISECTION COMPONENT
+// ============================================================================
 
 interface EMISectionProps {
   currentUserOffice: string;
