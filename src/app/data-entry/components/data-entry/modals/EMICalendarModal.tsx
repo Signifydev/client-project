@@ -536,43 +536,23 @@ const getAllPaymentDatesForLoan = (loan: Loan): Set<string> => {
 const getPaymentDetailsForDate = (loan: Loan, date: Date): any[] => {
   const paymentDetails: any[] = [];
   const dateKey = getDateAsYYYYMMDD(date);
-  const processedPaymentIds = new Set<string>(); // Track processed payments
   
   if (loan.emiHistory && loan.emiHistory.length > 0) {
+    // Create a map to deduplicate payments by unique key (paymentId + date combination)
+    const uniquePaymentsMap = new Map<string, any>();
+    
     loan.emiHistory.forEach((payment: any) => {
-      const paymentId = payment._id?.toString();
-      if (!paymentId || processedPaymentIds.has(paymentId)) {
-        return; // Skip if already processed
-      }
-      
       const paymentDate = parseDateFromAPI(payment.paymentDate);
       const paymentDateKey = getDateAsYYYYMMDD(paymentDate);
       
-      // Check if payment is for this date (exact match)
-      if (paymentDateKey === dateKey) {
-        paymentDetails.push({
-          paymentId: payment._id,
-          paymentDate: payment.paymentDate,
-          amount: payment.amount,
-          status: payment.status,
-          collectedBy: payment.collectedBy,
-          paymentType: payment.paymentType,
-          notes: payment.notes,
-          isAdvance: payment.isAdvance || payment.paymentType === 'advance',
-          advanceFromDate: payment.advanceFromDate,
-          advanceToDate: payment.advanceToDate,
-          loanNumber: loan.loanNumber
-        });
-        processedPaymentIds.add(paymentId);
-      }
-      // For advance payments, check if this date is within the advance range AND is a scheduled date
-      else if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.advanceToDate) {
+      // For advance payments, we need to handle them differently
+      if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.advanceToDate) {
         const advanceFrom = parseDateFromAPI(payment.advanceFromDate);
         const advanceTo = parseDateFromAPI(payment.advanceToDate);
         
-        // Only process if date is within advance range
+        // Check if current date is within advance range AND is a scheduled date
         if (date >= advanceFrom && date <= advanceTo) {
-          // Check if this date is a scheduled EMI date
+          // For advance payments, check if this date is a scheduled EMI date
           if (loan.emiStartDate && loan.loanType && loan.totalEmiCount) {
             const parsedEmiStartDate = parseDateFromAPI(loan.emiStartDate);
             const emiStartDateStr = getDateAsYYYYMMDD(parsedEmiStartDate);
@@ -592,13 +572,14 @@ const getPaymentDetailsForDate = (loan: Loan, date: Date): any[] => {
             );
             
             if (isScheduledDate) {
-              // Only add if we haven't already added this payment for this date
-              // (prevents duplicate entries for the same advance payment)
-              if (!paymentDetails.some(p => p.paymentId === payment._id)) {
-                paymentDetails.push({
+              // Create a unique key for this advance payment on this date
+              const uniqueKey = `advance_${payment._id}_${dateKey}`;
+              
+              if (!uniquePaymentsMap.has(uniqueKey)) {
+                uniquePaymentsMap.set(uniqueKey, {
                   paymentId: payment._id,
-                  paymentDate: payment.paymentDate,
-                  amount: payment.amount,
+                  paymentDate: payment.paymentDate, // Original payment date
+                  amount: payment.amount, // This is the PER EMI amount for advance payments
                   status: payment.status,
                   collectedBy: payment.collectedBy,
                   paymentType: payment.paymentType,
@@ -607,14 +588,39 @@ const getPaymentDetailsForDate = (loan: Loan, date: Date): any[] => {
                   advanceFromDate: payment.advanceFromDate,
                   advanceToDate: payment.advanceToDate,
                   isPartOfAdvance: true,
-                  loanNumber: loan.loanNumber
+                  loanNumber: loan.loanNumber,
+                  displayDate: dateKey // The date being displayed in calendar
                 });
-                processedPaymentIds.add(paymentId);
               }
             }
           }
         }
+      } else {
+        // For regular (non-advance) payments, check exact date match
+        if (paymentDateKey === dateKey) {
+          const uniqueKey = `regular_${payment._id}_${dateKey}`;
+          
+          if (!uniquePaymentsMap.has(uniqueKey)) {
+            uniquePaymentsMap.set(uniqueKey, {
+              paymentId: payment._id,
+              paymentDate: payment.paymentDate,
+              amount: payment.amount,
+              status: payment.status,
+              collectedBy: payment.collectedBy,
+              paymentType: payment.paymentType,
+              notes: payment.notes,
+              isAdvance: false,
+              loanNumber: loan.loanNumber,
+              displayDate: dateKey
+            });
+          }
+        }
       }
+    });
+    
+    // Convert map values to array
+    Array.from(uniquePaymentsMap.values()).forEach(payment => {
+      paymentDetails.push(payment);
     });
   }
   
@@ -629,7 +635,9 @@ const getPaymentDetailsForDate = (loan: Loan, date: Date): any[] => {
         type: p.paymentType,
         isAdvance: p.isAdvance,
         advanceFrom: p.advanceFromDate,
-        advanceTo: p.advanceToDate
+        advanceTo: p.advanceToDate,
+        displayDate: p.displayDate,
+        paymentDate: p.paymentDate
       }))
     });
   }
@@ -1415,10 +1423,10 @@ export default function EMICalendarModal({
                                 
                                 {/* Show payment details if available */}
                                 {day.paymentDetails && day.paymentDetails.length > 0 && (
-                                  <div className="text-gray-600 text-xs mt-0.5">
-                                    {day.paymentDetails.length} payment(s) on this date
-                                  </div>
-                                )}
+  <div className="text-gray-600 text-xs mt-0.5">
+    {day.paymentDetails.length} payment(s) on this date
+  </div>
+)}
                                 
                                 {hasCustomInstallments && (
                                   <div className="text-purple-600 text-xs mt-0.5">
@@ -1435,43 +1443,60 @@ export default function EMICalendarModal({
                                 // NEW: Edit/Delete buttons for payments
                                 // ============================================================================ */}
                                 {selectedLoan !== 'all' && day.paymentDetails && day.paymentDetails.length > 0 && (
-                                  <div className="mt-2 flex flex-col gap-1">
-                                    {day.paymentDetails.slice(0, 2).map((payment: any, idx: number) => (
-                                      <div key={idx} className="flex items-center justify-between gap-1">
-                                        <div className="text-xs text-gray-600 truncate">
-                                          {payment.isAdvance ? 'Adv' : 'Reg'}: ₹{payment.amount}
-                                        </div>
-                                        <div className="flex gap-0.5">
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleEditPayment(payment);
-                                            }}
-                                            disabled={isProcessingEdit}
-                                            className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                                          >
-                                            ✏️
-                                          </button>
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleDeletePayment(payment);
-                                            }}
-                                            disabled={isProcessingDelete}
-                                            className="text-[10px] px-1.5 py-0.5 bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                                          >
-                                            🗑️
-                                          </button>
-                                        </div>
-                                      </div>
-                                    ))}
-                                    {day.paymentDetails.length > 2 && (
-                                      <div className="text-[10px] text-gray-400 text-center">
-                                        +{day.paymentDetails.length - 2} more payments
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
+  <div className="mt-2 flex flex-col gap-1">
+    {/* First, deduplicate payments by paymentId to avoid showing duplicates */}
+    {(() => {
+      // Deduplicate by paymentId
+      const uniquePayments = day.paymentDetails.filter((payment, index, self) =>
+        index === self.findIndex(p => p.paymentId === payment.paymentId)
+      );
+      
+      return (
+        <>
+          {uniquePayments.slice(0, 2).map((payment: any, idx: number) => (
+            <div key={`${payment.paymentId}_${idx}`} className="flex items-center justify-between gap-1">
+              <div className="text-xs text-gray-600 truncate">
+                {payment.isAdvance ? 'Adv' : 'Reg'}: ₹{payment.amount}
+                {payment.isPartOfAdvance && payment.displayDate !== payment.paymentDate && (
+                  <span className="text-[10px] text-gray-400 ml-1">
+                    (from {formatDateToDDMMYYYY(parseDateFromAPI(payment.paymentDate))})
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-0.5">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleEditPayment(payment);
+                  }}
+                  disabled={isProcessingEdit}
+                  className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  ✏️
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeletePayment(payment);
+                  }}
+                  disabled={isProcessingDelete}
+                  className="text-[10px] px-1.5 py-0.5 bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  🗑️
+                </button>
+              </div>
+            </div>
+          ))}
+          {uniquePayments.length > 2 && (
+            <div className="text-[10px] text-gray-400 text-center">
+              +{uniquePayments.length - 2} more payments
+            </div>
+          )}
+        </>
+      );
+    })()}
+  </div>
+)}
                               </div>
                             )}
                           </div>
