@@ -497,7 +497,7 @@ const getAllPaymentDatesForLoan = (loan: Loan): Set<string> => {
         const advanceFrom = parseDateFromAPI(payment.advanceFromDate);
         const advanceTo = parseDateFromAPI(payment.advanceToDate);
         
-        let currentDate = new Date(advanceFrom);
+        const currentDate = new Date(advanceFrom);
         while (currentDate <= advanceTo) {
           allPaymentDates.add(getDateAsYYYYMMDD(currentDate));
           currentDate.setDate(currentDate.getDate() + 1);
