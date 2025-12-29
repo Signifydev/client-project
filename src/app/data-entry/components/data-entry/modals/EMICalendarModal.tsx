@@ -22,6 +22,8 @@ interface EMICalendarModalProps {
   onClose: () => void;
   customer: Customer;
   currentUserOffice?: string;
+  onEditPayment?: (payment: any) => void;
+  onDeletePayment?: (payment: any) => void;
 }
 
 interface CalendarDay {
@@ -41,6 +43,18 @@ interface CalendarDay {
     isCustomInstallment?: boolean;
     installmentNumber?: number;
   }[];
+  paymentDetails?: {
+    paymentId?: string;
+    paymentDate: string;
+    amount: number;
+    status: string;
+    collectedBy?: string;
+    paymentType?: string;
+    notes?: string;
+    isAdvance?: boolean;
+    advanceFromDate?: string;
+    advanceToDate?: string;
+  }[];
 }
 
 interface EMIStatusInfo {
@@ -54,6 +68,7 @@ interface EMIStatusInfo {
     isCustomInstallment?: boolean;
     installmentNumber?: number;
   }[];
+  paymentDetails: any[];
 }
 
 // Enhanced logging with DD/MM/YYYY formatting
@@ -398,7 +413,12 @@ const debugEMIHistory = (loan: Loan) => {
       parsedDate: p.paymentDate ? parseDateFromAPI(p.paymentDate).toISOString() : 'N/A',
       amount: p.amount,
       status: p.status,
-      paymentType: p.paymentType
+      paymentType: p.paymentType,
+      _id: p._id,
+      isAdvance: p.isAdvance,
+      advanceFromDate: p.advanceFromDate,
+      advanceToDate: p.advanceToDate,
+      notes: p.notes
     }))
   });
 };
@@ -441,11 +461,123 @@ const debugEMIScheduleDetails = (loan: Loan) => {
   });
 };
 
+// ============================================================================
+// NEW: Function to get all payment dates from a loan (scheduled + actual)
+// ============================================================================
+const getAllPaymentDatesForLoan = (loan: Loan): Set<string> => {
+  const allPaymentDates = new Set<string>();
+  
+  // Add scheduled EMI dates
+  if (loan.emiStartDate && loan.loanType && loan.totalEmiCount) {
+    const parsedEmiStartDate = parseDateFromAPI(loan.emiStartDate);
+    const emiStartDateStr = getDateAsYYYYMMDD(parsedEmiStartDate);
+    
+    const emiSchedule = generateEmiSchedule(
+      emiStartDateStr,
+      loan.loanType,
+      loan.totalEmiCount,
+      parsedEmiStartDate.getFullYear(),
+      parsedEmiStartDate.getMonth()
+    );
+    
+    emiSchedule.forEach(date => {
+      allPaymentDates.add(getDateAsYYYYMMDD(date));
+    });
+  }
+  
+  // Add actual payment dates from emiHistory
+  if (loan.emiHistory && loan.emiHistory.length > 0) {
+    loan.emiHistory.forEach((payment: any) => {
+      const paymentDate = parseDateFromAPI(payment.paymentDate);
+      const paymentDateKey = getDateAsYYYYMMDD(paymentDate);
+      allPaymentDates.add(paymentDateKey);
+      
+      // Also add dates from advance payments
+      if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.advanceToDate) {
+        const advanceFrom = parseDateFromAPI(payment.advanceFromDate);
+        const advanceTo = parseDateFromAPI(payment.advanceToDate);
+        
+        let currentDate = new Date(advanceFrom);
+        while (currentDate <= advanceTo) {
+          allPaymentDates.add(getDateAsYYYYMMDD(currentDate));
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
+      }
+    });
+  }
+  
+  debugLog(`All payment dates for loan ${loan.loanNumber}`, {
+    totalDates: allPaymentDates.size,
+    dates: Array.from(allPaymentDates).slice(0, 10)
+  });
+  
+  return allPaymentDates;
+};
+
+// ============================================================================
+// NEW: Function to get payment details for a specific date
+// ============================================================================
+const getPaymentDetailsForDate = (loan: Loan, date: Date): any[] => {
+  const paymentDetails: any[] = [];
+  const dateKey = getDateAsYYYYMMDD(date);
+  
+  if (loan.emiHistory && loan.emiHistory.length > 0) {
+    loan.emiHistory.forEach((payment: any) => {
+      const paymentDate = parseDateFromAPI(payment.paymentDate);
+      const paymentDateKey = getDateAsYYYYMMDD(paymentDate);
+      
+      // Check if payment is for this date
+      if (paymentDateKey === dateKey) {
+        paymentDetails.push({
+          paymentId: payment._id,
+          paymentDate: payment.paymentDate,
+          amount: payment.amount,
+          status: payment.status,
+          collectedBy: payment.collectedBy,
+          paymentType: payment.paymentType,
+          notes: payment.notes,
+          isAdvance: payment.isAdvance || payment.paymentType === 'advance',
+          advanceFromDate: payment.advanceFromDate,
+          advanceToDate: payment.advanceToDate,
+          loanNumber: loan.loanNumber
+        });
+      }
+      
+      // Check if date is within advance payment range
+      if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.advanceToDate) {
+        const advanceFrom = parseDateFromAPI(payment.advanceFromDate);
+        const advanceTo = parseDateFromAPI(payment.advanceToDate);
+        
+        if (date >= advanceFrom && date <= advanceTo) {
+          paymentDetails.push({
+            paymentId: payment._id,
+            paymentDate: payment.paymentDate,
+            amount: payment.amount,
+            status: payment.status,
+            collectedBy: payment.collectedBy,
+            paymentType: payment.paymentType,
+            notes: payment.notes,
+            isAdvance: true,
+            advanceFromDate: payment.advanceFromDate,
+            advanceToDate: payment.advanceToDate,
+            isPartOfAdvance: true,
+            loanNumber: loan.loanNumber
+          });
+        }
+      }
+    });
+  }
+  
+  return paymentDetails;
+};
+
 export default function EMICalendarModal({
   isOpen,
   onClose,
   customer,
-  currentUserOffice
+  currentUserOffice,
+  onEditPayment,
+  onDeletePayment
 }: EMICalendarModalProps) {
   // Debug: Log when component renders
   useEffect(() => {
@@ -470,6 +602,8 @@ export default function EMICalendarModal({
   const [loanOptions, setLoanOptions] = useState<{ value: string; label: string }[]>([
     { value: 'all', label: 'All Loans (Amount Dues Only)' }
   ]);
+  const [isProcessingEdit, setIsProcessingEdit] = useState(false);
+  const [isProcessingDelete, setIsProcessingDelete] = useState(false);
 
   // Extract loans from customer
   useEffect(() => {
@@ -649,46 +783,14 @@ export default function EMICalendarModal({
         isWeeklyCustom: loan.loanType === 'Weekly' && loan.emiType === 'custom'
       });
 
-      if (!loan.emiStartDate || !loan.loanType) {
-        debugLog(`Skipping loan - missing data`, loan);
-        return;
-      }
-
       // ============================================================================
-      // FIXED: Parse emiStartDate correctly from API string
+      // FIXED: Get ALL payment dates (scheduled + actual)
       // ============================================================================
-      const parsedEmiStartDate = parseDateFromAPI(loan.emiStartDate);
+      const allPaymentDates = getAllPaymentDatesForLoan(loan);
       
-      // Convert parsed date to YYYY-MM-DD string for generateEmiSchedule
-      const emiStartDateStr = getDateAsYYYYMMDD(parsedEmiStartDate);
-      
-      const emiSchedule = generateEmiSchedule(
-        emiStartDateStr, // Pass as string
-        loan.loanType,
-        loan.totalEmiCount || 365,
-        selectedYear,
-        selectedMonth
-      );
-      
-      debugLog(`Generated schedule for ${loan.loanNumber}`, {
-        emiStartDateParsed: parsedEmiStartDate.toISOString(),
-        emiStartDateString: emiStartDateStr,
-        scheduleLength: emiSchedule.length,
-        dates: emiSchedule.slice(0, 5).map(date => ({
-          date: date.toLocaleDateString('en-IN'),
-          formatted: formatDateToDDMMYYYY(date),
-          day: date.getDate(),
-          month: date.getMonth() + 1
-        })),
-        isWeeklyLoan: loan.loanType === 'Weekly'
-      });
-      
-      // Process each scheduled date
-      emiSchedule.forEach((scheduledDate) => {
-        // ============================================================================
-        // FIXED: Use consistent date formatting
-        // ============================================================================
-        const dateKey = getDateAsYYYYMMDD(scheduledDate);
+      // Now process ALL dates (scheduled + actual payments)
+      Array.from(allPaymentDates).forEach(dateKey => {
+        const scheduledDate = parseDateFromAPI(dateKey);
         const formattedDate = formatDateToDDMMYYYY(scheduledDate);
         
         const existing = emiStatusMap.get(dateKey);
@@ -713,53 +815,28 @@ export default function EMICalendarModal({
           emiType: loan.emiType
         });
         
+        // ============================================================================
+        // FIXED: Get payment details for this date
+        // ============================================================================
+        const paymentDetails = getPaymentDetailsForDate(loan, scheduledDate);
+        
         // Determine payment status
         let paymentStatus: 'paid' | 'partial' | 'missed' | 'advance' | 'due' | 'amount-only' = 'due';
         let paymentAmount = expectedEMIAmount;
         
         // Check payment history
-        if (loan.emiHistory && loan.emiHistory.length > 0) {
-          const relevantPayments = loan.emiHistory.filter(payment => {
-            if (!payment.paymentDate) return false;
-            
-            // ============================================================================
-            // FIXED: Use parseDateFromAPI for consistent parsing
-            // ============================================================================
-            const paymentDate = parseDateFromAPI(payment.paymentDate);
-            const paymentDateKey = getDateAsYYYYMMDD(paymentDate);
-            
-            if (paymentDateKey === dateKey) return true;
-            
-            if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.advanceToDate) {
-              const advanceFrom = parseDateFromAPI(payment.advanceFromDate);
-              const advanceTo = parseDateFromAPI(payment.advanceToDate);
-              return scheduledDate >= advanceFrom && scheduledDate <= advanceTo;
-            }
-            
-            return false;
-          });
+        if (paymentDetails.length > 0) {
+          const totalPaid = paymentDetails.reduce((sum, p) => sum + p.amount, 0);
           
-          if (relevantPayments.length > 0) {
-            const totalPaid = relevantPayments.reduce((sum, p) => sum + p.amount, 0);
-            
-            if (totalPaid >= expectedEMIAmount) {
-              paymentStatus = relevantPayments.some(p => p.status === 'Advance') ? 'advance' : 'paid';
-            } else if (totalPaid > 0) {
-              paymentStatus = 'partial';
-              paymentAmount = totalPaid;
-            }
-          } else {
-            // ============================================================================
-            // FIXED: Use compareDates function for consistent comparison
-            // ============================================================================
-            const comparison = compareDates(scheduledDate, todayIST);
-            if (comparison < 0) {
-              paymentStatus = 'missed';
-            }
+          if (totalPaid >= expectedEMIAmount) {
+            paymentStatus = paymentDetails.some(p => p.status === 'Advance' || p.isAdvance) ? 'advance' : 'paid';
+          } else if (totalPaid > 0) {
+            paymentStatus = 'partial';
+            paymentAmount = totalPaid;
           }
         } else {
           // ============================================================================
-          // FIXED: Use compareDates function
+          // FIXED: Use compareDates function for consistent comparison
           // ============================================================================
           const comparison = compareDates(scheduledDate, todayIST);
           if (comparison < 0) {
@@ -782,7 +859,8 @@ export default function EMICalendarModal({
           status: finalStatus,
           amount: (existing?.amount || 0) + paymentAmount,
           loanNumbers: [...new Set([...(existing?.loanNumbers || []), loan.loanNumber || 'L1'])],
-          loanDetails: [...(existing?.loanDetails || []), loanDetail]
+          loanDetails: [...(existing?.loanDetails || []), loanDetail],
+          paymentDetails: [...(existing?.paymentDetails || []), ...paymentDetails]
         });
       });
     });
@@ -803,7 +881,8 @@ export default function EMICalendarModal({
           status: statusForDisplay,
           amount: emiInfo.amount,
           loanNumbers: emiInfo.loanNumbers,
-          loanDetails: emiInfo.loanDetails
+          loanDetails: emiInfo.loanDetails,
+          paymentDetails: emiInfo.paymentDetails
         };
       }
       
@@ -847,9 +926,105 @@ export default function EMICalendarModal({
       lastDay: formatDateToDDMMYYYY(updatedCalendarDays[updatedCalendarDays.length - 1]?.date),
       customEMICount: updatedCalendarDays.filter(d => 
         d.loanDetails?.some(ld => ld.isCustomInstallment)
+      ).length,
+      daysWithOffSchedulePayments: updatedCalendarDays.filter(d => 
+        d.paymentDetails && d.paymentDetails.length > 0
       ).length
     });
   }, [selectedMonth, selectedYear, customerLoans, selectedLoan, isOpen]);
+
+  // ============================================================================
+  // NEW: Handle Edit Payment
+  // ============================================================================
+  const handleEditPayment = async (payment: any) => {
+    if (isProcessingEdit) return;
+    
+    setIsProcessingEdit(true);
+    try {
+      debugLog('Editing payment', payment);
+      
+      if (onEditPayment) {
+        onEditPayment(payment);
+      } else {
+        // Fallback: Show edit modal or form
+        const newAmount = prompt(`Edit payment amount for ${formatDateToDDMMYYYY(parseDateFromAPI(payment.paymentDate))}:\nCurrent: ₹${payment.amount}\nEnter new amount:`, payment.amount.toString());
+        
+        if (newAmount && parseFloat(newAmount) > 0) {
+          const response = await fetch(`/api/data-entry/emi-payments?id=${payment.paymentId}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              amount: parseFloat(newAmount),
+              paymentDate: payment.paymentDate,
+              status: payment.status,
+              notes: `Edited from ₹${payment.amount} to ₹${newAmount}`,
+              collectedBy: payment.collectedBy || 'Data Entry Operator'
+            }),
+          });
+          
+          if (response.ok) {
+            alert('Payment updated successfully!');
+            // Refresh the calendar
+            setTimeout(() => {
+              // This would ideally trigger a refresh in parent component
+              window.location.reload();
+            }, 500);
+          } else {
+            alert('Failed to update payment');
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error editing payment:', error);
+      alert('Error editing payment');
+    } finally {
+      setIsProcessingEdit(false);
+    }
+  };
+
+  // ============================================================================
+  // NEW: Handle Delete Payment
+  // ============================================================================
+  const handleDeletePayment = async (payment: any) => {
+    if (isProcessingDelete) return;
+    
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete this payment?\n\nDate: ${formatDateToDDMMYYYY(parseDateFromAPI(payment.paymentDate))}\nAmount: ₹${payment.amount}\nStatus: ${payment.status}`
+    );
+    
+    if (!confirmDelete) return;
+    
+    setIsProcessingDelete(true);
+    try {
+      debugLog('Deleting payment', payment);
+      
+      if (onDeletePayment) {
+        onDeletePayment(payment);
+      } else {
+        const response = await fetch(`/api/data-entry/emi-payments?id=${payment.paymentId}`, {
+          method: 'DELETE',
+        });
+        
+        if (response.ok) {
+          alert('Payment deleted successfully!');
+          // Refresh the calendar
+          setTimeout(() => {
+            window.location.reload();
+          }, 500);
+        } else {
+          const errorData = await response.json();
+          alert(`Failed to delete payment: ${errorData.error || 'Unknown error'}`);
+        }
+      }
+    } catch (error) {
+      console.error('Error deleting payment:', error);
+      alert('Error deleting payment');
+    } finally {
+      setIsProcessingDelete(false);
+    }
+  };
 
   const navigateMonth = (direction: 'prev' | 'next') => {
     debugLog('Navigating month', { 
@@ -966,6 +1141,16 @@ export default function EMICalendarModal({
                     </span>
                   </div>
                 )}
+                {/* ============================================================================
+                // NEW: Edit/Delete feature indicator
+                // ============================================================================ */}
+                {selectedLoan !== 'all' && (
+                  <div className="mt-1">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-50 text-green-700 border border-green-200">
+                      ✏️ Edit/Delete available for individual payments
+                    </span>
+                  </div>
+                )}
               </div>
               <button
                 onClick={onClose}
@@ -1019,7 +1204,7 @@ export default function EMICalendarModal({
                   <p className="text-xs text-gray-500 mt-1">
                     {selectedLoan === 'all' 
                       ? 'Showing total EMI amount per day for all loans' 
-                      : `Showing detailed EMI schedule for ${selectedLoan}`}
+                      : `Showing detailed EMI schedule for ${selectedLoan} (with edit/delete)`}
                   </p>
                 </div>
               </div>
@@ -1050,6 +1235,7 @@ export default function EMICalendarModal({
                   const dayOfWeek = day.date.getDay();
                   const hasCustomInstallments = day.loanDetails?.some(ld => ld.isCustomInstallment);
                   const customInstallmentDetails = day.loanDetails?.filter(ld => ld.isCustomInstallment);
+                  const hasOffSchedulePayments = day.paymentDetails && day.paymentDetails.length > 0;
                   
                   return (
                     <div
@@ -1058,8 +1244,11 @@ export default function EMICalendarModal({
                         !day.isCurrentMonth ? 'bg-gray-50 opacity-60' : ''
                       } ${
                         day.isToday ? 'bg-blue-50' : ''
-                      } ${dayOfWeek === 0 || dayOfWeek === 6 ? 'bg-red-50 bg-opacity-30' : ''} ${
+                      } 
+                      ${
                         hasCustomInstallments ? 'bg-purple-50 border-purple-300' : ''
+                      } ${
+                        hasOffSchedulePayments ? 'bg-yellow-50 border-yellow-300' : ''
                       }`}
                     >
                       <div className="flex flex-col h-full">
@@ -1068,8 +1257,10 @@ export default function EMICalendarModal({
                             <span className={`text-sm font-medium ${
                               !day.isCurrentMonth ? 'text-gray-400' :
                               day.isToday ? 'text-blue-600' :
-                              day.isWeekend ? 'text-red-600' :
+                              // REMOVED: Weekend red text color
+                              // day.isWeekend ? 'text-red-600' :
                               hasCustomInstallments ? 'text-purple-600' :
+                              hasOffSchedulePayments ? 'text-yellow-700' :
                               'text-gray-900'
                             }`}>
                               {day.date.getDate()}
@@ -1093,6 +1284,11 @@ export default function EMICalendarModal({
                                     (#{customInstallmentDetails[0].installmentNumber})
                                   </span>
                                 )}
+                              </div>
+                            )}
+                            {hasOffSchedulePayments && (
+                              <div className="text-xs text-yellow-700 font-medium mt-0.5">
+                                💰 Actual Payment
                               </div>
                             )}
                           </div>
@@ -1121,6 +1317,11 @@ export default function EMICalendarModal({
                                         Includes custom EMI
                                       </div>
                                     )}
+                                    {hasOffSchedulePayments && (
+                                      <div className="text-yellow-600 text-xs mt-0.5">
+                                        Includes off-schedule payment
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -1132,6 +1333,9 @@ export default function EMICalendarModal({
                                   {hasCustomInstallments && (
                                     <span className="text-purple-600">⭐</span>
                                   )}
+                                  {hasOffSchedulePayments && (
+                                    <span className="text-yellow-600">💰</span>
+                                  )}
                                 </div>
                                 <div className={`font-bold ${
                                   day.status === 'paid' ? 'text-green-600' :
@@ -1142,6 +1346,14 @@ export default function EMICalendarModal({
                                 }`}>
                                   ₹{day.amount?.toLocaleString() || '0'}
                                 </div>
+                                
+                                {/* Show payment details if available */}
+                                {day.paymentDetails && day.paymentDetails.length > 0 && (
+                                  <div className="text-gray-600 text-xs mt-0.5">
+                                    {day.paymentDetails.length} payment(s) on this date
+                                  </div>
+                                )}
+                                
                                 {hasCustomInstallments && (
                                   <div className="text-purple-600 text-xs mt-0.5">
                                     Custom amount (last installment)
@@ -1150,6 +1362,48 @@ export default function EMICalendarModal({
                                 {customInstallmentDetails?.[0]?.installmentNumber && (
                                   <div className="text-gray-500 text-xs">
                                     Installment #{customInstallmentDetails[0].installmentNumber}
+                                  </div>
+                                )}
+                                
+                                {/* ============================================================================
+                                // NEW: Edit/Delete buttons for payments
+                                // ============================================================================ */}
+                                {selectedLoan !== 'all' && day.paymentDetails && day.paymentDetails.length > 0 && (
+                                  <div className="mt-2 flex flex-col gap-1">
+                                    {day.paymentDetails.slice(0, 2).map((payment: any, idx: number) => (
+                                      <div key={idx} className="flex items-center justify-between gap-1">
+                                        <div className="text-xs text-gray-600 truncate">
+                                          {payment.isAdvance ? 'Adv' : 'Reg'}: ₹{payment.amount}
+                                        </div>
+                                        <div className="flex gap-0.5">
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleEditPayment(payment);
+                                            }}
+                                            disabled={isProcessingEdit}
+                                            className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                          >
+                                            ✏️
+                                          </button>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleDeletePayment(payment);
+                                            }}
+                                            disabled={isProcessingDelete}
+                                            className="text-[10px] px-1.5 py-0.5 bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                          >
+                                            🗑️
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                    {day.paymentDetails.length > 2 && (
+                                      <div className="text-[10px] text-gray-400 text-center">
+                                        +{day.paymentDetails.length - 2} more payments
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -1176,6 +1430,10 @@ export default function EMICalendarModal({
                     <div className="flex items-center">
                       <div className="w-4 h-4 bg-purple-50 border border-purple-300 rounded mr-2"></div>
                       <span className="text-sm text-gray-700">Day with Custom EMI</span>
+                    </div>
+                    <div className="flex items-center">
+                      <div className="w-4 h-4 bg-yellow-50 border border-yellow-300 rounded mr-2"></div>
+                      <span className="text-sm text-gray-700">Day with Off-Schedule Payment</span>
                     </div>
                   </>
                 ) : (
@@ -1204,16 +1462,21 @@ export default function EMICalendarModal({
                       <div className="w-4 h-4 bg-purple-50 border border-purple-300 rounded mr-2"></div>
                       <span className="text-sm text-gray-700">Custom Installment</span>
                     </div>
+                    <div className="flex items-center">
+                      <div className="w-4 h-4 bg-yellow-50 border border-yellow-300 rounded mr-2"></div>
+                      <span className="text-sm text-gray-700">Off-Schedule Payment</span>
+                    </div>
                   </>
                 )}
                 <div className="flex items-center">
                   <div className="w-4 h-4 bg-blue-50 border border-blue-200 rounded mr-2"></div>
                   <span className="text-sm text-gray-700">Today</span>
                 </div>
-                <div className="flex items-center">
+                {/* REMOVED: Weekend legend entry */}
+                {/* <div className="flex items-center">
                   <div className="w-4 h-4 bg-red-50 border border-red-200 rounded mr-2"></div>
                   <span className="text-sm text-gray-700">Weekend</span>
-                </div>
+                </div> */}
                 <div className="flex items-center">
                   <div className="w-4 h-4 bg-gray-100 border border-gray-300 opacity-60 rounded mr-2"></div>
                   <span className="text-sm text-gray-700">Other Month</span>
@@ -1243,6 +1506,14 @@ export default function EMICalendarModal({
                 {selectedLoan !== 'all' && customerLoans.find(l => l.loanNumber === selectedLoan)?.emiType === 'custom' && (
                   <div className="text-xs text-purple-600 mt-1 font-medium">
                     ⭐ This loan has custom EMI: Last installment shows custom amount
+                  </div>
+                )}
+                {/* ============================================================================
+                // NEW: Edit/Delete instructions
+                // ============================================================================ */}
+                {selectedLoan !== 'all' && (
+                  <div className="text-xs text-green-600 mt-1 font-medium">
+                    ✏️ Click edit/delete buttons on payment days to modify payment records
                   </div>
                 )}
               </div>
