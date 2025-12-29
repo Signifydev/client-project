@@ -492,15 +492,31 @@ const getAllPaymentDatesForLoan = (loan: Loan): Set<string> => {
       const paymentDateKey = getDateAsYYYYMMDD(paymentDate);
       allPaymentDates.add(paymentDateKey);
       
-      // Also add dates from advance payments
+      // Also add dates from advance payments - BUT ONLY SCHEDULED DATES
       if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.advanceToDate) {
         const advanceFrom = parseDateFromAPI(payment.advanceFromDate);
         const advanceTo = parseDateFromAPI(payment.advanceToDate);
         
-        const currentDate = new Date(advanceFrom);
-        while (currentDate <= advanceTo) {
-          allPaymentDates.add(getDateAsYYYYMMDD(currentDate));
-          currentDate.setDate(currentDate.getDate() + 1);
+        // FIXED: Only add scheduled EMI dates within the advance range
+        if (loan.emiStartDate && loan.loanType && loan.totalEmiCount) {
+          const parsedEmiStartDate = parseDateFromAPI(loan.emiStartDate);
+          const emiStartDateStr = getDateAsYYYYMMDD(parsedEmiStartDate);
+          
+          const emiSchedule = generateEmiSchedule(
+            emiStartDateStr,
+            loan.loanType,
+            loan.totalEmiCount,
+            parsedEmiStartDate.getFullYear(),
+            parsedEmiStartDate.getMonth()
+          );
+          
+          emiSchedule.forEach(date => {
+            const dateKey = getDateAsYYYYMMDD(date);
+            // Only add if date is within advance range
+            if (date >= advanceFrom && date <= advanceTo) {
+              allPaymentDates.add(dateKey);
+            }
+          });
         }
       }
     });
@@ -543,26 +559,49 @@ const getPaymentDetailsForDate = (loan: Loan, date: Date): any[] => {
         });
       }
       
-      // Check if date is within advance payment range
+      // Check if date is within advance payment range AND is a scheduled EMI date
       if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.advanceToDate) {
         const advanceFrom = parseDateFromAPI(payment.advanceFromDate);
         const advanceTo = parseDateFromAPI(payment.advanceToDate);
         
+        // Only consider this date if it's a scheduled EMI date
         if (date >= advanceFrom && date <= advanceTo) {
-          paymentDetails.push({
-            paymentId: payment._id,
-            paymentDate: payment.paymentDate,
-            amount: payment.amount,
-            status: payment.status,
-            collectedBy: payment.collectedBy,
-            paymentType: payment.paymentType,
-            notes: payment.notes,
-            isAdvance: true,
-            advanceFromDate: payment.advanceFromDate,
-            advanceToDate: payment.advanceToDate,
-            isPartOfAdvance: true,
-            loanNumber: loan.loanNumber
-          });
+          // Check if this date is a scheduled EMI date
+          if (loan.emiStartDate && loan.loanType && loan.totalEmiCount) {
+            const parsedEmiStartDate = parseDateFromAPI(loan.emiStartDate);
+            const emiStartDateStr = getDateAsYYYYMMDD(parsedEmiStartDate);
+            
+            // Get all scheduled dates
+            const emiSchedule = generateEmiSchedule(
+              emiStartDateStr,
+              loan.loanType,
+              loan.totalEmiCount,
+              date.getFullYear(),
+              date.getMonth()
+            );
+            
+            // Check if this date is in the schedule
+            const isScheduledDate = emiSchedule.some(scheduledDate => 
+              getDateAsYYYYMMDD(scheduledDate) === dateKey
+            );
+            
+            if (isScheduledDate) {
+              paymentDetails.push({
+                paymentId: payment._id,
+                paymentDate: payment.paymentDate,
+                amount: payment.amount,
+                status: payment.status,
+                collectedBy: payment.collectedBy,
+                paymentType: payment.paymentType,
+                notes: payment.notes,
+                isAdvance: true,
+                advanceFromDate: payment.advanceFromDate,
+                advanceToDate: payment.advanceToDate,
+                isPartOfAdvance: true,
+                loanNumber: loan.loanNumber
+              });
+            }
+          }
         }
       }
     });
