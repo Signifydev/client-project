@@ -536,13 +536,19 @@ const getAllPaymentDatesForLoan = (loan: Loan): Set<string> => {
 const getPaymentDetailsForDate = (loan: Loan, date: Date): any[] => {
   const paymentDetails: any[] = [];
   const dateKey = getDateAsYYYYMMDD(date);
+  const processedPaymentIds = new Set<string>(); // Track processed payments
   
   if (loan.emiHistory && loan.emiHistory.length > 0) {
     loan.emiHistory.forEach((payment: any) => {
+      const paymentId = payment._id?.toString();
+      if (!paymentId || processedPaymentIds.has(paymentId)) {
+        return; // Skip if already processed
+      }
+      
       const paymentDate = parseDateFromAPI(payment.paymentDate);
       const paymentDateKey = getDateAsYYYYMMDD(paymentDate);
       
-      // Check if payment is for this date
+      // Check if payment is for this date (exact match)
       if (paymentDateKey === dateKey) {
         paymentDetails.push({
           paymentId: payment._id,
@@ -557,14 +563,14 @@ const getPaymentDetailsForDate = (loan: Loan, date: Date): any[] => {
           advanceToDate: payment.advanceToDate,
           loanNumber: loan.loanNumber
         });
+        processedPaymentIds.add(paymentId);
       }
-      
-      // Check if date is within advance payment range AND is a scheduled EMI date
-      if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.advanceToDate) {
+      // For advance payments, check if this date is within the advance range AND is a scheduled date
+      else if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.advanceToDate) {
         const advanceFrom = parseDateFromAPI(payment.advanceFromDate);
         const advanceTo = parseDateFromAPI(payment.advanceToDate);
         
-        // Only consider this date if it's a scheduled EMI date
+        // Only process if date is within advance range
         if (date >= advanceFrom && date <= advanceTo) {
           // Check if this date is a scheduled EMI date
           if (loan.emiStartDate && loan.loanType && loan.totalEmiCount) {
@@ -586,24 +592,45 @@ const getPaymentDetailsForDate = (loan: Loan, date: Date): any[] => {
             );
             
             if (isScheduledDate) {
-              paymentDetails.push({
-                paymentId: payment._id,
-                paymentDate: payment.paymentDate,
-                amount: payment.amount,
-                status: payment.status,
-                collectedBy: payment.collectedBy,
-                paymentType: payment.paymentType,
-                notes: payment.notes,
-                isAdvance: true,
-                advanceFromDate: payment.advanceFromDate,
-                advanceToDate: payment.advanceToDate,
-                isPartOfAdvance: true,
-                loanNumber: loan.loanNumber
-              });
+              // Only add if we haven't already added this payment for this date
+              // (prevents duplicate entries for the same advance payment)
+              if (!paymentDetails.some(p => p.paymentId === payment._id)) {
+                paymentDetails.push({
+                  paymentId: payment._id,
+                  paymentDate: payment.paymentDate,
+                  amount: payment.amount,
+                  status: payment.status,
+                  collectedBy: payment.collectedBy,
+                  paymentType: payment.paymentType,
+                  notes: payment.notes,
+                  isAdvance: true,
+                  advanceFromDate: payment.advanceFromDate,
+                  advanceToDate: payment.advanceToDate,
+                  isPartOfAdvance: true,
+                  loanNumber: loan.loanNumber
+                });
+                processedPaymentIds.add(paymentId);
+              }
             }
           }
         }
       }
+    });
+  }
+  
+  // DEBUG: Log payment details for this date
+  if (paymentDetails.length > 0) {
+    debugLog(`Payment details for ${dateKey}`, {
+      date: dateKey,
+      paymentCount: paymentDetails.length,
+      payments: paymentDetails.map(p => ({
+        id: p.paymentId,
+        amount: p.amount,
+        type: p.paymentType,
+        isAdvance: p.isAdvance,
+        advanceFrom: p.advanceFromDate,
+        advanceTo: p.advanceToDate
+      }))
     });
   }
   
