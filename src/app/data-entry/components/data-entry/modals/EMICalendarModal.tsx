@@ -43,7 +43,7 @@ interface CalendarDay {
     isCustomInstallment?: boolean;
     installmentNumber?: number;
   }[];
-  paymentDetails?: {
+  paymentDetails?: Array<{
     paymentId?: string;
     paymentDate: string;
     amount: number;
@@ -54,7 +54,15 @@ interface CalendarDay {
     isAdvance?: boolean;
     advanceFromDate?: string;
     advanceToDate?: string;
-  }[];
+    advanceEmiCount?: number;
+    isPartOfAdvance?: boolean;
+    loanNumber?: string;
+    displayDate?: string;
+    // Add grouped properties
+    _isGrouped?: boolean;
+    _groupCount?: number;
+    _groupTotal?: number;
+  }>;
 }
 
 interface EMIStatusInfo {
@@ -538,19 +546,20 @@ const getPaymentDetailsForDate = (loan: Loan, date: Date): any[] => {
   const dateKey = getDateAsYYYYMMDD(date);
   
   if (loan.emiHistory && loan.emiHistory.length > 0) {
-    // Create a map to deduplicate payments by unique key (paymentId + date combination)
-    const uniquePaymentsMap = new Map<string, any>();
+    // Group payments by advance payment ID (for advance payments) or regular ID
+    const paymentGroups = new Map<string, any[]>();
     
+    // First pass: Group payments
     loan.emiHistory.forEach((payment: any) => {
       const paymentDate = parseDateFromAPI(payment.paymentDate);
       const paymentDateKey = getDateAsYYYYMMDD(paymentDate);
       
-      // For advance payments, we need to handle them differently
+      // For advance payments, group by advance payment ID
       if (payment.paymentType === 'advance' && payment.advanceFromDate && payment.advanceToDate) {
         const advanceFrom = parseDateFromAPI(payment.advanceFromDate);
         const advanceTo = parseDateFromAPI(payment.advanceToDate);
         
-        // Check if current date is within advance range AND is a scheduled date
+        // Check if current date is within advance range
         if (date >= advanceFrom && date <= advanceTo) {
           // For advance payments, check if this date is a scheduled EMI date
           if (loan.emiStartDate && loan.loanType && loan.totalEmiCount) {
@@ -572,55 +581,74 @@ const getPaymentDetailsForDate = (loan: Loan, date: Date): any[] => {
             );
             
             if (isScheduledDate) {
-              // Create a unique key for this advance payment on this date
-              const uniqueKey = `advance_${payment._id}_${dateKey}`;
-              
-              if (!uniquePaymentsMap.has(uniqueKey)) {
-                uniquePaymentsMap.set(uniqueKey, {
-                  paymentId: payment._id,
-                  paymentDate: payment.paymentDate, // Original payment date
-                  amount: payment.amount, // This is the PER EMI amount for advance payments
-                  status: payment.status,
-                  collectedBy: payment.collectedBy,
-                  paymentType: payment.paymentType,
-                  notes: payment.notes,
-                  isAdvance: true,
-                  advanceFromDate: payment.advanceFromDate,
-                  advanceToDate: payment.advanceToDate,
-                  isPartOfAdvance: true,
-                  loanNumber: loan.loanNumber,
-                  displayDate: dateKey // The date being displayed in calendar
-                });
+              // Use advance payment ID as group key
+              const groupKey = `advance_${payment._id}`;
+              if (!paymentGroups.has(groupKey)) {
+                paymentGroups.set(groupKey, []);
               }
+              paymentGroups.get(groupKey)!.push(payment);
             }
           }
         }
       } else {
-        // For regular (non-advance) payments, check exact date match
+        // For regular payments, check exact date match
         if (paymentDateKey === dateKey) {
-          const uniqueKey = `regular_${payment._id}_${dateKey}`;
-          
-          if (!uniquePaymentsMap.has(uniqueKey)) {
-            uniquePaymentsMap.set(uniqueKey, {
-              paymentId: payment._id,
-              paymentDate: payment.paymentDate,
-              amount: payment.amount,
-              status: payment.status,
-              collectedBy: payment.collectedBy,
-              paymentType: payment.paymentType,
-              notes: payment.notes,
-              isAdvance: false,
-              loanNumber: loan.loanNumber,
-              displayDate: dateKey
-            });
+          const groupKey = `regular_${payment._id}`;
+          if (!paymentGroups.has(groupKey)) {
+            paymentGroups.set(groupKey, []);
           }
+          paymentGroups.get(groupKey)!.push(payment);
         }
       }
     });
     
-    // Convert map values to array
-    Array.from(uniquePaymentsMap.values()).forEach(payment => {
-      paymentDetails.push(payment);
+    // Second pass: Create consolidated payment details from groups
+    paymentGroups.forEach((payments, groupKey) => {
+      if (payments.length === 0) return;
+      
+      // Take the first payment as representative
+      const firstPayment = payments[0];
+      
+      // For advance payments, show consolidated information
+      if (groupKey.startsWith('advance_')) {
+        // Calculate total amount for this advance payment group
+        const totalAmount = payments.reduce((sum, p) => sum + p.amount, 0);
+        
+        paymentDetails.push({
+          paymentId: firstPayment._id,
+          paymentDate: firstPayment.paymentDate,
+          amount: firstPayment.amount, // Per EMI amount
+          status: firstPayment.status,
+          collectedBy: firstPayment.collectedBy,
+          paymentType: firstPayment.paymentType,
+          notes: firstPayment.notes,
+          isAdvance: true,
+          advanceFromDate: firstPayment.advanceFromDate,
+          advanceToDate: firstPayment.advanceToDate,
+          advanceEmiCount: firstPayment.advanceEmiCount || payments.length,
+          isPartOfAdvance: true,
+          loanNumber: loan.loanNumber,
+          displayDate: dateKey,
+          // Add group info for debugging
+          _isGrouped: true,
+          _groupCount: payments.length,
+          _groupTotal: totalAmount
+        });
+      } else {
+        // For regular payments, just add as-is
+        paymentDetails.push({
+          paymentId: firstPayment._id,
+          paymentDate: firstPayment.paymentDate,
+          amount: firstPayment.amount,
+          status: firstPayment.status,
+          collectedBy: firstPayment.collectedBy,
+          paymentType: firstPayment.paymentType,
+          notes: firstPayment.notes,
+          isAdvance: false,
+          loanNumber: loan.loanNumber,
+          displayDate: dateKey
+        });
+      }
     });
   }
   
@@ -637,14 +665,16 @@ const getPaymentDetailsForDate = (loan: Loan, date: Date): any[] => {
         advanceFrom: p.advanceFromDate,
         advanceTo: p.advanceToDate,
         displayDate: p.displayDate,
-        paymentDate: p.paymentDate
+        paymentDate: p.paymentDate,
+        isGrouped: p._isGrouped,
+        groupCount: p._groupCount,
+        groupTotal: p._groupTotal
       }))
     });
   }
   
   return paymentDetails;
 };
-
 export default function EMICalendarModal({
   isOpen,
   onClose,
@@ -1424,7 +1454,9 @@ export default function EMICalendarModal({
                                 {/* Show payment details if available */}
                                 {day.paymentDetails && day.paymentDetails.length > 0 && (
   <div className="text-gray-600 text-xs mt-0.5">
-    {day.paymentDetails.length} payment(s) on this date
+    {day.paymentDetails.some(p => p._isGrouped) 
+      ? `${day.paymentDetails.length} advance payment(s)` 
+      : `${day.paymentDetails.length} payment(s)`} on this date
   </div>
 )}
                                 
@@ -1444,57 +1476,45 @@ export default function EMICalendarModal({
                                 // ============================================================================ */}
                                 {selectedLoan !== 'all' && day.paymentDetails && day.paymentDetails.length > 0 && (
   <div className="mt-2 flex flex-col gap-1">
-    {/* First, deduplicate payments by paymentId to avoid showing duplicates */}
-    {(() => {
-      // Deduplicate by paymentId
-      const uniquePayments = day.paymentDetails.filter((payment, index, self) =>
-        index === self.findIndex(p => p.paymentId === payment.paymentId)
-      );
-      
-      return (
-        <>
-          {uniquePayments.slice(0, 2).map((payment: any, idx: number) => (
-            <div key={`${payment.paymentId}_${idx}`} className="flex items-center justify-between gap-1">
-              <div className="text-xs text-gray-600 truncate">
-                {payment.isAdvance ? 'Adv' : 'Reg'}: ₹{payment.amount}
-                {payment.isPartOfAdvance && payment.displayDate !== payment.paymentDate && (
-                  <span className="text-[10px] text-gray-400 ml-1">
-                    (from {formatDateToDDMMYYYY(parseDateFromAPI(payment.paymentDate))})
-                  </span>
-                )}
-              </div>
-              <div className="flex gap-0.5">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleEditPayment(payment);
-                  }}
-                  disabled={isProcessingEdit}
-                  className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  ✏️
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeletePayment(payment);
-                  }}
-                  disabled={isProcessingDelete}
-                  className="text-[10px] px-1.5 py-0.5 bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  🗑️
-                </button>
-              </div>
-            </div>
-          ))}
-          {uniquePayments.length > 2 && (
-            <div className="text-[10px] text-gray-400 text-center">
-              +{uniquePayments.length - 2} more payments
-            </div>
+    {day.paymentDetails.slice(0, 2).map((payment: any, idx: number) => (
+      <div key={`${payment.paymentId}_${idx}`} className="flex items-center justify-between gap-1">
+        <div className="text-xs text-gray-600 truncate">
+          {payment.isAdvance ? 'Advance' : 'Payment'}: ₹{payment.amount}
+          {payment._isGrouped && (
+            <span className="text-[10px] text-gray-400 ml-1">
+              ({payment._groupCount} of {payment.advanceEmiCount})
+            </span>
           )}
-        </>
-      );
-    })()}
+        </div>
+        <div className="flex gap-0.5">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleEditPayment(payment);
+            }}
+            disabled={isProcessingEdit}
+            className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            ✏️
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDeletePayment(payment);
+            }}
+            disabled={isProcessingDelete}
+            className="text-[10px] px-1.5 py-0.5 bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            🗑️
+          </button>
+        </div>
+      </div>
+    ))}
+    {day.paymentDetails.length > 2 && (
+      <div className="text-[10px] text-gray-400 text-center">
+        +{day.paymentDetails.length - 2} more payments
+      </div>
+    )}
   </div>
 )}
                               </div>
