@@ -1,38 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import Customer from '@/lib/models/Customer';
 import EMIPayment from '@/lib/models/EMIPayment';
 import Request from '@/lib/models/Request';
 
-interface RecentActivityQuery {
-  office?: string;
-  limit?: string;
-  days?: string;
-}
-
-interface Activity {
-  type: string;
-  description: string;
-  time: string;
-  customerName: string;
-  customerNumber?: string;
-  office?: string;
-  data: any;
-  timestamp: Date;
-}
-
-interface PaymentWithCustomer {
-  _id?: any;
-  customerName: string;
-  amount: number;
-  status: string;
-  paymentDate: string;
-  collectedBy: string;
-  createdAt: Date;
-  customerId?: any;
-}
-
-export async function GET(request: NextRequest) {
+export async function GET(request) {
   try {
     await connectDB();
     
@@ -54,7 +26,7 @@ export async function GET(request: NextRequest) {
     startDate.setDate(startDate.getDate() - days);
     
     // Build base query for office filtering
-    const officeQuery: any = {};
+    const officeQuery = {};
     if (officeParam && officeParam !== 'all') {
       officeQuery.officeCategory = officeParam;
     }
@@ -68,7 +40,7 @@ export async function GET(request: NextRequest) {
       .lean();
     
     // 2. Get recent EMI payments with customer office filtering
-    let paymentMatch: any = { createdAt: { $gte: startDate } };
+    let paymentMatch = { createdAt: { $gte: startDate } };
     
     if (officeParam && officeParam !== 'all') {
       // Get customer IDs for this office
@@ -87,10 +59,10 @@ export async function GET(request: NextRequest) {
       .select('customerName amount status paymentDate collectedBy createdAt')
       .sort({ createdAt: -1 })
       .limit(limit)
-      .lean() as PaymentWithCustomer[];
+      .lean();
     
     // 3. Get recent requests/approvals
-    const requestMatch: any = { 
+    const requestMatch = { 
       status: { $in: ['Approved', 'Rejected'] },
       updatedAt: { $gte: startDate }
     };
@@ -110,7 +82,7 @@ export async function GET(request: NextRequest) {
       .lean();
     
     // Combine and format activities
-    const activities: Activity[] = [];
+    const activities = [];
     
     // Add customer activities
     recentCustomers.forEach(customer => {
@@ -138,9 +110,9 @@ export async function GET(request: NextRequest) {
         type: 'emi_paid',
         description: `${statusText} of ₹${payment.amount} collected`,
         time: formatTimeAgo(payment.createdAt),
-        customerName: payment.customerName || (payment.customerId as any)?.name,
-        customerNumber: (payment.customerId as any)?.customerNumber,
-        office: (payment.customerId as any)?.officeCategory || 'Unknown',
+        customerName: payment.customerName || payment.customerId.name,
+        customerNumber: payment.customerId.customerNumber,
+        office: payment.customerId.officeCategory || 'Unknown',
         data: {
           amount: payment.amount,
           status: payment.status,
@@ -180,7 +152,7 @@ export async function GET(request: NextRequest) {
       customerAdditions: recentCustomers.length,
       emiPayments: recentPayments.length,
       requestsProcessed: recentRequests.length,
-      byType: activities.reduce((acc: Record<string, number>, activity) => {
+      byType: activities.reduce((acc, activity) => {
         acc[activity.type] = (acc[activity.type] || 0) + 1;
         return acc;
       }, {})
@@ -198,7 +170,7 @@ export async function GET(request: NextRequest) {
       office: officeParam
     });
     
-  } catch (error: unknown) {
+  } catch (error) {
     console.error('❌ Error fetching recent activity:', error);
     const errorMessage = error instanceof Error ? error.message : 'Failed to fetch recent activity';
     
@@ -221,7 +193,7 @@ export async function GET(request: NextRequest) {
 }
 
 // Helper function to format time ago
-function formatTimeAgo(date: Date | string): string {
+function formatTimeAgo(date) {
   const now = new Date();
   const past = new Date(date);
   const diffMs = now.getTime() - past.getTime();
