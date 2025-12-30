@@ -20,6 +20,7 @@ interface EMITransactionsModalProps {
   onClose: () => void;
   customer: CustomerDetails;
   transactions: EMITransaction[];
+  onRefresh?: () => void; // Add this for refreshing after edit
 }
 
 // ============================================================================
@@ -52,10 +53,16 @@ export default function EMITransactionsModal({
   isOpen,
   onClose,
   customer,
-  transactions
+  transactions,
+  onRefresh
 }: EMITransactionsModalProps) {
   const [selectedLoan, setSelectedLoan] = useState<string>('all');
   const [filteredTransactions, setFilteredTransactions] = useState<EMITransaction[]>(transactions);
+  const [editingTransaction, setEditingTransaction] = useState<EMITransaction | null>(null);
+  const [editAmount, setEditAmount] = useState<string>('');
+  const [editStatus, setEditStatus] = useState<string>('Paid');
+  const [isEditing, setIsEditing] = useState(false);
+  const [editError, setEditError] = useState<string>('');
   
   // Calculate total expected amount for comparison
   const calculateTotalExpectedAmount = () => {
@@ -90,6 +97,88 @@ export default function EMITransactionsModal({
     ? Math.min((totalAmount / totalExpectedAmount) * 100, 100) 
     : 0;
   
+  // Handle edit button click
+  const handleEditClick = (transaction: EMITransaction) => {
+    console.log('Editing transaction:', transaction);
+    setEditingTransaction(transaction);
+    setEditAmount(transaction.amount.toString());
+    setEditStatus(transaction.status);
+    setEditError('');
+  };
+
+  // Handle edit save
+  const handleSaveEdit = async () => {
+    if (!editingTransaction) return;
+    
+    const amount = parseFloat(editAmount);
+    if (isNaN(amount) || amount <= 0) {
+      setEditError('Please enter a valid amount');
+      return;
+    }
+    
+    setIsEditing(true);
+    setEditError('');
+    
+    try {
+      console.log('Saving edit for transaction:', editingTransaction._id);
+      
+      const response = await fetch('/api/data-entry/emi-payments/edit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          paymentId: editingTransaction._id,
+          amount: amount,
+          status: editStatus,
+          customerId: customer._id,
+          customerName: customer.name,
+          loanNumber: editingTransaction.loanNumber,
+          previousAmount: editingTransaction.amount,
+          collectedBy: editingTransaction.collectedBy,
+          notes: `Edited from ₹${editingTransaction.amount} to ₹${amount}`
+        }),
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok && result.success) {
+        console.log('✅ Transaction updated successfully');
+        alert('Transaction updated successfully!');
+        
+        // Refresh transactions if parent provides onRefresh
+        if (onRefresh) {
+          onRefresh();
+        }
+        
+        // Close edit mode
+        setEditingTransaction(null);
+        
+        // Refresh the page after a short delay to show updated data
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
+      } else {
+        setEditError(result.error || 'Failed to update transaction');
+        alert(`Failed to update transaction: ${result.error || 'Unknown error'}`);
+      }
+    } catch (error: any) {
+      console.error('Error updating transaction:', error);
+      setEditError(error.message || 'Error updating transaction');
+      alert(`Error updating transaction: ${error.message || 'Unknown error'}`);
+    } finally {
+      setIsEditing(false);
+    }
+  };
+
+  // Handle edit cancel
+  const handleCancelEdit = () => {
+    setEditingTransaction(null);
+    setEditAmount('');
+    setEditStatus('Paid');
+    setEditError('');
+  };
+
   if (!isOpen) return null;
   
   return (
@@ -159,6 +248,96 @@ export default function EMITransactionsModal({
             </div>
           </div>
 
+          {/* Edit Modal */}
+          {editingTransaction && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-[201] flex items-center justify-center p-4">
+              <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Edit EMI Transaction
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Loan: {editingTransaction.loanNumber} • Date: {formatToDDMMYYYY(editingTransaction.paymentDate)}
+                  </p>
+                </div>
+                
+                <div className="p-6">
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Amount (₹)
+                      </label>
+                      <input
+                        type="number"
+                        value={editAmount}
+                        onChange={(e) => setEditAmount(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Enter amount"
+                        step="0.01"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Status
+                      </label>
+                      <select
+                        value={editStatus}
+                        onChange={(e) => setEditStatus(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="Paid">Paid</option>
+                        <option value="Partial">Partial</option>
+                        <option value="Advance">Advance</option>
+                        <option value="Overdue">Overdue</option>
+                      </select>
+                    </div>
+                    
+                    {editError && (
+                      <div className="text-red-600 text-sm bg-red-50 p-2 rounded border border-red-200">
+                        {editError}
+                      </div>
+                    )}
+                    
+                    <div className="text-sm text-gray-600">
+                      <p><strong>Previous Amount:</strong> ₹{editingTransaction.amount}</p>
+                      <p><strong>New Amount:</strong> ₹{parseFloat(editAmount) || 0}</p>
+                      {editingTransaction.amount !== parseFloat(editAmount) && (
+                        <p className="text-blue-600">
+                          Difference: ₹{(parseFloat(editAmount) - editingTransaction.amount).toFixed(2)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+                  <button
+                    onClick={handleCancelEdit}
+                    className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                    disabled={isEditing}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveEdit}
+                    disabled={isEditing}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                  >
+                    {isEditing ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Saving...
+                      </>
+                    ) : (
+                      'Save Changes'
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Transactions Table */}
           <div className="overflow-x-auto border border-gray-200 rounded-lg">
             <table className="min-w-full divide-y divide-gray-200">
@@ -180,13 +359,10 @@ export default function EMITransactionsModal({
                     Status
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Payment Method
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Paid By (Operator)
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Notes
+                    Actions
                   </th>
                 </tr>
               </thead>
@@ -218,19 +394,24 @@ export default function EMITransactionsModal({
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {transaction.paymentMethod || 'Cash'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {transaction.collectedBy}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate" title={transaction.notes}>
-                        {transaction.notes || '-'}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <button
+                          onClick={() => handleEditClick(transaction)}
+                          className="px-3 py-1 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 text-sm font-medium flex items-center gap-1"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                          </svg>
+                          Edit
+                        </button>
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={8} className="px-6 py-8 text-center">
+                    <td colSpan={7} className="px-6 py-8 text-center">
                       <div className="text-gray-400 text-4xl mb-4">📭</div>
                       <p className="text-gray-500 text-lg font-semibold">No transactions found</p>
                       <p className="text-gray-400 text-sm mt-2">
@@ -252,6 +433,9 @@ export default function EMITransactionsModal({
                 <p className="text-sm font-medium text-gray-700">Showing {filteredTransactions.length} of {transactions.length} transactions</p>
                 <p className="text-xs text-gray-500 mt-1">
                   Filter: {selectedLoan === 'all' ? 'All Loans' : selectedLoan}
+                </p>
+                <p className="text-xs text-blue-600 mt-1 font-medium">
+                  💡 Click "Edit" button to modify any transaction amount or status
                 </p>
               </div>
               <div className="text-right">

@@ -29,7 +29,42 @@ const LoadingSpinner = () => (
 // Sort order type
 type SortOrder = 'asc' | 'desc' | 'none';
 
-// Loan Selection Modal Component - FIXED DIMENSIONS
+// ✅ NEW: Helper function to check if loan is active (not completed or renewed)
+const isActiveLoan = (loan: Loan): boolean => {
+  if (!loan) return false;
+  
+  // Check if loan is completed
+  const isCompleted = loan.status === 'completed' || 
+                     (loan.emiPaidCount && loan.totalEmiCount && loan.emiPaidCount >= loan.totalEmiCount);
+  
+  // Check if loan is renewed
+  const isRenewed = loan.isRenewed || loan.status === 'renewed';
+  
+  // Loan is active if it's not completed and not renewed
+  return loan.status === 'active' && !isCompleted && !isRenewed;
+};
+
+// ✅ NEW: Helper function to get active loans for a customer
+const getActiveLoans = (customer: CustomerDetails): Loan[] => {
+  if (!customer || !customer.loans || !Array.isArray(customer.loans)) {
+    return [];
+  }
+  
+  return customer.loans.filter(loan => isActiveLoan(loan));
+};
+
+// ✅ NEW: Helper function to check if a specific date payment exists
+const hasPaymentOnDate = (loan: Loan, dateString: string): boolean => {
+  if (!loan || !loan.emiHistory || !Array.isArray(loan.emiHistory)) {
+    return false;
+  }
+  
+  return loan.emiHistory.some(payment => 
+    payment.paymentDate && payment.paymentDate.split('T')[0] === dateString
+  );
+};
+
+// Loan Selection Modal Component - FIXED DIMENSIONS WITH ADVANCE PAYMENT SUPPORT
 const LoanSelectionModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
@@ -47,10 +82,8 @@ const LoanSelectionModal: React.FC<{
     return todayPayment ? 'Paid' : 'Unpaid';
   };
 
-  // Filter only active, non-renewed loans
-  const activeLoans = customer.loans?.filter(loan => 
-    loan.status === 'active' && !loan.isRenewed
-  ) || [];
+  // ✅ FIXED: Filter only active, non-renewed, non-completed loans
+  const activeLoans = getActiveLoans(customer);
 
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
@@ -64,6 +97,9 @@ const LoanSelectionModal: React.FC<{
               </h3>
               <p className="text-sm text-gray-600 mt-1">
                 {customer.name} • {customer.customerNumber}
+              </p>
+              <p className="text-xs text-blue-600 mt-2">
+                💡 <strong>Advance payments allowed:</strong> You can make advance payments even if today's EMI is already paid.
               </p>
             </div>
             <button
@@ -89,16 +125,16 @@ const LoanSelectionModal: React.FC<{
                     key={loanId}
                     className={`p-5 border-2 rounded-xl transition-all duration-200 ${
                       isPaidToday 
-                        ? 'bg-green-50 border-green-200' 
+                        ? 'bg-blue-50 border-blue-200' 
                         : 'bg-white border-gray-200 hover:border-blue-300 hover:bg-blue-50 cursor-pointer'
                     }`}
-                    onClick={() => !isPaidToday && onLoanSelect(loan)}
+                    onClick={() => onLoanSelect(loan)} // ✅ ALWAYS clickable for advance payments
                   >
                     <div className="flex justify-between items-center">
                       <div className="flex-1">
                         <div className="flex items-center space-x-4">
                           <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
-                            isPaidToday ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'
+                            isPaidToday ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'
                           }`}>
                             <span className="text-xl">
                               {isPaidToday ? '✓' : '₹'}
@@ -118,7 +154,7 @@ const LoanSelectionModal: React.FC<{
                                 {loan.loanType}
                               </span>
                               {isPaidToday && (
-                                <span className="px-2.5 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
+                                <span className="px-2.5 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
                                   Paid Today
                                 </span>
                               )}
@@ -140,32 +176,41 @@ const LoanSelectionModal: React.FC<{
                                 </p>
                               </div>
                               <div>
-                                <p className="text-xs text-gray-500">Status</p>
-                                <p className={`font-medium ${
-                                  isPaidToday ? 'text-green-600' : 'text-gray-900'
-                                }`}>
-                                  {isPaidToday ? 'Paid Today' : 'Active'}
+                                <p className="text-xs text-gray-500">Paid/Total</p>
+                                <p className="font-medium text-gray-900">
+                                  {loan.emiPaidCount || 0}/{loan.totalEmiCount || loan.loanDays || 0}
                                 </p>
                               </div>
                             </div>
+                            
+                            {isPaidToday && (
+                              <div className="mt-3 p-2 bg-blue-50 border border-blue-100 rounded-lg">
+                                <p className="text-xs text-blue-700 flex items-center">
+                                  <span className="mr-1">💡</span>
+                                  <strong>Note:</strong> Today's EMI is paid. You can still make advance payments for future dates.
+                                </p>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
                       
-                      {/* Action Button */}
+                      {/* Action Button - ALWAYS ENABLED for advance payments */}
                       <div className="ml-4">
-                        {isPaidToday ? (
-                          <div className="px-4 py-3 bg-green-100 text-green-800 rounded-lg text-center min-w-[120px]">
-                            <p className="font-medium">Already Paid</p>
-                            <p className="text-xs mt-1">Today's EMI</p>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => onLoanSelect(loan)}
-                            className="px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white font-medium rounded-lg hover:from-green-700 hover:to-green-800 transition-all duration-200 shadow-md hover:shadow-lg min-w-[120px]"
-                          >
-                            Pay Now
-                          </button>
+                        <button
+                          onClick={() => onLoanSelect(loan)}
+                          className={`px-6 py-3 text-white font-medium rounded-lg transition-all duration-200 shadow-md hover:shadow-lg min-w-[120px] ${
+                            isPaidToday
+                              ? 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800'
+                              : 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800'
+                          }`}
+                        >
+                          {isPaidToday ? 'Pay Advance' : 'Pay Now'}
+                        </button>
+                        {isPaidToday && (
+                          <p className="text-xs text-blue-600 text-center mt-1">
+                            (Advance Payment)
+                          </p>
                         )}
                       </div>
                     </div>
@@ -178,8 +223,17 @@ const LoanSelectionModal: React.FC<{
               <div className="text-gray-300 text-6xl mb-6">💰</div>
               <h4 className="text-xl font-semibold text-gray-800 mb-3">No Active Loans</h4>
               <p className="text-gray-600 max-w-md mx-auto">
-                This customer doesn't have any active loans for EMI payment.
+                {customer.loans && customer.loans.length > 0 
+                  ? 'This customer does not have any active, non-completed loans for EMI payment.'
+                  : 'This customer doesn\'t have any loans for EMI payment.'}
               </p>
+              {customer.loans && customer.loans.length > 0 && (
+                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg inline-block">
+                  <p className="text-sm text-yellow-800">
+                    📊 Found {customer.loans.length} loan(s), but all are either completed or renewed.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -206,10 +260,15 @@ const LoanSelectionModal: React.FC<{
                   }}
                   className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
                 >
-                  Pay First Loan
+                  {hasPaymentOnDate(activeLoans[0], new Date().toISOString().split('T')[0]) 
+                    ? 'Pay Advance (First Loan)' 
+                    : 'Pay First Loan'}
                 </button>
               )}
             </div>
+          </div>
+          <div className="mt-3 text-xs text-gray-500">
+            💡 <strong>Tip:</strong> Even if today's EMI is paid, you can make advance payments for future dates.
           </div>
         </div>
       </div>
@@ -383,7 +442,7 @@ export default function CustomersSection({
     }
   };
 
-  // UPDATED: Handle EMI button click - shows loan selection when multiple loans exist
+  // ✅ UPDATED: Handle EMI button click - shows loan selection when multiple active loans exist
   const handleUpdateEMIClick = async (customer: Customer) => {
     try {
       const customerId = customer._id || customer.id;
@@ -399,12 +458,23 @@ export default function CustomersSection({
         console.log('✅ Customer with loans fetched:', details.name);
         console.log('📊 Loans found:', details.loans?.length || 0);
         
-        const activeLoans = details.loans?.filter(loan => 
-          loan.status === 'active' && !loan.isRenewed
-        ) || [];
+        // ✅ FIXED: Use the new helper function to get active loans
+        const activeLoans = getActiveLoans(details);
+        
+        console.log('🔍 Active loans check:', {
+          totalLoans: details.loans?.length || 0,
+          activeLoansCount: activeLoans.length,
+          activeLoans: activeLoans.map(loan => ({
+            loanNumber: loan.loanNumber,
+            status: loan.status,
+            emiPaidCount: loan.emiPaidCount,
+            totalEmiCount: loan.totalEmiCount,
+            isRenewed: loan.isRenewed
+          }))
+        });
         
         if (activeLoans.length === 0) {
-          alert('No active loans found for this customer');
+          alert('No active loans found for this customer. All loans are either completed or renewed.');
           return;
         }
         
@@ -727,7 +797,7 @@ export default function CustomersSection({
                       {/* Actions Column - HORIZONTAL BUTTONS, NO ICONS */}
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex items-center space-x-2">
-                          {/* Update EMI Button - NOW SHOWS LOAN SELECTION */}
+                          {/* Update EMI Button - NOW ALLOWS ADVANCE PAYMENTS */}
                           <button
                             onClick={() => handleUpdateEMIClick(customer)}
                             className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors duration-200"

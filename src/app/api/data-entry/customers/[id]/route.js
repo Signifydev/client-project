@@ -110,6 +110,37 @@ function safeFormatDate(dateInput) {
   return formatToDDMMYYYY(dateInput);
 }
 
+// ✅ NEW: Helper function to check if loan is completed
+function isLoanCompleted(loan) {
+  if (!loan) return false;
+  
+  // Check multiple completion indicators
+  if (loan.status === 'completed') return true;
+  if (loan.emiPaidCount >= loan.totalEmiCount) return true;
+  if (loan.totalPaidAmount >= (loan.totalLoanAmount || loan.amount)) return true;
+  
+  return false;
+}
+
+// ✅ NEW: Helper function to calculate correct next EMI date
+function calculateCorrectNextEmiDate(loan) {
+  if (!loan) return null;
+  
+  // If loan is completed, return null
+  if (isLoanCompleted(loan)) {
+    return null;
+  }
+  
+  // If no payments yet, return EMI start date
+  if (!loan.emiPaidCount || loan.emiPaidCount === 0) {
+    return loan.emiStartDate || loan.dateApplied;
+  }
+  
+  // If loan is not completed and has payments, return the existing nextEmiDate
+  // (This should have been calculated correctly by the EMI payments API)
+  return loan.nextEmiDate;
+}
+
 // GET method for fetching single customer details by ID
 export async function GET(request, { params }) {
   try {
@@ -189,22 +220,21 @@ export async function GET(request, { params }) {
       fiDocuments: customer.fiDocuments || {},
       loans: sortedLoans.map(loan => {
         // ==============================================
-        // FIXED: Handle both string and Date object dates
+        // ✅ CRITICAL FIX: Calculate correct completion status and dates
         // ==============================================
         
         // Get raw date values
         const dateApplied = loan.dateApplied;
         const emiStartDate = loan.emiStartDate || loan.dateApplied;
-const lastEmiDate = loan.lastEmiDate; // ← NO DEFAULT! Keep as null if no payments
-
-console.log('📅 Date Debug:', {
-  loanNumber: loan.loanNumber,
-  dateApplied: loan.dateApplied,
-  lastEmiDateInDB: loan.lastEmiDate,
-  emiPaidCount: loan.emiPaidCount,
-  totalPaidAmount: loan.totalPaidAmount
-});
-        const nextEmiDate = loan.nextEmiDate;
+        const lastEmiDate = loan.lastEmiDate;
+        
+        // ✅ FIXED: Check if loan is completed
+        const isCompleted = isLoanCompleted(loan);
+        
+        // ✅ FIXED: Calculate correct next EMI date
+        const correctNextEmiDate = calculateCorrectNextEmiDate(loan);
+        const nextEmiDate = correctNextEmiDate || loan.nextEmiDate;
+        
         const createdAt = loan.createdAt;
         const updatedAt = loan.updatedAt;
         
@@ -230,24 +260,19 @@ console.log('📅 Date Debug:', {
         const lastEmiDateInput = lastEmiDateStr;
         const nextEmiDateInput = nextEmiDateStr;
         
-        console.log('📅 Loan Date Debug:', {
+        console.log('📅 Loan Date Debug (FIXED):', {
           loanNumber: loan.loanNumber,
-          dateApplied: dateApplied,
-          dateAppliedStr,
-          dateAppliedDisplay,
-          emiStartDate: emiStartDate,
-          emiStartDateStr,
-          emiStartDateDisplay,
-          nextEmiDate: nextEmiDate,
-          nextEmiDateStr,
-          nextEmiDateDisplay,
-          dateType: typeof dateApplied,
-          isString: typeof dateApplied === 'string',
-          isValidYYYYMMDD: isValidYYYYMMDD(dateApplied)
+          isCompleted: isCompleted,
+          emiPaidCount: loan.emiPaidCount,
+          totalEmiCount: loan.totalEmiCount,
+          status: loan.status,
+          correctNextEmiDate: correctNextEmiDate,
+          originalNextEmiDate: loan.nextEmiDate,
+          finalNextEmiDate: nextEmiDate
         });
         
         // ==============================================
-        // FIXED: Include emiScheduleDetails if it exists
+        // ✅ FIXED: Include emiScheduleDetails if it exists
         // ==============================================
         const emiScheduleDetails = loan.emiScheduleDetails || null;
         
@@ -267,6 +292,9 @@ console.log('📅 Date Debug:', {
           };
         }
         
+        // ✅ FIXED: Determine final status - if completed, ensure status is 'completed'
+        const finalStatus = isCompleted ? 'completed' : (loan.status || 'active');
+        
         return {
           _id: loan._id,
           customerId: loan.customerId,
@@ -280,10 +308,12 @@ console.log('📅 Date Debug:', {
           dateApplied: dateAppliedStr,
           emiStartDate: emiStartDateStr,
           loanDays: loan.loanDays,
-          status: loan.status,
+          // ✅ FIXED: Use corrected status
+          status: finalStatus,
           totalEmiCount: loan.totalEmiCount || loan.loanDays || 30,
           emiPaidCount: loan.emiPaidCount || 0,
           lastEmiDate: lastEmiDateStr,
+          // ✅ FIXED: Use corrected next EMI date (null for completed loans)
           nextEmiDate: nextEmiDateStr,
           totalPaidAmount: loan.totalPaidAmount || 0,
           remainingAmount: loan.remainingAmount || loan.amount,
@@ -298,10 +328,11 @@ console.log('📅 Date Debug:', {
           // Include EMI type fields
           emiType: loan.emiType || 'fixed',
           customEmiAmount: loan.customEmiAmount || null,
-          // ========== FIX: INCLUDE EMI SCHEDULE DETAILS ==========
+          // ✅ FIXED: INCLUDE EMI SCHEDULE DETAILS
           emiScheduleDetails: finalScheduleDetails,
-          // ========== ADDED DATE DISPLAY FIELDS ==========
-          // Display dates in DD/MM/YYYY format
+          // ✅ FIXED: Add completion flag for frontend
+          isCompleted: isCompleted,
+          // ✅ FIXED: Add date display fields
           dateAppliedDisplay: dateAppliedDisplay,
           emiStartDateDisplay: emiStartDateDisplay,
           lastEmiDateDisplay: lastEmiDateDisplay,
@@ -370,37 +401,29 @@ console.log('📅 Date Debug:', {
     // Log sample dates and EMI schedule details for debugging
     if (customerWithLoans.loans.length > 0) {
       const sampleLoan = customerWithLoans.loans[0];
-      console.log('📋 Sample Loan Date Verification:', {
+      console.log('📋 Sample Loan Date Verification (FIXED):', {
         loanNumber: sampleLoan.loanNumber,
-        dateApplied: sampleLoan.dateApplied,
-        dateAppliedDisplay: sampleLoan.dateAppliedDisplay,
-        emiStartDate: sampleLoan.emiStartDate,
-        emiStartDateDisplay: sampleLoan.emiStartDateDisplay,
+        isCompleted: sampleLoan.isCompleted,
+        status: sampleLoan.status,
+        emiPaidCount: sampleLoan.emiPaidCount,
+        totalEmiCount: sampleLoan.totalEmiCount,
         nextEmiDate: sampleLoan.nextEmiDate,
         nextEmiDateDisplay: sampleLoan.nextEmiDateDisplay,
-        hasEMIScheduleDetails: !!sampleLoan.emiScheduleDetails,
-        emiType: sampleLoan.emiType,
-        customEmiAmount: sampleLoan.customEmiAmount
+        hasEMIScheduleDetails: !!sampleLoan.emiScheduleDetails
       });
       
-      // Log if any loans have custom EMI
-      const customEMILoans = customerWithLoans.loans.filter(loan => 
-        loan.emiType === 'custom' && loan.loanType !== 'Daily'
-      );
-      console.log(`📊 Found ${customEMILoans.length} custom EMI loans`);
+      // Log completed loans
+      const completedLoans = customerWithLoans.loans.filter(loan => loan.isCompleted);
+      console.log(`📊 Found ${completedLoans.length} completed loans`);
       
-      customEMILoans.forEach((loan, index) => {
-        console.log(`🔍 Custom EMI Loan ${index + 1}:`, {
+      completedLoans.forEach((loan, index) => {
+        console.log(`✅ Completed Loan ${index + 1}:`, {
           loanNumber: loan.loanNumber,
-          emiType: loan.emiType,
-          emiAmount: loan.emiAmount,
-          customEmiAmount: loan.customEmiAmount,
-          hasScheduleDetails: !!loan.emiScheduleDetails,
-          scheduleDetails: loan.emiScheduleDetails ? {
-            totalInstallments: loan.emiScheduleDetails.totalInstallments,
-            customInstallmentNumber: loan.emiScheduleDetails.customInstallmentNumber,
-            scheduleLength: loan.emiScheduleDetails.schedule?.length || 0
-          } : null
+          status: loan.status,
+          emiPaidCount: loan.emiPaidCount,
+          totalEmiCount: loan.totalEmiCount,
+          nextEmiDate: loan.nextEmiDate,
+          nextEmiDateDisplay: loan.nextEmiDateDisplay
         });
       });
     }

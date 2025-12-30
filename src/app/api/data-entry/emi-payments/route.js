@@ -123,7 +123,12 @@ function validateAndCleanObjectId(id, fieldName = 'ID') {
 }
 
 // CORRECTED: Calculate next scheduled EMI date based on last scheduled EMI date
-function calculateNextScheduledEmiDate(lastScheduledEmiDate, loanType, emiStartDate) {
+function calculateNextScheduledEmiDate(lastScheduledEmiDate, loanType, emiStartDate, emiPaidCount, totalEmiCount) {
+  // ✅ FIX: Return null if loan is completed
+  if (emiPaidCount >= totalEmiCount) {
+    return null;
+  }
+  
   if (!lastScheduledEmiDate) return emiStartDate || getCurrentDateString();
   
   if (!isValidYYYYMMDD(lastScheduledEmiDate)) {
@@ -413,6 +418,35 @@ export async function POST(request) {
       }
     }
 
+    // ✅ FIX #1: Check if loan is already completed BEFORE processing payment
+    if (loan) {
+      console.log('🔍 Checking loan completion status:', {
+        loanNumber: loan.loanNumber,
+        emiPaidCount: loan.emiPaidCount,
+        totalEmiCount: loan.totalEmiCount,
+        status: loan.status,
+        isCompleted: loan.emiPaidCount >= loan.totalEmiCount || loan.status === 'completed'
+      });
+
+      // Check if loan is already completed
+      const isLoanCompleted = loan.emiPaidCount >= loan.totalEmiCount || loan.status === 'completed';
+      
+      if (isLoanCompleted) {
+        return NextResponse.json({ 
+          success: false,
+          error: `Loan ${loan.loanNumber} is already completed (${loan.emiPaidCount}/${loan.totalEmiCount} payments made). No further payments can be accepted.`,
+          details: {
+            loanNumber: loan.loanNumber,
+            emiPaidCount: loan.emiPaidCount,
+            totalEmiCount: loan.totalEmiCount,
+            status: loan.status,
+            totalPaidAmount: loan.totalPaidAmount,
+            totalLoanAmount: loan.totalLoanAmount || loan.amount
+          }
+        }, { status: 400 });
+      }
+    }
+
     // Enhanced duplicate payment check
     const duplicateCheck = await checkForDuplicatePayments(
       cleanedCustomerId, 
@@ -631,27 +665,32 @@ export async function POST(request) {
         const totalPaidAmount = loanPayments.reduce((sum, p) => sum + p.amount, 0);
         const emiPaidCount = loanPayments.length;
 
-        // CRITICAL FIX: Calculate last scheduled EMI date and next scheduled EMI date
+        // ✅ FIX #2: Calculate last scheduled EMI date and next scheduled EMI date with completion check
         const lastScheduledEmiDate = calculateLastScheduledEmiDate(
           loan.emiStartDate || loan.dateApplied,
           loan.loanType,
           emiPaidCount
         );
         
+        // ✅ FIX #3: Pass emiPaidCount and totalEmiCount to calculateNextScheduledEmiDate
         const nextScheduledEmiDate = calculateNextScheduledEmiDate(
           lastScheduledEmiDate,
           loan.loanType,
-          loan.emiStartDate || loan.dateApplied
+          loan.emiStartDate || loan.dateApplied,
+          emiPaidCount,
+          loan.totalEmiCount
         );
 
-        console.log('📅 EMI Schedule Calculation:', {
+        console.log('📅 EMI Schedule Calculation (FIXED):', {
           emiStartDate: loan.emiStartDate || loan.dateApplied,
           loanType: loan.loanType,
           emiPaidCount: emiPaidCount,
+          totalEmiCount: loan.totalEmiCount,
           lastScheduledEmiDate: lastScheduledEmiDate,
           nextScheduledEmiDate: nextScheduledEmiDate,
           lastPaymentDate: paymentDateStr,
-          totalPaidAmount: totalPaidAmount
+          totalPaidAmount: totalPaidAmount,
+          isLoanCompleted: emiPaidCount >= loan.totalEmiCount
         });
 
         // Update loan with CORRECT string dates
@@ -664,6 +703,13 @@ export async function POST(request) {
           lastPaymentDate: paymentDateStr,
           updatedAt: new Date()
         };
+
+        // ✅ FIX #4: Update status to 'completed' if loan is now complete
+        if (emiPaidCount >= loan.totalEmiCount) {
+          updateData.status = 'completed';
+          updateData.nextEmiDate = null; // ✅ Ensure nextEmiDate is null for completed loans
+          console.log('🎉 Loan marked as COMPLETED:', loan.loanNumber);
+        }
 
         // Convert all dates to YYYY-MM-DD strings for emiHistory
         if (payments.length > 0) {
@@ -693,6 +739,7 @@ export async function POST(request) {
           lastEmiDate: updateData.lastEmiDate,
           nextEmiDate: updateData.nextEmiDate,
           emiPaidCount: updateData.emiPaidCount,
+          status: updateData.status,
           emiHistoryDates: payments.map(p => p.paymentDate),
           emiHistoryAmounts: payments.map(p => p.amount)
         });
@@ -996,24 +1043,36 @@ export async function PUT(request) {
             emiPaidCount
           );
           
+          // ✅ FIX: Pass emiPaidCount and totalEmiCount to calculateNextScheduledEmiDate
           const nextScheduledEmiDate = calculateNextScheduledEmiDate(
             lastScheduledEmiDate,
             loan.loanType,
-            loan.emiStartDate || loan.dateApplied
+            loan.emiStartDate || loan.dateApplied,
+            emiPaidCount,
+            loan.totalEmiCount
           );
           
-          await Loan.findByIdAndUpdate(payment.loanId, {
+          const updateData = {
             totalPaidAmount: totalPaidAmount,
             emiPaidCount: emiPaidCount,
             remainingAmount: Math.max(loan.amount - totalPaidAmount, 0),
             lastEmiDate: lastScheduledEmiDate,
             nextEmiDate: nextScheduledEmiDate,
             updatedAt: new Date()
-          });
+          };
+          
+          // ✅ FIX: Update status to 'completed' if loan is now complete
+          if (emiPaidCount >= loan.totalEmiCount) {
+            updateData.status = 'completed';
+            updateData.nextEmiDate = null;
+          }
+          
+          await Loan.findByIdAndUpdate(payment.loanId, updateData);
 
           console.log('✅ Loan statistics updated after payment edit:', {
             lastEmiDate: lastScheduledEmiDate,
-            nextEmiDate: nextScheduledEmiDate
+            nextEmiDate: nextScheduledEmiDate,
+            status: updateData.status
           });
         }
       } catch (loanUpdateError) {
@@ -1123,24 +1182,36 @@ export async function DELETE(request) {
             emiPaidCount
           );
           
+          // ✅ FIX: Pass emiPaidCount and totalEmiCount to calculateNextScheduledEmiDate
           const nextScheduledEmiDate = calculateNextScheduledEmiDate(
             lastScheduledEmiDate,
             loan.loanType,
-            loan.emiStartDate || loan.dateApplied
+            loan.emiStartDate || loan.dateApplied,
+            emiPaidCount,
+            loan.totalEmiCount
           );
           
-          await Loan.findByIdAndUpdate(loanId, {
+          const updateData = {
             emiPaidCount: emiPaidCount,
             totalPaidAmount: totalPaidAmount,
             remainingAmount: Math.max(loan.amount - totalPaidAmount, 0),
             lastEmiDate: lastScheduledEmiDate,
             nextEmiDate: nextScheduledEmiDate,
             updatedAt: new Date()
-          });
+          };
+          
+          // ✅ FIX: Update status to 'completed' if loan is now complete
+          if (emiPaidCount >= loan.totalEmiCount) {
+            updateData.status = 'completed';
+            updateData.nextEmiDate = null;
+          }
+          
+          await Loan.findByIdAndUpdate(loanId, updateData);
 
           console.log('✅ Loan statistics updated after payment deletion:', {
             lastEmiDate: lastScheduledEmiDate,
-            nextEmiDate: nextScheduledEmiDate
+            nextEmiDate: nextScheduledEmiDate,
+            status: updateData.status
           });
         }
       } catch (loanUpdateError) {
