@@ -82,75 +82,171 @@ const DashboardSection: React.FC<DashboardSectionProps> = React.memo(({
   });
   
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
+  const [apiErrors, setApiErrors] = useState<string[]>([]);
 
   // Load dashboard data
   const loadDashboardData = useCallback(async () => {
     setIsLoading(true);
+    setApiErrors([]);
+    
+    console.log('🔄 Loading dashboard data for office:', currentUserOffice);
+    
     try {
       // Fetch requests data
       await refetchRequests();
       
-      // Fetch today's statistics
+      // Fetch today's statistics - USING CORRECT API ENDPOINTS
       await updateTodayStats();
       
-      // Fetch recent activity
+      // Fetch recent activity - USING CORRECT API ENDPOINT
       await fetchRecentActivity();
     } catch (error) {
-      console.error('Error loading dashboard data:', error);
+      console.error('❌ Error loading dashboard data:', error);
+      setApiErrors(prev => [...prev, 'Failed to load dashboard data']);
     } finally {
       setIsLoading(false);
     }
   }, [currentUserOffice, refetchRequests]);
 
-  // Update today's statistics
+  // Update today's statistics - FIXED API ENDPOINTS
   const updateTodayStats = useCallback(async () => {
     try {
       const today = new Date().toISOString().split('T')[0];
       
-      // Fetch EMI collection for today
-      const emiResponse = await fetch(`/api/data-entry/today-collection?date=${today}&office=${currentUserOffice}`);
-      const emiData = await emiResponse.json();
+      console.log('📊 Fetching today stats for date:', today, 'office:', currentUserOffice);
       
-      // Fetch new customers for today
-      const customersResponse = await fetch(`/api/data-entry/today-customers?date=${today}&office=${currentUserOffice}`);
+      // Build URLs for the APIs we CREATED
+      const emiUrl = `/api/data-entry/today-collection?date=${today}&office=${currentUserOffice}`;
+      const customersUrl = `/api/data-entry/today-customers?date=${today}&office=${currentUserOffice}`;
+      
+      console.log('🔗 API URLs:', { emiUrl, customersUrl });
+      
+      // Fetch both APIs in parallel
+      const [emiResponse, customersResponse] = await Promise.all([
+        fetch(emiUrl),
+        fetch(customersUrl)
+      ]);
+      
+      console.log('📡 API Response Statuses:', {
+        emi: emiResponse.status,
+        customers: customersResponse.status
+      });
+      
+      // Check for errors
+      if (!emiResponse.ok) {
+        throw new Error(`EMI API failed: ${emiResponse.status} ${emiResponse.statusText}`);
+      }
+      
+      if (!customersResponse.ok) {
+        throw new Error(`Customers API failed: ${customersResponse.status} ${customersResponse.statusText}`);
+      }
+      
+      const emiData = await emiResponse.json();
       const customersData = await customersResponse.json();
       
+      console.log('📦 API Data Received:', {
+        emiTotal: emiData.total,
+        customersCount: customersData.count,
+        emiSuccess: emiData.success,
+        customersSuccess: customersData.success
+      });
+      
+      if (!emiData.success) {
+        throw new Error(`EMI API error: ${emiData.error || 'Unknown error'}`);
+      }
+      
+      if (!customersData.success) {
+        throw new Error(`Customers API error: ${customersData.error || 'Unknown error'}`);
+      }
+      
+      // Set the stats from API responses
       setTodayStats({
         emiCollected: emiData.total || 0,
         newCustomers: customersData.count || 0,
         pendingRequests: requestsStats?.pending || 0,
         totalCollection: emiData.total || 0
       });
-    } catch (error) {
-      console.error('Error updating today stats:', error);
+      
+      console.log('✅ Today stats updated:', {
+        emiCollected: emiData.total,
+        newCustomers: customersData.count,
+        pendingRequests: requestsStats?.pending
+      });
+      
+    } catch (error: any) {
+      console.error('❌ Error updating today stats:', error);
+      setApiErrors(prev => [...prev, `Today stats: ${error.message}`]);
+      
+      // Set zeros on error but keep pending requests
+      setTodayStats({
+        emiCollected: 0,
+        newCustomers: 0,
+        pendingRequests: requestsStats?.pending || 0,
+        totalCollection: 0
+      });
     }
   }, [currentUserOffice, requestsStats]);
 
-  // Fetch recent activity
+  // Fetch recent activity - FIXED API ENDPOINT
   const fetchRecentActivity = useCallback(async () => {
     try {
+      console.log('📈 Fetching recent activity for office:', currentUserOffice);
+      
       const response = await fetch(`/api/data-entry/recent-activity?office=${currentUserOffice}&limit=5`);
+      
+      console.log('📡 Recent Activity API Status:', response.status);
+      
+      if (!response.ok) {
+        throw new Error(`Recent Activity API failed: ${response.status} ${response.statusText}`);
+      }
+      
       const data = await response.json();
       
-      if (data.success) {
-        setRecentActivity(data.data || []);
+      console.log('📦 Recent Activity Data:', {
+        success: data.success,
+        activityCount: data.activities?.length || 0
+      });
+      
+      if (data.success && data.activities) {
+        // Map API response to your component's expected format
+        const formattedActivities: RecentActivity[] = data.activities.map((activity: any) => ({
+          type: activity.type === 'customer_added' ? 'customer_added' :
+                activity.type === 'emi_paid' ? 'emi_paid' :
+                activity.type === 'loan_created' ? 'loan_created' : 'other',
+          description: activity.description || 'Activity',
+          time: activity.time || 'Recently',
+          customerName: activity.customerName || 'Customer'
+        }));
+        
+        setRecentActivity(formattedActivities);
+        console.log(`✅ Loaded ${formattedActivities.length} recent activities`);
+      } else {
+        console.warn('⚠️ No recent activities data or API failed');
+        setRecentActivity([]);
       }
-    } catch (error) {
-      console.error('Error fetching recent activity:', error);
+      
+    } catch (error: any) {
+      console.error('❌ Error fetching recent activity:', error);
+      setApiErrors(prev => [...prev, `Recent activity: ${error.message}`]);
       setRecentActivity([]);
     }
   }, [currentUserOffice]);
 
   // Initial data load
   useEffect(() => {
+    console.log('🚀 DashboardSection mounted, loading data...');
     loadDashboardData();
     
     // Set up auto-refresh every 2 minutes
     const intervalId = setInterval(() => {
+      console.log('⏰ Auto-refreshing dashboard data...');
       loadDashboardData();
     }, 120000);
     
-    return () => clearInterval(intervalId);
+    return () => {
+      console.log('🧹 Cleaning up dashboard interval');
+      clearInterval(intervalId);
+    };
   }, [loadDashboardData]);
 
   // Memoized handlers
@@ -171,6 +267,7 @@ const DashboardSection: React.FC<DashboardSectionProps> = React.memo(({
   }, [onNavigateToTab]);
 
   const handleRefreshDashboard = useCallback(() => {
+    console.log('🔄 Manual dashboard refresh');
     loadDashboardData();
   }, [loadDashboardData]);
 
@@ -240,7 +337,7 @@ const DashboardSection: React.FC<DashboardSectionProps> = React.memo(({
 
   // Filter only pending requests for display
   const pendingRequests = useMemo(() => {
-    return requests.filter(request => request.status === 'pending');
+    return requests.filter(request => request.status === 'pending' || request.status === 'Pending');
   }, [requests]);
 
   if (isLoading) {
@@ -259,6 +356,18 @@ const DashboardSection: React.FC<DashboardSectionProps> = React.memo(({
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Dashboard Overview</h2>
           <p className="text-gray-600">Welcome to your data entry dashboard</p>
+          
+          {/* Display API errors if any */}
+          {apiErrors.length > 0 && (
+            <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-md">
+              <p className="text-sm text-red-600 font-medium">API Errors:</p>
+              <ul className="text-xs text-red-500 list-disc list-inside">
+                {apiErrors.slice(0, 3).map((error, index) => (
+                  <li key={index}>{error}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
         <button
           onClick={handleRefreshDashboard}
@@ -333,6 +442,7 @@ const DashboardSection: React.FC<DashboardSectionProps> = React.memo(({
             <div className="text-center py-8">
               <div className="text-4xl mb-4">📭</div>
               <p className="text-gray-600">No recent activity</p>
+              <p className="text-sm text-gray-500 mt-1">Activities will appear here</p>
             </div>
           )}
         </div>
@@ -392,6 +502,34 @@ const DashboardSection: React.FC<DashboardSectionProps> = React.memo(({
             </div>
           )}
         </div>
+      </div>
+      
+      {/* Debug Info - Remove in production */}
+      <div className="mt-8 p-4 bg-gray-50 rounded-lg border border-gray-200">
+        <details className="text-sm">
+          <summary className="font-medium text-gray-700 cursor-pointer">Debug Information</summary>
+          <div className="mt-2 space-y-2 text-xs">
+            <p><strong>Office:</strong> {currentUserOffice}</p>
+            <p><strong>Today Stats:</strong> EMI: ₹{todayStats.emiCollected}, Customers: {todayStats.newCustomers}</p>
+            <p><strong>API Errors:</strong> {apiErrors.length}</p>
+            <p><strong>Recent Activities:</strong> {recentActivity.length}</p>
+            <p><strong>Pending Requests:</strong> {pendingRequests.length}</p>
+            <button 
+              onClick={() => {
+                console.log('📊 Full Dashboard State:', {
+                  todayStats,
+                  recentActivity,
+                  apiErrors,
+                  pendingRequests: pendingRequests.length
+                });
+                alert('Check browser console for full state');
+              }}
+              className="px-2 py-1 bg-gray-200 rounded text-xs"
+            >
+              Log Full State
+            </button>
+          </div>
+        </details>
       </div>
     </div>
   );
