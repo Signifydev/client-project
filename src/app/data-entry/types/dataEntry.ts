@@ -204,6 +204,177 @@ export interface Loan {
 }
 
 // =============================================
+// EMI PAYMENT TYPES - UPDATED WITH PARTIAL PAYMENT CHAIN TRACKING
+// =============================================
+
+/**
+ * EMI Payment interface with partial payment chain tracking
+ */
+export interface EMIPayment {
+  _id: string;
+  loanId: string;
+  loanNumber: string;
+  amount: number;
+  paidAmount?: number; // For frontend display compatibility
+  paymentDate: string;
+  dueDate?: string;
+  status: 'Paid' | 'Partial' | 'Pending' | 'Overdue';
+  collectedBy: string;
+  notes?: string;
+  
+  // New fields for partial payment chain tracking
+  partialChainId?: string | null;
+  chainParentId?: string | null;
+  chainChildrenIds?: string[];
+  installmentTotalAmount?: number;
+  installmentPaidAmount?: number;
+  isChainComplete?: boolean;
+  chainSequence?: number;
+  
+  // Existing fields
+  createdAt?: string;
+  updatedAt?: string;
+  __v?: number;
+  
+  // For frontend display
+  customerId?: string;
+  customerName?: string;
+  customerNumber?: string;
+}
+
+/**
+ * EMI Payment Chain Information
+ */
+export interface EMIPaymentChainInfo {
+  chainId: string;
+  payments: EMIPayment[];
+  totalAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  isComplete: boolean;
+}
+
+/**
+ * Complete Partial Payment Request
+ */
+export interface CompletePartialPaymentRequest {
+  parentPaymentId: string;
+  additionalAmount: number;
+  paymentDate: string;
+  collectedBy: string;
+  notes?: string;
+}
+
+/**
+ * Complete Partial Payment Response
+ */
+export interface CompletePartialPaymentResponse {
+  success: boolean;
+  data: {
+    parentPayment: EMIPayment;
+    newPayment: EMIPayment;
+    chainId: string;
+    totalPaid: number;
+  };
+}
+
+/**
+ * Edit Payment Request
+ */
+export interface EditPaymentRequest {
+  amount: number;
+  status: 'Paid' | 'Partial' | 'Pending' | 'Overdue';
+  updateChain?: boolean; // Whether to update chain totals
+  collectedBy?: string;
+  notes?: string;
+  paymentDate?: string;
+}
+
+/**
+ * Edit Payment Response
+ */
+export interface EditPaymentResponse {
+  success: boolean;
+  data: {
+    updatedPayment: EMIPayment;
+    updatedChain: boolean;
+    chainTotals?: {
+      totalAmount: number;
+      paidAmount: number;
+      remaining: number;
+    };
+  };
+}
+
+/**
+ * Chain Info Response
+ */
+export interface ChainInfoResponse {
+  success: boolean;
+  data: EMIPaymentChainInfo;
+}
+
+/**
+ * Partial Payment Information for UI
+ */
+export interface PartialPaymentInfo {
+  alreadyPaid: number;
+  remainingAmount: number;
+  installmentTotal: number;
+  canComplete: boolean;
+}
+
+/**
+ * Edit EMI Option for Modal
+ */
+export interface EditEMIOption {
+  id: 'editAmount' | 'completePartial';
+  label: string;
+  description: string;
+  disabled?: boolean;
+}
+
+/**
+ * EMI Transaction Modal State
+ */
+export interface EMITransactionModalState {
+  selectedOption: 'editAmount' | 'completePartial';
+  amount: number;
+  status: 'Paid' | 'Partial' | 'Pending' | 'Overdue';
+  additionalAmount: number;
+  partialPaymentInfo: PartialPaymentInfo | null;
+  isLoading: boolean;
+  errors: {
+    amount?: string;
+    additionalAmount?: string;
+    general?: string;
+  };
+}
+
+/**
+ * Chain Calculation Result
+ */
+export interface ChainCalculationResult {
+  totalAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  isComplete: boolean;
+  paymentsCount: number;
+}
+
+/**
+ * Chain Payment for display
+ */
+export interface ChainPayment {
+  id: string;
+  amount: number;
+  paymentDate: string;
+  status: string;
+  collectedBy: string;
+  sequence: number;
+}
+
+// =============================================
 // FORM DATA TYPES
 // =============================================
 
@@ -614,6 +785,17 @@ export interface BaseModalProps {
 }
 
 /**
+ * EMI Transactions Modal Props
+ */
+export interface EMITransactionModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  payment: EMIPayment | null;
+  onSave: (updatedPayment: EMIPayment) => void;
+  onCompletePartial?: (data: CompletePartialPaymentRequest) => Promise<void>;
+}
+
+/**
  * Add Customer Modal props
  */
 export interface AddCustomerModalProps extends BaseModalProps {
@@ -862,4 +1044,70 @@ export interface CollectionApiResponse {
   };
   error?: string;
   message?: string;
+}
+
+// =============================================
+// UTILITY TYPES FOR EMI PAYMENT CHAIN TRACKING
+// =============================================
+
+/**
+ * Utility types for the modal
+ */
+export type EditMode = 'edit' | 'complete' | 'view';
+
+/**
+ * Validation Result
+ */
+export interface ValidationResult {
+  isValid: boolean;
+  errors: Record<string, string>;
+}
+
+/**
+ * Loan EMI Details with chain tracking
+ */
+export interface LoanEMIDetails {
+  loanId: string;
+  emiAmount: number;
+  dueDate: string;
+  paidAmount: number;
+  pendingAmount: number;
+  nextDueDate?: string;
+  paymentHistory: EMIPayment[];
+  activeChainId?: string;
+}
+
+/**
+ * Payment Chain Response
+ */
+export interface PaymentChainResponse {
+  chainId: string;
+  payments: EMIPayment[];
+  totalAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  isComplete: boolean;
+}
+
+/**
+ * Update EMIPayment Request for PUT endpoint
+ */
+export interface UpdateEMIPaymentRequest {
+  amount: number;
+  status: 'Paid' | 'Partial' | 'Pending' | 'Overdue';
+  updateChain?: boolean;
+  collectedBy?: string;
+  notes?: string;
+  paymentDate?: string;
+}
+
+/**
+ * Complete Partial Payment Body for POST endpoint
+ */
+export interface CompletePartialPaymentBody {
+  parentPaymentId: string;
+  additionalAmount: number;
+  paymentDate: string;
+  collectedBy: string;
+  notes?: string;
 }
