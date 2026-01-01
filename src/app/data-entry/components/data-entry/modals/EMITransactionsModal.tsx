@@ -419,40 +419,7 @@ export default function EMITransactionsModal({
     setChainPayments([]);
   };
 
-  // ✅ NEW: Render chain payments
-  const renderChainPayments = () => {
-    if (!chainPayments || chainPayments.length <= 1) return null;
-    
-    return (
-      <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
-        <h4 className="font-medium text-purple-800 mb-2">Payment Chain ({chainPayments.length} payments)</h4>
-        <div className="space-y-2">
-          {chainPayments.sort((a, b) => (a.chainSequence || 1) - (b.chainSequence || 1)).map((payment, index) => (
-            <div key={payment._id} className={`flex justify-between items-center p-2 rounded ${
-              payment._id === editingTransaction?._id ? 'bg-purple-100' : 'bg-white'
-            }`}>
-              <div className="flex items-center">
-                <div className="w-6 h-6 flex items-center justify-center bg-purple-100 text-purple-800 rounded-full text-xs mr-2">
-                  {payment.chainSequence || index + 1}
-                </div>
-                <div>
-                  <span className="text-sm font-medium">{formatCurrency(payment.amount)}</span>
-                  <span className={`ml-2 text-xs px-2 py-0.5 rounded ${getStatusColorClass(payment.status)}`}>
-                    {payment.status}
-                  </span>
-                </div>
-              </div>
-              <div className="text-sm text-gray-600">
-                {formatToDDMMYYYY(payment.paymentDate)}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
-  // ✅ NEW: Render edit modal content based on mode
+  // ✅ FIXED: Render edit modal content with correct size and chain display
   const renderEditModalContent = () => {
     if (!editingTransaction) return null;
     
@@ -461,34 +428,47 @@ export default function EMITransactionsModal({
     const totalPaid = chainInfo?.totalPaidAmount || editingTransaction.installmentPaidAmount || editingTransaction.amount;
     const calculatedRemaining = Math.max(0, installmentTotal - totalPaid);
     
+    // ✅ FIX: Get correct chain payment count (not loan total)
+    const actualChainPaymentCount = chainPayments.length || 1;
+    
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 z-[201] flex items-center justify-center p-4">
-        <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-900">
+        {/* ✅ FIXED: Changed max-w-md to max-w-5xl to match CustomerDetails modal size */}
+        <div className="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
+          <div className="px-8 py-5 border-b border-gray-200">
+            <h3 className="text-2xl font-bold text-gray-900">
               Edit EMI Transaction
             </h3>
             <p className="text-sm text-gray-500 mt-1">
-              Loan: {editingTransaction.loanNumber} • Date: {formatToDDMMYYYY(editingTransaction.paymentDate)}
+              Loan: {editingTransaction.loanNumber} • Customer: {customer.name}
             </p>
-            <p className={`text-xs mt-1 px-2 py-1 rounded-full inline-block ${getStatusColorClass(editingTransaction.status)}`}>
-              Current Status: {editingTransaction.status}
-            </p>
+            <div className="flex items-center mt-2">
+              <p className={`text-sm px-3 py-1 rounded-full ${getStatusColorClass(editingTransaction.status)}`}>
+                Current Status: {editingTransaction.status}
+              </p>
+              <p className="ml-3 text-sm text-gray-600">
+                Date: {formatToDDMMYYYY(editingTransaction.paymentDate)}
+              </p>
+              <p className="ml-3 text-sm text-gray-600">
+                {/* ✅ FIXED: Show actual chain payments, not "50 Payments" */}
+                Chain: {actualChainPaymentCount} payment{actualChainPaymentCount !== 1 ? 's' : ''}
+              </p>
+            </div>
           </div>
           
-          <div className="p-6">
-            {/* ✅ NEW: Edit Mode Selection - Only show for Partial payments */}
+          <div className="p-8">
+            {/* ✅ FIXED: Edit Mode Selection - Updated layout */}
             {isPartialPayment && (
-              <div className="mb-6">
-                <h4 className="text-sm font-medium text-gray-700 mb-3">Select Edit Option:</h4>
-                <div className="grid grid-cols-1 gap-3">
-                  <div className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+              <div className="mb-8">
+                <h4 className="text-lg font-medium text-gray-900 mb-4">Select Edit Option:</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className={`p-6 border-2 rounded-xl cursor-pointer transition-all ${
                     editMode === 'edit-amount' 
                       ? 'border-blue-500 bg-blue-50' 
                       : 'border-gray-200 hover:border-gray-300'
                   }`} onClick={() => handleEditOptionChange('edit-amount')}>
-                    <div className="flex items-center">
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mr-3 ${
+                    <div className="flex items-start">
+                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center mr-4 mt-1 ${
                         editMode === 'edit-amount' 
                           ? 'border-blue-500 bg-blue-500' 
                           : 'border-gray-300'
@@ -498,19 +478,24 @@ export default function EMITransactionsModal({
                         )}
                       </div>
                       <div>
-                        <p className="font-medium text-gray-900">Option 1: Edit EMI Amount</p>
-                        <p className="text-sm text-gray-600 mt-1">Correct the amount of this payment</p>
+                        <p className="font-bold text-gray-900 text-lg">Option 1: Edit EMI Amount</p>
+                        <p className="text-gray-600 mt-2">Correct the amount of this specific payment</p>
+                        <ul className="text-sm text-gray-500 mt-3 space-y-1">
+                          <li>• Change payment amount</li>
+                          <li>• Update payment status</li>
+                          <li>• Adjust payment date if needed</li>
+                        </ul>
                       </div>
                     </div>
                   </div>
                   
-                  <div className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                  <div className={`p-6 border-2 rounded-xl cursor-pointer transition-all ${
                     editMode === 'complete-partial' 
                       ? 'border-blue-500 bg-blue-50' 
                       : 'border-gray-200 hover:border-gray-300'
                   }`} onClick={() => handleEditOptionChange('complete-partial')}>
-                    <div className="flex items-center">
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mr-3 ${
+                    <div className="flex items-start">
+                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center mr-4 mt-1 ${
                         editMode === 'complete-partial' 
                           ? 'border-blue-500 bg-blue-500' 
                           : 'border-gray-300'
@@ -520,8 +505,13 @@ export default function EMITransactionsModal({
                         )}
                       </div>
                       <div>
-                        <p className="font-medium text-gray-900">Option 2: Complete Partial Payment</p>
-                        <p className="text-sm text-gray-600 mt-1">Add remaining amount to complete this installment</p>
+                        <p className="font-bold text-gray-900 text-lg">Option 2: Complete Partial Payment</p>
+                        <p className="text-gray-600 mt-2">Add remaining amount to complete this installment</p>
+                        <ul className="text-sm text-gray-500 mt-3 space-y-1">
+                          <li>• Add additional payment</li>
+                          <li>• Complete the installment</li>
+                          <li>• Mark as fully paid</li>
+                        </ul>
                       </div>
                     </div>
                   </div>
@@ -529,43 +519,50 @@ export default function EMITransactionsModal({
               </div>
             )}
             
-            <div className="space-y-4">
+            <div className="space-y-8">
               {/* Edit Amount Option */}
               {editMode === 'edit-amount' && (
                 <>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Amount (₹)
-                    </label>
-                    <input
-                      type="number"
-                      value={editAmount}
-                      onChange={(e) => setEditAmount(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Enter amount"
-                      step="0.01"
-                      min="0"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Status
-                    </label>
-                    <select
-                      value={editStatus}
-                      onChange={(e) => setEditStatus(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      disabled={!isPartialPayment} // Only allow status change for partial payments
-                    >
-                      <option value="Paid">Paid</option>
-                      <option value="Partial">Partial</option>
-                      <option value="Advance">Advance</option>
-                      <option value="Overdue">Overdue</option>
-                    </select>
-                    {!isPartialPayment && (
-                      <p className="text-xs text-gray-500 mt-1">Status cannot be changed for non-partial payments</p>
-                    )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Amount (₹)
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <span className="text-gray-500 text-lg">₹</span>
+                        </div>
+                        <input
+                          type="number"
+                          value={editAmount}
+                          onChange={(e) => setEditAmount(e.target.value)}
+                          className="w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
+                          placeholder="Enter amount"
+                          step="0.01"
+                          min="0"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Status
+                      </label>
+                      <select
+                        value={editStatus}
+                        onChange={(e) => setEditStatus(e.target.value)}
+                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
+                        disabled={!isPartialPayment}
+                      >
+                        <option value="Paid">Paid</option>
+                        <option value="Partial">Partial</option>
+                        <option value="Advance">Advance</option>
+                        <option value="Overdue">Overdue</option>
+                      </select>
+                      {!isPartialPayment && (
+                        <p className="text-sm text-gray-500 mt-2">Status cannot be changed for non-partial payments</p>
+                      )}
+                    </div>
                   </div>
                 </>
               )}
@@ -573,35 +570,36 @@ export default function EMITransactionsModal({
               {/* Complete Partial Payment Option */}
               {editMode === 'complete-partial' && (
                 <>
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <p className="text-xs text-blue-700 mb-1">Already Paid</p>
-                        <p className="font-bold text-blue-900">
+                  <div className="p-6 bg-blue-50 border-2 border-blue-200 rounded-xl">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="bg-white p-5 rounded-lg border border-blue-100">
+                        <p className="text-sm text-blue-700 mb-2">Already Paid</p>
+                        <p className="font-bold text-blue-900 text-2xl">
                           {formatCurrency(totalPaid)}
                         </p>
                       </div>
-                      <div>
-                        <p className="text-xs text-blue-700 mb-1">Installment Total</p>
-                        <p className="font-bold text-blue-900">
+                      <div className="bg-white p-5 rounded-lg border border-blue-100">
+                        <p className="text-sm text-blue-700 mb-2">Installment Total</p>
+                        <p className="font-bold text-blue-900 text-2xl">
                           {formatCurrency(installmentTotal)}
                         </p>
                       </div>
-                    </div>
-                    <div className="mt-3 pt-3 border-t border-blue-200">
-                      <p className="text-sm font-medium text-blue-800">
-                        Remaining Amount: {formatCurrency(calculatedRemaining)}
-                      </p>
+                      <div className="bg-white p-5 rounded-lg border border-blue-100">
+                        <p className="text-sm text-blue-700 mb-2">Remaining Amount</p>
+                        <p className="font-bold text-red-900 text-2xl">
+                          {formatCurrency(calculatedRemaining)}
+                        </p>
+                      </div>
                     </div>
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
                       Add Amount (₹)
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <span className="text-gray-500">₹</span>
+                        <span className="text-gray-500 text-lg">₹</span>
                       </div>
                       <input
                         type="number"
@@ -610,7 +608,6 @@ export default function EMITransactionsModal({
                           const value = e.target.value;
                           setAdditionalAmount(value);
                           
-                          // Validate against remaining amount
                           const amount = parseFloat(value);
                           if (!isNaN(amount) && amount > calculatedRemaining) {
                             setEditError(`Cannot exceed remaining amount of ${formatCurrency(calculatedRemaining)}`);
@@ -618,29 +615,33 @@ export default function EMITransactionsModal({
                             setEditError('');
                           }
                         }}
-                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
                         placeholder="Enter amount to add"
                         step="0.01"
                         min="0"
                         max={calculatedRemaining}
                       />
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-sm text-gray-500 mt-2">
                       Maximum: {formatCurrency(calculatedRemaining)}
                     </p>
                   </div>
                   
-                  <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+                  <div className="p-6 bg-green-50 border-2 border-green-200 rounded-xl">
                     <div className="flex justify-between items-center">
                       <div>
-                        <p className="text-xs text-green-700 mb-1">New Total Paid</p>
-                        <p className="font-bold text-green-900 text-lg">
+                        <p className="text-sm text-green-700 mb-2">New Total Paid</p>
+                        <p className="font-bold text-green-900 text-3xl">
                           {formatCurrency(totalPaid + (parseFloat(additionalAmount) || 0))}
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-xs text-green-700 mb-1">New Status</p>
-                        <p className="font-bold text-green-900">
+                        <p className="text-sm text-green-700 mb-2">New Status</p>
+                        <p className={`font-bold text-lg px-4 py-2 rounded-full ${
+                          (totalPaid + (parseFloat(additionalAmount) || 0)) >= installmentTotal 
+                            ? 'bg-green-100 text-green-800 border border-green-300'
+                            : 'bg-yellow-100 text-yellow-800 border border-yellow-300'
+                        }`}>
                           {(totalPaid + (parseFloat(additionalAmount) || 0)) >= installmentTotal ? 'Paid' : 'Partial'}
                         </p>
                       </div>
@@ -649,38 +650,101 @@ export default function EMITransactionsModal({
                 </>
               )}
               
-              {/* Show chain payments if available */}
-              {chainPayments.length > 1 && renderChainPayments()}
+              {/* ✅ FIXED: Show chain payments if available */}
+              {chainPayments.length > 0 && (
+                <div className="mt-8 p-6 bg-purple-50 border-2 border-purple-200 rounded-xl">
+                  <h4 className="font-bold text-purple-900 text-lg mb-4">
+                    Payment Chain ({chainPayments.length} payment{chainPayments.length !== 1 ? 's' : ''})
+                  </h4>
+                  <div className="space-y-3">
+                    {chainPayments
+                      .sort((a, b) => (a.chainSequence || 1) - (b.chainSequence || 1))
+                      .map((payment, index) => (
+                        <div key={payment._id} className={`flex justify-between items-center p-4 rounded-lg ${
+                          payment._id === editingTransaction?._id 
+                            ? 'bg-purple-100 border-2 border-purple-300' 
+                            : 'bg-white border border-purple-100'
+                        }`}>
+                          <div className="flex items-center">
+                            <div className="w-8 h-8 flex items-center justify-center bg-purple-100 text-purple-800 rounded-full text-sm font-bold mr-4">
+                              {payment.chainSequence || index + 1}
+                            </div>
+                            <div>
+                              <div className="flex items-center">
+                                <span className="font-bold text-gray-900 text-lg">{formatCurrency(payment.amount)}</span>
+                                <span className={`ml-3 text-sm px-3 py-1 rounded-full ${getStatusColorClass(payment.status)}`}>
+                                  {payment.status}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-600 mt-1">
+                                {formatToDDMMYYYY(payment.paymentDate)} • {payment.collectedBy}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            {payment._id === editingTransaction?._id && (
+                              <span className="text-sm bg-blue-100 text-blue-800 px-3 py-1 rounded-full">
+                                Currently Editing
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               
               {/* Error message */}
               {editError && (
-                <div className="text-red-600 text-sm bg-red-50 p-2 rounded border border-red-200">
-                  {editError}
+                <div className="text-red-700 text-sm bg-red-50 p-4 rounded-xl border-2 border-red-200">
+                  <div className="flex items-center">
+                    <span className="text-red-500 mr-2">⚠️</span>
+                    {editError}
+                  </div>
                 </div>
               )}
               
               {/* Transaction summary */}
-              <div className="text-sm text-gray-600 border-t border-gray-200 pt-4">
-                <p><strong>Previous Amount:</strong> {formatCurrency(editingTransaction.amount)}</p>
-                {editMode === 'edit-amount' && (
-                  <p><strong>New Amount:</strong> {formatCurrency(parseFloat(editAmount) || 0)}</p>
-                )}
-                {editMode === 'complete-partial' && (
-                  <p><strong>Additional Amount:</strong> {formatCurrency(parseFloat(additionalAmount) || 0)}</p>
-                )}
-                {editMode === 'edit-amount' && editingTransaction.amount !== parseFloat(editAmount) && (
-                  <p className="text-blue-600">
-                    <strong>Difference:</strong> {formatCurrency((parseFloat(editAmount) - editingTransaction.amount))}
-                  </p>
-                )}
+              <div className="p-6 bg-gray-50 border-2 border-gray-200 rounded-xl">
+                <h5 className="font-medium text-gray-900 mb-4">Transaction Summary</h5>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-600">Previous Amount</p>
+                    <p className="font-bold text-gray-900 text-lg">{formatCurrency(editingTransaction.amount)}</p>
+                  </div>
+                  {editMode === 'edit-amount' && (
+                    <div>
+                      <p className="text-sm text-gray-600">New Amount</p>
+                      <p className="font-bold text-green-900 text-lg">{formatCurrency(parseFloat(editAmount) || 0)}</p>
+                    </div>
+                  )}
+                  {editMode === 'complete-partial' && (
+                    <div>
+                      <p className="text-sm text-gray-600">Additional Amount</p>
+                      <p className="font-bold text-green-900 text-lg">{formatCurrency(parseFloat(additionalAmount) || 0)}</p>
+                    </div>
+                  )}
+                  {editMode === 'edit-amount' && editingTransaction.amount !== parseFloat(editAmount) && (
+                    <div>
+                      <p className="text-sm text-gray-600">Difference</p>
+                      <p className={`font-bold text-lg ${
+                        (parseFloat(editAmount) - editingTransaction.amount) >= 0 
+                          ? 'text-green-900' 
+                          : 'text-red-900'
+                      }`}>
+                        {formatCurrency((parseFloat(editAmount) - editingTransaction.amount))}
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
           
-          <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+          <div className="px-8 py-6 border-t border-gray-200 flex justify-end space-x-4">
             <button
               onClick={handleCancelEdit}
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+              className="px-8 py-3 border-2 border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
               disabled={isEditing}
             >
               Cancel
@@ -688,11 +752,11 @@ export default function EMITransactionsModal({
             <button
               onClick={handleSaveEdit}
               disabled={isEditing}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center"
             >
               {isEditing ? (
                 <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
                   {editMode === 'complete-partial' ? 'Completing...' : 'Saving...'}
                 </>
               ) : (

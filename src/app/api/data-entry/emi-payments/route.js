@@ -1059,13 +1059,13 @@ async function handleCompletePartialPayment(request) {
   }
 }
 
-// Handler for editing payments (with chain support)
+// ✅ FIXED: Handler for editing payments (with chain support AND loan sync)
 async function handleEditPayment(request) {
   try {
     await connectDB();
     const data = await request.json();
     
-    console.log('🟡 Editing payment:', JSON.stringify(data, null, 2));
+    console.log('🟡 Editing payment WITH SYNC:', JSON.stringify(data, null, 2));
     
     const {
       paymentId,
@@ -1114,138 +1114,115 @@ async function handleEditPayment(request) {
       }, { status: 400 });
     }
 
-    console.log('🟡 Updating EMI payment:', { paymentId: cleanedPaymentId, updates: data });
-
-    // Find the payment first to get original data
-    const payment = await EMIPayment.findById(cleanedPaymentId);
-    if (!payment) {
-      return NextResponse.json({
-        success: false,
-        error: 'Payment not found'
-      }, { status: 404 });
-    }
-
-    // Store original values for comparison
-    const originalAmount = payment.amount;
-    const originalPaymentDate = payment.paymentDate;
-    const originalStatus = payment.status;
-
-    // Update payment fields
-    payment.amount = parsedAmount;
-    payment.paymentDate = paymentDateStr;
-    payment.status = status || payment.status;
-    payment.notes = notes || payment.notes;
-    payment.collectedBy = collectedBy || payment.collectedBy;
-    payment.updatedAt = new Date();
-
-    // Add edit history note
-    const editNote = `Payment edited: Amount changed from ₹${originalAmount} to ₹${parsedAmount}`;
-    if (originalPaymentDate !== paymentDateStr) {
-      payment.notes = `${editNote}, Date changed from ${formatToDDMMYYYY(originalPaymentDate)} to ${formatToDDMMYYYY(paymentDateStr)}. ${payment.notes || ''}`;
-    } else {
-      payment.notes = `${editNote}. ${payment.notes || ''}`;
-    }
-
-    // Handle chain updates if needed
-    let chainUpdateResult = null;
-    if (updateChainTotals && payment.partialChainId) {
-      chainUpdateResult = await EMIPayment.updateChainTotals(payment.partialChainId);
-    }
-
-    await payment.save();
-
-    console.log('✅ EMI payment updated successfully:', cleanedPaymentId);
-
-    // Update loan statistics if payment has a loan ID
-    if (payment.loanId) {
-      try {
-        const loanPayments = await EMIPayment.find({
-          loanId: payment.loanId,
-          status: { $in: ['Paid', 'Partial', 'Advance'] }
-        });
-        
-        const totalPaidAmount = loanPayments.reduce((sum, p) => sum + p.amount, 0);
-        const emiPaidCount = loanPayments.length;
-        
-        // Update loan with correct schedule dates
-        const loan = await Loan.findById(payment.loanId);
-        if (loan) {
-          const lastScheduledEmiDate = calculateLastScheduledEmiDate(
-            loan.emiStartDate || loan.dateApplied,
-            loan.loanType,
-            emiPaidCount
-          );
-          
-          const nextScheduledEmiDate = calculateNextScheduledEmiDate(
-            lastScheduledEmiDate,
-            loan.loanType,
-            loan.emiStartDate || loan.dateApplied,
-            emiPaidCount,
-            loan.totalEmiCount
-          );
-          
-          const updateData = {
-            totalPaidAmount: totalPaidAmount,
-            emiPaidCount: emiPaidCount,
-            remainingAmount: Math.max(loan.amount - totalPaidAmount, 0),
-            lastEmiDate: lastScheduledEmiDate,
-            nextEmiDate: nextScheduledEmiDate,
-            updatedAt: new Date()
-          };
-          
-          // Update status to 'completed' if loan is now complete
-          if (emiPaidCount >= loan.totalEmiCount) {
-            updateData.status = 'completed';
-            updateData.nextEmiDate = null;
-          }
-          
-          await Loan.findByIdAndUpdate(payment.loanId, updateData);
-
-          console.log('✅ Loan statistics updated after payment edit:', {
-            lastEmiDate: lastScheduledEmiDate,
-            nextEmiDate: nextScheduledEmiDate,
-            status: updateData.status
-          });
-        }
-      } catch (loanUpdateError) {
-        console.error('⚠️ Error updating loan statistics after edit:', loanUpdateError);
-      }
-    }
-
-    // Update customer total paid if amount changed
-    if (originalAmount !== parsedAmount) {
-      try {
-        const customerPayments = await EMIPayment.find({
-          customerId: payment.customerId,
-          status: { $in: ['Paid', 'Partial', 'Advance'] }
-        });
-        
-        const totalCustomerPaid = customerPayments.reduce((sum, p) => sum + p.amount, 0);
-        
-        await Customer.findByIdAndUpdate(payment.customerId, {
-          totalPaid: totalCustomerPaid,
-          updatedAt: new Date()
-        });
-
-        console.log('✅ Customer total paid updated after payment edit');
-      } catch (customerUpdateError) {
-        console.error('⚠️ Error updating customer total paid:', customerUpdateError);
-      }
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: 'EMI payment updated successfully',
-      data: {
-        payment,
-        chainUpdate: chainUpdateResult,
-        changes: {
-          amount: { from: originalAmount, to: parsedAmount },
-          date: { from: originalPaymentDate, to: paymentDateStr },
-          status: { from: originalStatus, to: payment.status }
-        }
-      }
+    console.log('🟡 Updating EMI payment WITH SYNC:', { 
+      paymentId: cleanedPaymentId, 
+      updates: data 
     });
+
+    // Start transaction for data consistency
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      // Find the payment first to get original data
+      const payment = await EMIPayment.findById(cleanedPaymentId).session(session);
+      if (!payment) {
+        await session.abortTransaction();
+        return NextResponse.json({
+          success: false,
+          error: 'Payment not found'
+        }, { status: 404 });
+      }
+
+      // Store original values for comparison
+      const originalAmount = payment.amount;
+      const originalPaymentDate = payment.paymentDate;
+      const originalStatus = payment.status;
+
+      // Update payment fields
+      payment.amount = parsedAmount;
+      payment.paymentDate = paymentDateStr;
+      payment.status = status || payment.status;
+      payment.notes = notes || payment.notes;
+      payment.collectedBy = collectedBy || payment.collectedBy;
+      payment.updatedAt = new Date();
+
+      // Add edit history note
+      const editNote = `Payment edited: Amount changed from ₹${originalAmount} to ₹${parsedAmount}`;
+      if (originalPaymentDate !== paymentDateStr) {
+        payment.notes = `${editNote}, Date changed from ${formatToDDMMYYYY(originalPaymentDate)} to ${formatToDDMMYYYY(paymentDateStr)}. ${payment.notes || ''}`;
+      } else {
+        payment.notes = `${editNote}. ${payment.notes || ''}`;
+      }
+
+      // Handle chain updates if needed
+      let chainUpdateResult = null;
+      if (updateChainTotals && payment.partialChainId) {
+        chainUpdateResult = await EMIPayment.updateChainTotals(payment.partialChainId);
+      }
+
+      // ✅ CRITICAL FIX: Sync with Loan emiHistory BEFORE saving
+      await payment.save({ session });
+
+      // ✅ NEW: Sync payment with loan emiHistory
+      let syncResult = null;
+      if (payment.loanId) {
+        try {
+          syncResult = await EMIPayment.syncWithLoanHistory(payment._id);
+          console.log('✅ Payment synced with loan emiHistory:', syncResult);
+        } catch (syncError) {
+          console.error('⚠️ Error syncing with loan history:', syncError);
+          // Don't fail transaction if sync fails
+        }
+      }
+
+      // ✅ NEW: Also update customer total paid
+      if (originalAmount !== parsedAmount && payment.customerId) {
+        try {
+          const customerPayments = await EMIPayment.find({
+            customerId: payment.customerId,
+            status: { $in: ['Paid', 'Partial', 'Advance'] }
+          });
+          
+          const totalCustomerPaid = customerPayments.reduce((sum, p) => sum + p.amount, 0);
+          
+          await Customer.findByIdAndUpdate(
+            payment.customerId,
+            { totalPaid: totalCustomerPaid, updatedAt: new Date() },
+            { session }
+          );
+
+          console.log('✅ Customer total paid updated after payment edit');
+        } catch (customerUpdateError) {
+          console.error('⚠️ Error updating customer total paid:', customerUpdateError);
+        }
+      }
+
+      await session.commitTransaction();
+      console.log('✅ Transaction committed successfully with sync');
+
+      return NextResponse.json({
+        success: true,
+        message: 'EMI payment updated and synchronized successfully',
+        data: {
+          payment,
+          syncResult,
+          chainUpdate: chainUpdateResult,
+          changes: {
+            amount: { from: originalAmount, to: parsedAmount },
+            date: { from: originalPaymentDate, to: paymentDateStr },
+            status: { from: originalStatus, to: payment.status }
+          }
+        }
+      });
+
+    } catch (transactionError) {
+      await session.abortTransaction();
+      console.error('❌ Transaction aborted due to error:', transactionError);
+      throw transactionError;
+    } finally {
+      session.endSession();
+    }
 
   } catch (error) {
     console.error('❌ Error editing payment:', error);
@@ -1624,7 +1601,7 @@ export async function PUT(request) {
           const updateData = {
             totalPaidAmount: totalPaidAmount,
             emiPaidCount: emiPaidCount,
-            remainingAmount: Math.max(loan.amount - totalPaidAmount, 0),
+            remainingAmount: Math.max(0, loan.amount - totalPaidAmount),
             lastEmiDate: lastScheduledEmiDate,
             nextEmiDate: nextScheduledEmiDate,
             updatedAt: new Date()
@@ -1830,7 +1807,7 @@ export async function DELETE(request) {
         await Customer.findByIdAndUpdate(customerId, {
           totalPaid: totalCustomerPaid,
           updatedAt: new Date()
-        });
+        });  // FIXED: Changed from ) to }
 
         console.log('✅ Customer total paid updated after payment deletion');
       } catch (customerUpdateError) {

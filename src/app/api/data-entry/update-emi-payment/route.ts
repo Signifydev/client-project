@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import Customer from '@/lib/models/Customer';
 import Loan from '@/lib/models/Loan';
 import Request from '@/lib/models/Request';
+import EMIPayment from '@/lib/models/EMIPayment';
 import { connectDB } from '@/lib/db';
 import mongoose, { ClientSession } from 'mongoose';
 
 // Define types for payment objects
-interface EMIPayment {
+interface EMIPaymentDoc {
   _id: mongoose.Types.ObjectId;
   amount: number;
   status: string;
@@ -18,7 +19,7 @@ interface EMIPayment {
 }
 
 interface LoanDocument extends mongoose.Document {
-  emiHistory: EMIPayment[];
+  emiHistory: EMIPaymentDoc[];
   loanNumber: string;
   amount: number;
   totalPaidAmount: number;
@@ -60,6 +61,56 @@ interface RequestLog {
   requestedAt: Date;
 }
 
+// Helper function to format date to YYYY-MM-DD
+function formatToYYYYMMDD(dateInput: Date | string): string {
+  if (!dateInput) return '';
+  
+  try {
+    // If already a Date object
+    if (dateInput instanceof Date && !isNaN(dateInput.getTime())) {
+      const year = dateInput.getFullYear();
+      const month = String(dateInput.getMonth() + 1).padStart(2, '0');
+      const day = String(dateInput.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    
+    // If it's a string
+    if (typeof dateInput === 'string') {
+      const date = new Date(dateInput);
+      if (!isNaN(date.getTime())) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      }
+    }
+    
+    return '';
+  } catch (error) {
+    console.error('Error converting to YYYY-MM-DD:', error);
+    return '';
+  }
+}
+
+// Helper function to validate YYYY-MM-DD format
+function isValidYYYYMMDD(dateString: string): boolean {
+  if (!dateString || typeof dateString !== 'string') return false;
+  
+  const pattern = /^\d{4}-\d{2}-\d{2}$/;
+  if (!pattern.test(dateString)) return false;
+  
+  const [year, month, day] = dateString.split('-').map(Number);
+  
+  if (year < 2000 || year > 2100) return false;
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && 
+         date.getMonth() === month - 1 && 
+         date.getDate() === day;
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     // Connect to database
@@ -79,7 +130,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       notes
     } = body;
 
-    console.log('🔧 Editing EMI payment request received:', {
+    console.log('🔧 Editing EMI payment request received WITH SYNC:', {
       paymentId,
       newAmount: amount,
       previousAmount,
@@ -139,7 +190,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
       // Find the specific payment in emiHistory
       const paymentIndex = loan.emiHistory.findIndex(
-        (p: EMIPayment) => p._id.toString() === paymentId
+        (p: EMIPaymentDoc) => p._id.toString() === paymentId
       );
 
       if (paymentIndex === -1) {
@@ -163,7 +214,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         paymentDate: oldPayment.paymentDate
       });
 
-      // Update the payment details
+      // Update the payment details in loan emiHistory
       loan.emiHistory[paymentIndex].amount = newAmount;
       loan.emiHistory[paymentIndex].status = status;
       loan.emiHistory[paymentIndex].editedAt = new Date();
@@ -182,7 +233,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       let paidCount = 0;
       let partialCount = 0;
 
-      loan.emiHistory.forEach((payment: EMIPayment) => {
+      loan.emiHistory.forEach((payment: EMIPaymentDoc) => {
         totalPaidAmount += payment.amount;
         
         if (payment.status === 'Paid' || payment.status === 'Advance') {
@@ -200,8 +251,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // Update lastEmiDate to the latest payment date
       if (loan.emiHistory.length > 0) {
         const sortedPayments = [...loan.emiHistory].sort(
-          (a: EMIPayment, b: EMIPayment) => 
-            new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime()
+          (a: EMIPaymentDoc, b: EMIPaymentDoc) => {
+            const dateA = new Date(a.paymentDate);
+            const dateB = new Date(b.paymentDate);
+            return dateB.getTime() - dateA.getTime();
+          }
         );
         loan.lastEmiDate = sortedPayments[0].paymentDate;
       }
@@ -221,6 +275,67 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         remainingAmount: loan.remainingAmount,
         emiPaidCount: loan.emiPaidCount
       });
+
+      // ✅ NEW: Sync with EMIPayment collection
+      try {
+        // Check if payment exists in EMIPayment collection
+        const emiPayment = await EMIPayment.findOne({
+          _id: paymentObjectId
+        }).session(session);
+        
+        if (emiPayment) {
+          // Update EMIPayment record to match
+          emiPayment.amount = newAmount;
+          emiPayment.status = status;
+          emiPayment.updatedAt = new Date();
+          emiPayment.notes = emiPayment.notes 
+            ? `${emiPayment.notes} | Synced from loan edit: ${notes || ''}`
+            : notes || 'Synced from loan edit';
+          
+          await emiPayment.save({ session });
+          console.log('✅ Synced EMIPayment collection with loan edit');
+          
+          // If payment has chain, update chain totals using the static method
+          if (emiPayment.partialChainId) {
+            // Use the static method from EMIPayment model
+            const EMIPaymentModel = mongoose.model('EMIPayment');
+            const modelWithStaticMethods = EMIPaymentModel as typeof EMIPaymentModel & {
+              updateChainTotals?: (chainId: string) => Promise<any>;
+            };
+            
+            if (modelWithStaticMethods.updateChainTotals) {
+              await modelWithStaticMethods.updateChainTotals(emiPayment.partialChainId);
+              console.log('✅ Updated chain totals after sync');
+            } else {
+              console.log('⚠️ updateChainTotals method not available on EMIPayment model');
+            }
+          }
+        } else {
+          console.log('⚠️ Payment not found in EMIPayment collection, creating new entry');
+          
+          // Create new EMIPayment entry
+          const newEMIPayment = new EMIPayment({
+            _id: paymentObjectId,
+            customerId: customerObjectId,
+            customerName: customerName,
+            loanId: loan._id,
+            loanNumber: loanNumber,
+            paymentDate: formatToYYYYMMDD(oldPayment.paymentDate),
+            amount: newAmount,
+            status: status,
+            collectedBy: collectedBy || 'data_entry_operator',
+            notes: notes || `Created from loan edit sync`,
+            createdAt: oldPayment.editedAt || new Date(),
+            updatedAt: new Date()
+          });
+          
+          await newEMIPayment.save({ session });
+          console.log('✅ Created new EMIPayment entry for sync');
+        }
+      } catch (syncError: any) {
+        console.error('⚠️ Error syncing EMIPayment collection:', syncError);
+        // Don't fail transaction if sync fails
+      }
 
       // Update customer's total paid amount from all active loans
       const customer = await Customer.findById(customerObjectId).session(session) as CustomerDocument | null;
@@ -251,11 +366,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         
         // Update last payment date
         if (allLoans.length > 0) {
-          const allPayments: EMIPayment[] = allLoans.flatMap(loan => loan.emiHistory || []);
+          const allPayments: EMIPaymentDoc[] = allLoans.flatMap(loan => loan.emiHistory || []);
           if (allPayments.length > 0) {
             const sortedAllPayments = allPayments.sort(
-              (a: EMIPayment, b: EMIPayment) => 
-                new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime()
+              (a: EMIPaymentDoc, b: EMIPaymentDoc) => {
+                const dateA = new Date(a.paymentDate);
+                const dateB = new Date(b.paymentDate);
+                return dateB.getTime() - dateA.getTime();
+              }
             );
             customer.lastPaymentDate = sortedAllPayments[0].paymentDate;
           }
@@ -272,7 +390,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         });
       }
 
-      // Create a request log entry for audit trail (optional but recommended)
+      // Create a request log entry for audit trail
       try {
         const requestLog = new Request({
           requestType: 'edit_emi_payment',
@@ -298,16 +416,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         console.log('📝 Request log created for audit trail');
       } catch (logError: any) {
         console.warn('⚠️ Could not create request log:', logError.message);
-        // Don't fail the transaction if logging fails
+        // Don't fail transaction if logging fails
       }
 
       // Commit the transaction
       await session.commitTransaction();
-      console.log('✅ Transaction committed successfully');
+      console.log('✅ Transaction committed successfully with sync');
 
       return NextResponse.json({
         success: true,
-        message: 'EMI payment updated successfully',
+        message: 'EMI payment updated and synchronized successfully',
         data: {
           paymentId,
           newAmount: newAmount,
@@ -315,7 +433,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           difference: amountDifference,
           loanNumber: loan.loanNumber,
           customerName: customerName,
-          updatedAt: new Date()
+          updatedAt: new Date(),
+          synced: true
         }
       });
 
