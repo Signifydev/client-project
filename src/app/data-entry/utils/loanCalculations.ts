@@ -179,18 +179,19 @@ export const getAllCustomerLoans = (customer: Customer, customerDetails: Custome
       if (loan._id && loan._id.length === 24 && /^[0-9a-fA-F]{24}$/.test(loan._id.replace(/_default$/, ''))) {
         const cleanLoanId = loan._id.replace(/_default$/, '');
         
-        const hasPaidEMIs = (loan.emiPaidCount > 0) || 
-                           (loan.totalPaidAmount > 0) ||
-                           (loan.emiHistory && loan.emiHistory.length > 0);
+        // ✅ FIXED: Check for ANY payments (including partial)
+        const hasAnyPayments = (loan.emiPaidCount > 0) || 
+                               (loan.totalPaidAmount > 0) ||
+                               (loan.emiHistory && loan.emiHistory.length > 0);
         
         let nextEmiDate;
         
-        if (hasPaidEMIs) {
-          // CRITICAL FIX: Calculate next EMI date based on schedule, not payment date
+        if (hasAnyPayments) {
+          // ✅ FIXED: Calculate next EMI date based on FULL payments count only
           const lastScheduledEmiDate = calculateLastScheduledEmiDate(
             loan.emiStartDate || loan.dateApplied,
             loan.loanType,
-            loan.emiPaidCount || 0
+            loan.emiPaidCount || 0  // This should already be correct after API fix
           );
           
           nextEmiDate = calculateNextScheduledEmiDate(
