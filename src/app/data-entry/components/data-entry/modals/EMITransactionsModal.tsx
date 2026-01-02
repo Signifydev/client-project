@@ -167,74 +167,83 @@ export default function EMITransactionsModal({
   
   // ✅ NEW: Fetch chain information for a transaction
   const fetchChainInfo = async (transaction: EMITransaction) => {
-    if (!transaction._id && !transaction.partialChainId) return null;
+  if (!transaction._id && !transaction.partialChainId) return null;
+  
+  setLoadingChain(true);
+  try {
+    let url = `/api/data-entry/emi-payments?action=get-chain-info&`;
     
-    setLoadingChain(true);
-    try {
-      let url = `/api/data-entry/emi-payments?action=get-chain-info&`;
-      
-      if (transaction.partialChainId) {
-        url += `chainId=${transaction.partialChainId}`;
-      } else {
-        url += `paymentId=${transaction._id}`;
-      }
-      
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch chain info: ${response.status} ${response.statusText}`);
-      }
-      
-      const result = await response.json();
-      
-      if (result.success && result.data) {
-        setChainInfo(result.data);
-        setChainPayments(result.data.payments || []);
-        
-        // Calculate remaining amount for partial payments
-        if (transaction.status === 'Partial') {
-          setRemainingAmount(result.data.remainingAmount || 0);
-        }
-        
-        return result.data;
-      }
-      return null;
-    } catch (error) {
-      console.error('Error fetching chain info:', error);
-      return null;
-    } finally {
-      setLoadingChain(false);
+    if (transaction.partialChainId) {
+      url += `chainId=${transaction.partialChainId}`;
+    } else {
+      url += `paymentId=${transaction._id}`;
     }
-  };
+    
+    // ✅ FIXED: Add loanId parameter to filter chain by specific loan
+    if (transaction.loanNumber && transaction.loanNumber !== 'N/A') {
+      // We need to get loanId from the transaction or customer loans
+      const customerLoan = customer.loans?.find((l: any) => l.loanNumber === transaction.loanNumber);
+      if (customerLoan?._id) {
+        url += `&loanId=${customerLoan._id}`;
+      }
+    }
+    
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch chain info: ${response.status} ${response.statusText}`);
+    }
+    
+    const result = await response.json();
+    
+    if (result.success && result.data) {
+      setChainInfo(result.data);
+      setChainPayments(result.data.payments || []);
+      
+      // Calculate remaining amount for partial payments
+      if (transaction.status === 'Partial') {
+        setRemainingAmount(result.data.remainingAmount || 0);
+      }
+      
+      return result.data;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error fetching chain info:', error);
+    return null;
+  } finally {
+    setLoadingChain(false);
+  }
+};
   
   // ✅ NEW: Handle edit button click
   const handleEditClick = async (transaction: EMITransaction) => {
-    console.log('Editing transaction:', transaction);
-    
-    // Fetch chain information first
-    const chainData = await fetchChainInfo(transaction);
-    
-    setEditingTransaction(transaction);
-    setEditAmount(transaction.amount.toString());
-    setEditStatus(transaction.status);
-    setEditError('');
-    setAdditionalAmount('');
-    
-    // Determine which edit mode to show based on payment status
-    if (transaction.status === 'Partial') {
-      // For partial payments, show both options
-      setEditMode('edit-amount');
-    } else {
-      // For paid payments, only show edit amount option
-      setEditMode('edit-amount');
-    }
-    
-    // If it's a partial payment, calculate remaining amount
-    if (transaction.status === 'Partial' && chainData) {
-      setRemainingAmount(chainData.remainingAmount || 0);
-      setAdditionalAmount(chainData.remainingAmount?.toString() || '0');
-    }
-  };
+  console.log('Editing transaction:', transaction);
+  
+  // ✅ FIXED: Pass loanId to filter chain by specific loan
+  const chainData = await fetchChainInfo(transaction);
+  
+  setEditingTransaction(transaction);
+  setEditAmount(transaction.amount.toString());
+  setEditStatus(transaction.status);
+  setEditError('');
+  setAdditionalAmount('');
+  
+  // Determine which edit mode to show based on payment status
+  if (transaction.status === 'Partial') {
+    // For partial payments, show both options
+    setEditMode('edit-amount');
+  } else {
+    // For paid payments, only show edit amount option
+    setEditMode('edit-amount');
+  }
+  
+  // If it's a partial payment, calculate remaining amount
+  if (transaction.status === 'Partial' && chainData) {
+    setRemainingAmount(chainData.remainingAmount || 0);
+    setAdditionalAmount(chainData.remainingAmount?.toString() || '0');
+  }
+};
 
   // ✅ NEW: Handle edit option change
   const handleEditOptionChange = (mode: EditMode) => {

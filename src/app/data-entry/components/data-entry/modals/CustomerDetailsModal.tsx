@@ -294,24 +294,27 @@ export default function CustomerDetailsModal({
 
   // NEW: Handle EMI Transactions button click
   const handleEMITransactionsClick = async () => {
-    if (!customerDetails) {
-      alert('Customer details not loaded. Please wait...');
-      return;
-    }
+  if (!customerDetails) {
+    alert('Customer details not loaded. Please wait...');
+    return;
+  }
+  
+  setLoadingTransactions(true);
+  try {
+    // Clear cache before fetching
+    clearCustomerCache(customerDetails._id);
     
-    setLoadingTransactions(true);
-    try {
-      const transactions = await fetchEMITransactions(customerDetails._id);
-      setEmiTransactions(transactions);
-      setShowEMITransactions(true);
-      console.log(`✅ Loaded ${transactions.length} EMI transactions`);
-    } catch (error) {
-      console.error('❌ Error loading EMI transactions:', error);
-      alert('Failed to load EMI transactions. Please check the console for details.');
-    } finally {
-      setLoadingTransactions(false);
-    }
-  };
+    const transactions = await fetchEMITransactions(customerDetails._id);
+    setEmiTransactions(transactions);
+    setShowEMITransactions(true);
+    console.log(`✅ Loaded ${transactions.length} EMI transactions`);
+  } catch (error) {
+    console.error('❌ Error loading EMI transactions:', error);
+    alert('Failed to load EMI transactions. Please check the console for details.');
+  } finally {
+    setLoadingTransactions(false);
+  }
+};
 
   // Handle delete loan click
   const handleDeleteLoanClick = (loan: Loan) => {
@@ -784,11 +787,12 @@ console.log('🔍 Payment Status Check:', {
       {/* NEW: EMI Transactions Modal */}
       {showEMITransactions && customerDetails && (
         <EMITransactionsModal
-          isOpen={showEMITransactions}
-          onClose={() => setShowEMITransactions(false)}
-          customer={customerDetails}
-          transactions={emiTransactions}
-        />
+  isOpen={showEMITransactions}
+  onClose={() => setShowEMITransactions(false)}
+  customer={customerDetails}
+  transactions={emiTransactions}
+  onRefresh={handleRefreshData} // ✅ ADD THIS
+/>
       )}
     </>
   );

@@ -49,12 +49,10 @@ function formatToYYYYMMDD(dateInput) {
   if (!dateInput) return '';
   
   try {
-    // If already a valid YYYY-MM-DD string
     if (typeof dateInput === 'string' && isValidYYYYMMDD(dateInput)) {
       return dateInput;
     }
     
-    // If it's a Date object
     if (dateInput instanceof Date && !isNaN(dateInput.getTime())) {
       const year = dateInput.getFullYear();
       const month = String(dateInput.getMonth() + 1).padStart(2, '0');
@@ -62,7 +60,6 @@ function formatToYYYYMMDD(dateInput) {
       return `${year}-${month}-${day}`;
     }
     
-    // If it's another string format, try to parse
     if (typeof dateInput === 'string') {
       const date = new Date(dateInput);
       if (!isNaN(date.getTime())) {
@@ -93,13 +90,11 @@ function addDays(dateString, days) {
   return formatToYYYYMMDD(date);
 }
 
-// Helper function to clean IDs by removing suffixes
 function cleanId(id) {
   if (!id) return id;
   return id.replace(/(_default|_temp|_new|fallback_)/, '');
 }
 
-// Helper function to validate and clean ObjectId
 function validateAndCleanObjectId(id, fieldName = 'ID') {
   if (!id) {
     return { isValid: false, error: `${fieldName} is required` };
@@ -122,9 +117,7 @@ function validateAndCleanObjectId(id, fieldName = 'ID') {
   };
 }
 
-// CORRECTED: Calculate next scheduled EMI date based on last scheduled EMI date
 function calculateNextScheduledEmiDate(lastScheduledEmiDate, loanType, emiStartDate, emiPaidCount, totalEmiCount) {
-  // ✅ FIX: Return null if loan is completed
   if (emiPaidCount >= totalEmiCount) {
     return null;
   }
@@ -157,7 +150,6 @@ function calculateNextScheduledEmiDate(lastScheduledEmiDate, loanType, emiStartD
   return nextDate;
 }
 
-// NEW: Calculate last scheduled EMI date (not payment date)
 function calculateLastScheduledEmiDate(emiStartDate, loanType, totalEmisPaid) {
   if (!emiStartDate || totalEmisPaid <= 0) return emiStartDate;
   
@@ -186,16 +178,21 @@ function calculateLastScheduledEmiDate(emiStartDate, loanType, totalEmisPaid) {
   return formatToYYYYMMDD(lastScheduledDate);
 }
 
-// ✅ NEW: Generate partial chain ID
+// ==============================================
+// ✅ FIXED: Generate partial chain ID - ALWAYS USE LOAN ID, NEVER CUSTOMER ID
+// ==============================================
 function generatePartialChainId(loanId, paymentDate) {
+  if (!loanId) {
+    console.error('❌ CRITICAL: Cannot generate chain ID without loanId');
+    throw new Error('Loan ID is required for chain ID generation');
+  }
+  
   const cleanLoanId = loanId.toString().replace(/[^a-zA-Z0-9]/g, '_').slice(-12);
   const cleanDate = paymentDate.replace(/-/g, '');
   return `partial_${cleanLoanId}_${cleanDate}`;
 }
 
-// Enhanced duplicate payment check for both single and advance payments
 const checkForDuplicatePayments = async (cleanedCustomerId, finalLoanId, finalLoanNumber, paymentType, paymentDate, advanceFromDate, advanceToDate) => {
-  // Ensure paymentDate is in YYYY-MM-DD format
   const formattedPaymentDate = formatToYYYYMMDD(paymentDate);
   
   if (paymentType === 'single') {
@@ -240,7 +237,7 @@ const checkForDuplicatePayments = async (cleanedCustomerId, finalLoanId, finalLo
 };
 
 // ==============================================
-// ✅ NEW: COMPLETE PARTIAL PAYMENT ENDPOINT
+// ✅ UPDATED: COMPLETE PARTIAL PAYMENT ENDPOINT WITH SYNC
 // ==============================================
 export async function POST(request) {
   try {
@@ -248,22 +245,18 @@ export async function POST(request) {
     const url = new URL(request.url);
     const action = url.searchParams.get('action');
     
-    // ✅ NEW: Handle complete-partial action
     if (action === 'complete-partial') {
       return await handleCompletePartialPayment(request);
     }
     
-    // ✅ NEW: Handle edit-payment action
     if (action === 'edit-payment') {
       return await handleEditPayment(request);
     }
     
-    // ✅ NEW: Handle get-chain-info action
     if (action === 'get-chain-info') {
       return await handleGetChainInfo(request);
     }
     
-    // Original payment creation logic
     const data = await request.json();
     
     console.log('🟡 EMI Payment data received:', JSON.stringify(data, null, 2));
@@ -287,7 +280,6 @@ export async function POST(request) {
       advanceTotalAmount
     } = data;
 
-    // Validate required fields
     if (!customerId || !customerName || !amount || !paymentDate || !collectedBy) {
       return NextResponse.json({ 
         success: false,
@@ -295,7 +287,6 @@ export async function POST(request) {
       }, { status: 400 });
     }
 
-    // Validate payment date format
     const paymentDateStr = formatToYYYYMMDD(paymentDate);
     if (!paymentDateStr || !isValidYYYYMMDD(paymentDateStr)) {
       return NextResponse.json({ 
@@ -304,7 +295,6 @@ export async function POST(request) {
       }, { status: 400 });
     }
 
-    // Handle advance payments validation
     if (paymentType === 'advance') {
       if (!advanceFromDate || !advanceToDate) {
         return NextResponse.json({ 
@@ -338,7 +328,6 @@ export async function POST(request) {
       }
     }
 
-    // Validate and clean customerId
     const customerIdValidation = validateAndCleanObjectId(customerId, 'Customer ID');
     if (!customerIdValidation.isValid) {
       return NextResponse.json({ 
@@ -349,7 +338,6 @@ export async function POST(request) {
 
     const cleanedCustomerId = customerIdValidation.cleanedId;
 
-    // Validate amount
     if (amount <= 0) {
       return NextResponse.json({ 
         success: false,
@@ -357,7 +345,6 @@ export async function POST(request) {
       }, { status: 400 });
     }
 
-    // Check if customer exists
     const customer = await Customer.findById(cleanedCustomerId);
     if (!customer) {
       return NextResponse.json({ 
@@ -377,7 +364,6 @@ export async function POST(request) {
       customerName: customerName
     });
 
-    // Try to find loan by provided loanId
     if (loanId && !loanId.includes('fallback_')) {
       const loanIdValidation = validateAndCleanObjectId(loanId, 'Loan ID');
       if (loanIdValidation.isValid) {
@@ -398,7 +384,6 @@ export async function POST(request) {
       }
     }
 
-    // If no loan found by ID, try to find any loan for this customer
     if (!loan) {
       console.log('🔍 No loan found by ID, searching for any loan for customer...');
       
@@ -425,7 +410,6 @@ export async function POST(request) {
       }
     }
 
-    // If still no loan found, check if we should create a temporary loan record
     if (!loan) {
       console.log('❌ No existing loan found for customer. Checking if we can proceed...');
       
@@ -447,7 +431,6 @@ export async function POST(request) {
       }
     }
 
-    // ✅ FIX #1: Check if loan is already completed BEFORE processing payment
     if (loan) {
       console.log('🔍 Checking loan completion status:', {
         loanNumber: loan.loanNumber,
@@ -457,7 +440,6 @@ export async function POST(request) {
         isCompleted: loan.emiPaidCount >= loan.totalEmiCount || loan.status === 'completed'
       });
 
-      // Check if loan is already completed
       const isLoanCompleted = loan.emiPaidCount >= loan.totalEmiCount || loan.status === 'completed';
       
       if (isLoanCompleted) {
@@ -476,7 +458,6 @@ export async function POST(request) {
       }
     }
 
-    // Enhanced duplicate payment check
     const duplicateCheck = await checkForDuplicatePayments(
       cleanedCustomerId, 
       finalLoanId, 
@@ -514,7 +495,6 @@ export async function POST(request) {
       }
     }
 
-    // Create EMI payment record(s)
     let payments = [];
 
     if (paymentType === 'advance') {
@@ -527,7 +507,6 @@ export async function POST(request) {
       if (loan) {
         switch(loan.loanType) {
           case 'Daily':
-            // Calculate days between dates
             const fromDate = parseDateString(advanceFromStr);
             const toDate = parseDateString(advanceToStr);
             const dailyDiff = Math.ceil((toDate - fromDate) / (1000 * 60 * 60 * 24)) + 1;
@@ -559,12 +538,11 @@ export async function POST(request) {
         loanType: loan?.loanType,
         calculatedEmiCount: emiCount,
         providedEmiCount: advanceEmiCount,
-        amountReceived: amount, // Should be TOTAL amount (e.g., 1500)
-        loanEmiAmount: loan?.emiAmount, // Should be single EMI (e.g., 300)
-        advanceTotalAmount: advanceTotalAmount // Additional check
+        amountReceived: amount,
+        loanEmiAmount: loan?.emiAmount,
+        advanceTotalAmount: advanceTotalAmount
       });
 
-      // ✅ CRITICAL FIX: Use loan's EMI amount instead of dividing received amount
       const singleEmiAmount = loan?.emiAmount || (parseFloat(amount) / emiCount);
       
       console.log('🔍 Single EMI Amount Calculation:', {
@@ -583,7 +561,7 @@ export async function POST(request) {
           customerId: cleanedCustomerId,
           customerName,
           paymentDate: currentDateStr,
-          amount: singleEmiAmount, // ✅ FIXED: Full EMI amount (e.g., 300)
+          amount: singleEmiAmount,
           status: 'Advance',
           collectedBy,
           paymentMethod,
@@ -595,7 +573,7 @@ export async function POST(request) {
           advanceFromDate: advanceFromStr,
           advanceToDate: advanceToStr,
           advanceEmiCount: emiCount,
-          advanceTotalAmount: parseFloat(amount) // Store the TOTAL amount received
+          advanceTotalAmount: parseFloat(amount)
         };
 
         if (finalLoanId) {
@@ -605,11 +583,19 @@ export async function POST(request) {
           paymentData.loanNumber = finalLoanNumber;
         }
 
-        // ✅ NEW: Set partial chain info for advance partial payments
+        // ✅ FIXED: For partial advance payments
         if (status === 'Partial') {
-          paymentData.partialChainId = generatePartialChainId(finalLoanId || cleanedCustomerId, currentDateStr);
+          // ✅ CRITICAL FIX: Use loan ID ONLY, never customer ID
+          if (finalLoanId) {
+            paymentData.partialChainId = generatePartialChainId(finalLoanId, currentDateStr);
+          } else {
+            console.error('❌ Cannot create partial chain without loan ID');
+            paymentData.partialChainId = `temp_${Date.now()}_${i}`;
+          }
           paymentData.isChainComplete = false;
+          // ✅ FIXED: Set installmentTotalAmount to FULL EMI amount
           paymentData.installmentTotalAmount = singleEmiAmount;
+          paymentData.originalEmiAmount = singleEmiAmount;
         }
 
         const payment = new EMIPayment(paymentData);
@@ -621,7 +607,6 @@ export async function POST(request) {
           paymentId: payment._id
         });
         
-        // Move to next EMI date based on loan type
         if (loan) {
           switch(loan.loanType) {
             case 'Daily':
@@ -642,7 +627,6 @@ export async function POST(request) {
           currentDateStr = addDays(currentDateStr, 1);
         }
         
-        // Check if we've exceeded the end date
         if (currentDateStr > advanceToStr) {
           break;
         }
@@ -673,14 +657,20 @@ export async function POST(request) {
         paymentData.loanNumber = finalLoanNumber;
       }
 
-      // ✅ NEW: Set partial chain info for partial payments
+      // ✅ FIXED: Set partial chain info CORRECTLY
       if (status === 'Partial') {
-        paymentData.partialChainId = generatePartialChainId(finalLoanId || cleanedCustomerId, paymentDateStr);
+        // ✅ CRITICAL FIX: Use loan ID ONLY, never customer ID
+        if (finalLoanId) {
+          paymentData.partialChainId = generatePartialChainId(finalLoanId, paymentDateStr);
+        } else {
+          console.error('❌ Cannot create partial chain without loan ID');
+          paymentData.partialChainId = `temp_${Date.now()}`;
+        }
         paymentData.isChainComplete = false;
-        paymentData.installmentTotalAmount = parseFloat(amount);
+        // ✅ FIXED: Set installmentTotalAmount to FULL EMI amount, not payment amount
+        paymentData.installmentTotalAmount = loan?.emiAmount || parseFloat(amount);
         paymentData.originalEmiAmount = loan?.emiAmount || parseFloat(amount);
       } else {
-        // For paid payments, set chain as complete
         paymentData.isChainComplete = true;
         paymentData.installmentTotalAmount = parseFloat(amount);
         paymentData.installmentPaidAmount = parseFloat(amount);
@@ -714,14 +704,12 @@ export async function POST(request) {
         const totalPaidAmount = loanPayments.reduce((sum, p) => sum + p.amount, 0);
         const emiPaidCount = loanPayments.length;
 
-        // ✅ FIX #2: Calculate last scheduled EMI date and next scheduled EMI date with completion check
         const lastScheduledEmiDate = calculateLastScheduledEmiDate(
           loan.emiStartDate || loan.dateApplied,
           loan.loanType,
           emiPaidCount
         );
         
-        // ✅ FIX #3: Pass emiPaidCount and totalEmiCount to calculateNextScheduledEmiDate
         const nextScheduledEmiDate = calculateNextScheduledEmiDate(
           lastScheduledEmiDate,
           loan.loanType,
@@ -742,7 +730,6 @@ export async function POST(request) {
           isLoanCompleted: emiPaidCount >= loan.totalEmiCount
         });
 
-        // Update loan with CORRECT string dates
         const updateData = {
           emiPaidCount: emiPaidCount,
           totalPaidAmount: totalPaidAmount,
@@ -753,10 +740,9 @@ export async function POST(request) {
           updatedAt: new Date()
         };
 
-        // ✅ FIX #4: Update status to 'completed' if loan is now complete
         if (emiPaidCount >= loan.totalEmiCount) {
           updateData.status = 'completed';
-          updateData.nextEmiDate = null; // ✅ Ensure nextEmiDate is null for completed loans
+          updateData.nextEmiDate = null;
           console.log('🎉 Loan marked as COMPLETED:', loan.loanNumber);
         }
 
@@ -783,15 +769,17 @@ export async function POST(request) {
         }
 
         await Loan.findByIdAndUpdate(finalLoanId, updateData);
-        console.log('✅ Loan statistics updated correctly with:', {
-          payments: payments.length,
-          lastEmiDate: updateData.lastEmiDate,
-          nextEmiDate: updateData.nextEmiDate,
-          emiPaidCount: updateData.emiPaidCount,
-          status: updateData.status,
-          emiHistoryDates: payments.map(p => p.paymentDate),
-          emiHistoryAmounts: payments.map(p => p.amount)
-        });
+        console.log('✅ Loan statistics updated correctly');
+        
+        // ✅ FIXED: Sync all payments with loan emiHistory
+        for (const payment of payments) {
+          try {
+            await EMIPayment.syncWithLoanHistory(payment._id);
+            console.log(`✅ Synced payment ${payment._id} with loan emiHistory`);
+          } catch (syncError) {
+            console.error(`⚠️ Error syncing payment ${payment._id}:`, syncError);
+          }
+        }
       } catch (loanUpdateError) {
         console.error('⚠️ Error updating loan statistics:', loanUpdateError);
       }
@@ -826,7 +814,6 @@ export async function POST(request) {
         advanceEmiCount: advanceEmiCount,
         advanceTotalAmount: amount,
         perEmiAmount: paymentType === 'advance' ? (loan?.emiAmount || (parseFloat(amount)/payments.length)) : parseFloat(amount),
-        // ✅ NEW: Include chain info for partial payments
         partialChainId: payments[0]?.partialChainId || null,
         isChainComplete: payments[0]?.isChainComplete || true
       }
@@ -843,10 +830,9 @@ export async function POST(request) {
 }
 
 // ==============================================
-// ✅ NEW: HANDLER FUNCTIONS
+// ✅ UPDATED: HANDLER FUNCTIONS WITH SYNC
 // ==============================================
 
-// Handler for completing partial payments
 async function handleCompletePartialPayment(request) {
   try {
     await connectDB();
@@ -866,7 +852,6 @@ async function handleCompletePartialPayment(request) {
       loanNumber
     } = data;
 
-    // Validate required fields
     if (!parentPaymentId || !additionalAmount || !collectedBy) {
       return NextResponse.json({
         success: false,
@@ -874,7 +859,6 @@ async function handleCompletePartialPayment(request) {
       }, { status: 400 });
     }
 
-    // Validate parent payment ID
     const parentPaymentValidation = validateAndCleanObjectId(parentPaymentId, 'Parent Payment ID');
     if (!parentPaymentValidation.isValid) {
       return NextResponse.json({
@@ -885,7 +869,6 @@ async function handleCompletePartialPayment(request) {
 
     const cleanedParentPaymentId = parentPaymentValidation.cleanedId;
 
-    // Find parent payment
     const parentPayment = await EMIPayment.findById(cleanedParentPaymentId);
     if (!parentPayment) {
       return NextResponse.json({
@@ -894,7 +877,6 @@ async function handleCompletePartialPayment(request) {
       }, { status: 404 });
     }
 
-    // Validate that parent payment is partial
     if (parentPayment.status !== 'Partial') {
       return NextResponse.json({
         success: false,
@@ -906,7 +888,6 @@ async function handleCompletePartialPayment(request) {
       }, { status: 400 });
     }
 
-    // Get chain info to calculate remaining amount
     const chainInfo = await EMIPayment.getChainSummary(parentPayment.partialChainId || parentPayment._id.toString());
     
     if (!chainInfo) {
@@ -918,7 +899,6 @@ async function handleCompletePartialPayment(request) {
 
     const remainingAmount = chainInfo.remainingAmount;
     
-    // Validate additional amount
     if (additionalAmount <= 0) {
       return NextResponse.json({
         success: false,
@@ -938,7 +918,6 @@ async function handleCompletePartialPayment(request) {
       }, { status: 400 });
     }
 
-    // Validate payment date
     const paymentDateStr = paymentDate || getCurrentDateString();
     if (!isValidYYYYMMDD(paymentDateStr)) {
       return NextResponse.json({
@@ -947,7 +926,6 @@ async function handleCompletePartialPayment(request) {
       }, { status: 400 });
     }
 
-    // Use existing static method to complete partial payment
     const result = await EMIPayment.completePartialPayment(
       cleanedParentPaymentId,
       parseFloat(additionalAmount),
@@ -962,6 +940,26 @@ async function handleCompletePartialPayment(request) {
       newChainStatus: result.chainInfo
     });
 
+    // ✅ CRITICAL FIX: Sync ALL payments in chain with loan emiHistory
+    if (result.chainInfo && result.chainInfo.payments) {
+      for (const payment of result.chainInfo.payments) {
+        try {
+          await EMIPayment.syncWithLoanHistory(payment._id);
+          console.log(`✅ Synced chain payment ${payment._id} with loan emiHistory`);
+        } catch (syncError) {
+          console.error(`⚠️ Error syncing chain payment ${payment._id}:`, syncError);
+        }
+      }
+    }
+
+    // Also sync parent payment
+    try {
+      await EMIPayment.syncWithLoanHistory(cleanedParentPaymentId);
+      console.log(`✅ Synced parent payment ${cleanedParentPaymentId} with loan emiHistory`);
+    } catch (syncError) {
+      console.error(`⚠️ Error syncing parent payment:`, syncError);
+    }
+
     // Update loan statistics
     if (parentPayment.loanId) {
       try {
@@ -973,7 +971,6 @@ async function handleCompletePartialPayment(request) {
         const totalPaidAmount = loanPayments.reduce((sum, p) => sum + p.amount, 0);
         const emiPaidCount = loanPayments.length;
         
-        // Update loan with correct schedule dates
         const loan = await Loan.findById(parentPayment.loanId);
         if (loan) {
           const lastScheduledEmiDate = calculateLastScheduledEmiDate(
@@ -999,7 +996,6 @@ async function handleCompletePartialPayment(request) {
             updatedAt: new Date()
           };
           
-          // Update status to 'completed' if loan is now complete
           if (emiPaidCount >= loan.totalEmiCount) {
             updateData.status = 'completed';
             updateData.nextEmiDate = null;
@@ -1007,11 +1003,7 @@ async function handleCompletePartialPayment(request) {
           
           await Loan.findByIdAndUpdate(parentPayment.loanId, updateData);
 
-          console.log('✅ Loan statistics updated after partial completion:', {
-            lastEmiDate: lastScheduledEmiDate,
-            nextEmiDate: nextScheduledEmiDate,
-            status: updateData.status
-          });
+          console.log('✅ Loan statistics updated after partial completion');
         }
       } catch (loanUpdateError) {
         console.error('⚠️ Error updating loan statistics after partial completion:', loanUpdateError);
@@ -1059,7 +1051,6 @@ async function handleCompletePartialPayment(request) {
   }
 }
 
-// ✅ FIXED: Handler for editing payments (with chain support AND loan sync)
 async function handleEditPayment(request) {
   try {
     await connectDB();
@@ -1077,7 +1068,6 @@ async function handleEditPayment(request) {
       updateChainTotals = true
     } = data;
 
-    // Validate required fields
     if (!paymentId || !amount || !paymentDate) {
       return NextResponse.json({
         success: false,
@@ -1085,7 +1075,6 @@ async function handleEditPayment(request) {
       }, { status: 400 });
     }
 
-    // Validate payment ID
     const paymentIdValidation = validateAndCleanObjectId(paymentId, 'Payment ID');
     if (!paymentIdValidation.isValid) {
       return NextResponse.json({
@@ -1096,7 +1085,6 @@ async function handleEditPayment(request) {
 
     const cleanedPaymentId = paymentIdValidation.cleanedId;
 
-    // Validate payment date format
     const paymentDateStr = formatToYYYYMMDD(paymentDate);
     if (!paymentDateStr || !isValidYYYYMMDD(paymentDateStr)) {
       return NextResponse.json({
@@ -1105,7 +1093,6 @@ async function handleEditPayment(request) {
       }, { status: 400 });
     }
 
-    // Validate amount
     const parsedAmount = parseFloat(amount);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
       return NextResponse.json({
@@ -1119,12 +1106,10 @@ async function handleEditPayment(request) {
       updates: data 
     });
 
-    // Start transaction for data consistency
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
-      // Find the payment first to get original data
       const payment = await EMIPayment.findById(cleanedPaymentId).session(session);
       if (!payment) {
         await session.abortTransaction();
@@ -1134,12 +1119,10 @@ async function handleEditPayment(request) {
         }, { status: 404 });
       }
 
-      // Store original values for comparison
       const originalAmount = payment.amount;
       const originalPaymentDate = payment.paymentDate;
       const originalStatus = payment.status;
 
-      // Update payment fields
       payment.amount = parsedAmount;
       payment.paymentDate = paymentDateStr;
       payment.status = status || payment.status;
@@ -1147,7 +1130,6 @@ async function handleEditPayment(request) {
       payment.collectedBy = collectedBy || payment.collectedBy;
       payment.updatedAt = new Date();
 
-      // Add edit history note
       const editNote = `Payment edited: Amount changed from ₹${originalAmount} to ₹${parsedAmount}`;
       if (originalPaymentDate !== paymentDateStr) {
         payment.notes = `${editNote}, Date changed from ${formatToDDMMYYYY(originalPaymentDate)} to ${formatToDDMMYYYY(paymentDateStr)}. ${payment.notes || ''}`;
@@ -1155,16 +1137,14 @@ async function handleEditPayment(request) {
         payment.notes = `${editNote}. ${payment.notes || ''}`;
       }
 
-      // Handle chain updates if needed
       let chainUpdateResult = null;
       if (updateChainTotals && payment.partialChainId) {
         chainUpdateResult = await EMIPayment.updateChainTotals(payment.partialChainId);
       }
 
-      // ✅ CRITICAL FIX: Sync with Loan emiHistory BEFORE saving
       await payment.save({ session });
 
-      // ✅ NEW: Sync payment with loan emiHistory
+      // ✅ CRITICAL FIX: Sync payment with loan emiHistory BEFORE transaction commit
       let syncResult = null;
       if (payment.loanId) {
         try {
@@ -1172,11 +1152,9 @@ async function handleEditPayment(request) {
           console.log('✅ Payment synced with loan emiHistory:', syncResult);
         } catch (syncError) {
           console.error('⚠️ Error syncing with loan history:', syncError);
-          // Don't fail transaction if sync fails
         }
       }
 
-      // ✅ NEW: Also update customer total paid
       if (originalAmount !== parsedAmount && payment.customerId) {
         try {
           const customerPayments = await EMIPayment.find({
@@ -1233,13 +1211,13 @@ async function handleEditPayment(request) {
   }
 }
 
-// Handler for getting chain information
 async function handleGetChainInfo(request) {
   try {
     await connectDB();
     const { searchParams } = new URL(request.url);
     const chainId = searchParams.get('chainId');
     const paymentId = searchParams.get('paymentId');
+    const loanId = searchParams.get('loanId'); // ✅ NEW: Filter by loan
     
     if (!chainId && !paymentId) {
       return NextResponse.json({
@@ -1250,7 +1228,6 @@ async function handleGetChainInfo(request) {
     
     let targetChainId = chainId;
     
-    // If paymentId is provided, find its chain
     if (paymentId && !chainId) {
       const paymentIdValidation = validateAndCleanObjectId(paymentId, 'Payment ID');
       if (!paymentIdValidation.isValid) {
@@ -1270,7 +1247,6 @@ async function handleGetChainInfo(request) {
       
       targetChainId = payment.partialChainId;
       
-      // If payment doesn't have a chain ID, create a single-item chain
       if (!targetChainId) {
         const chainInfo = {
           chainId: `single_${payment._id}`,
@@ -1301,8 +1277,51 @@ async function handleGetChainInfo(request) {
       }
     }
     
-    // Get chain information
-    const chainInfo = await EMIPayment.getChainSummary(targetChainId);
+    // ✅ FIXED: Get chain information WITH loan filter
+    let chainInfo;
+    if (loanId) {
+      // Filter chain by loan ID to prevent mixing payments from different loans
+      const payments = await EMIPayment.find({ 
+        partialChainId: targetChainId,
+        loanId: loanId // ✅ FILTER BY LOAN ID
+      });
+      
+      if (payments.length === 0) {
+        return NextResponse.json({
+          success: false,
+          error: 'No payments found for this chain and loan combination'
+        }, { status: 404 });
+      }
+      
+      const parentPayment = payments.find(p => !p.chainParentId) || payments[0];
+      const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+      const installmentTotal = parentPayment.installmentTotalAmount || parentPayment.amount;
+      
+      chainInfo = {
+        chainId: targetChainId,
+        parentPaymentId: parentPayment._id,
+        loanId: parentPayment.loanId,
+        loanNumber: parentPayment.loanNumber,
+        customerId: parentPayment.customerId,
+        customerName: parentPayment.customerName,
+        installmentTotalAmount: installmentTotal,
+        totalPaidAmount: totalPaid,
+        remainingAmount: Math.max(0, installmentTotal - totalPaid),
+        isComplete: totalPaid >= installmentTotal,
+        paymentCount: payments.length,
+        payments: payments.map(p => ({
+          _id: p._id,
+          amount: p.amount,
+          status: p.status,
+          paymentDate: p.paymentDate,
+          collectedBy: p.collectedBy,
+          chainSequence: p.chainSequence
+        }))
+      };
+    } else {
+      // Original logic (for backward compatibility)
+      chainInfo = await EMIPayment.getChainSummary(targetChainId);
+    }
     
     if (!chainInfo) {
       return NextResponse.json({
@@ -1337,11 +1356,10 @@ export async function GET(request) {
     const paymentType = searchParams.get('paymentType');
     const isAdvance = searchParams.get('isAdvance');
     const limit = parseInt(searchParams.get('limit')) || 50;
-    const chainId = searchParams.get('chainId'); // ✅ NEW: Filter by chain
+    const chainId = searchParams.get('chainId');
 
     let query = {};
 
-    // Filter by customer ID (with cleaning)
     if (customerId) {
       const cleanedCustomerId = cleanId(customerId);
       if (mongoose.Types.ObjectId.isValid(cleanedCustomerId)) {
@@ -1354,7 +1372,6 @@ export async function GET(request) {
       }
     }
 
-    // Filter by loan ID (with cleaning)
     if (loanId) {
       const cleanedLoanId = cleanId(loanId);
       if (mongoose.Types.ObjectId.isValid(cleanedLoanId)) {
@@ -1367,12 +1384,10 @@ export async function GET(request) {
       }
     }
 
-    // ✅ NEW: Filter by chain ID
     if (chainId) {
       query.partialChainId = chainId;
     }
 
-    // Filter by collection date - now using string comparison
     if (date) {
       const dateStr = formatToYYYYMMDD(date);
       if (dateStr) {
@@ -1380,17 +1395,14 @@ export async function GET(request) {
       }
     }
 
-    // Filter by collector
     if (collectedBy) {
       query.collectedBy = collectedBy;
     }
 
-    // Filter by payment type
     if (paymentType) {
       query.paymentType = paymentType;
     }
 
-    // Filter by advance payments
     if (isAdvance !== null) {
       query.isAdvancePayment = isAdvance === 'true';
     }
@@ -1401,7 +1413,6 @@ export async function GET(request) {
       .sort({ paymentDate: -1, createdAt: -1 })
       .limit(limit);
 
-    // Get today's total collection - INCLUDE 'Advance' status
     const today = getCurrentDateString();
     const tomorrow = addDays(today, 1);
 
@@ -1424,7 +1435,6 @@ export async function GET(request) {
       }
     ]);
 
-    // Get customer-wise today's collection - INCLUDE 'Advance' status
     const customerWiseStats = await EMIPayment.aggregate([
       {
         $match: {
@@ -1484,7 +1494,6 @@ export async function GET(request) {
   }
 }
 
-// PUT method to update EMI payment
 export async function PUT(request) {
   try {
     await connectDB();
@@ -1502,7 +1511,6 @@ export async function PUT(request) {
     const body = await request.json();
     const { amount, paymentDate, status, notes, collectedBy, updateChainTotals = true } = body;
 
-    // Validate required fields
     if (!amount || !paymentDate) {
       return NextResponse.json(
         { success: false, error: 'Amount and payment date are required' },
@@ -1510,7 +1518,6 @@ export async function PUT(request) {
       );
     }
 
-    // Validate payment date format
     const paymentDateStr = formatToYYYYMMDD(paymentDate);
     if (!paymentDateStr || !isValidYYYYMMDD(paymentDateStr)) {
       return NextResponse.json(
@@ -1519,7 +1526,6 @@ export async function PUT(request) {
       );
     }
 
-    // Clean payment ID
     const cleanedPaymentId = cleanId(paymentId);
     if (!mongoose.Types.ObjectId.isValid(cleanedPaymentId)) {
       return NextResponse.json(
@@ -1530,7 +1536,6 @@ export async function PUT(request) {
 
     console.log('🟡 Updating EMI payment:', { paymentId: cleanedPaymentId, updates: body });
 
-    // Find the payment first to get original data
     const payment = await EMIPayment.findById(cleanedPaymentId);
     if (!payment) {
       return NextResponse.json(
@@ -1539,12 +1544,10 @@ export async function PUT(request) {
       );
     }
 
-    // Store original values for comparison
     const originalAmount = payment.amount;
     const originalPaymentDate = payment.paymentDate;
     const originalStatus = payment.status;
 
-    // Update payment fields
     payment.amount = parseFloat(amount);
     payment.paymentDate = paymentDateStr;
     payment.status = status || payment.status;
@@ -1552,7 +1555,6 @@ export async function PUT(request) {
     payment.collectedBy = collectedBy || payment.collectedBy;
     payment.updatedAt = new Date();
 
-    // Add edit history note
     const editNote = `Payment edited: Amount changed from ₹${originalAmount} to ₹${amount}`;
     if (originalPaymentDate !== paymentDateStr) {
       payment.notes = `${editNote}, Date changed from ${formatToDDMMYYYY(originalPaymentDate)} to ${formatToDDMMYYYY(paymentDateStr)}. ${payment.notes || ''}`;
@@ -1560,7 +1562,6 @@ export async function PUT(request) {
       payment.notes = `${editNote}. ${payment.notes || ''}`;
     }
 
-    // Handle chain updates if needed
     let chainUpdateResult = null;
     if (updateChainTotals && payment.partialChainId) {
       chainUpdateResult = await EMIPayment.updateChainTotals(payment.partialChainId);
@@ -1570,7 +1571,16 @@ export async function PUT(request) {
 
     console.log('✅ EMI payment updated successfully:', cleanedPaymentId);
 
-    // Update loan statistics if payment has a loan ID
+    // ✅ FIXED: Sync with loan emiHistory
+    if (payment.loanId) {
+      try {
+        await EMIPayment.syncWithLoanHistory(payment._id);
+        console.log('✅ Payment synced with loan emiHistory');
+      } catch (syncError) {
+        console.error('⚠️ Error syncing with loan history:', syncError);
+      }
+    }
+
     if (payment.loanId) {
       try {
         const loanPayments = await EMIPayment.find({
@@ -1581,7 +1591,6 @@ export async function PUT(request) {
         const totalPaidAmount = loanPayments.reduce((sum, p) => sum + p.amount, 0);
         const emiPaidCount = loanPayments.length;
         
-        // Update loan with correct schedule dates
         const loan = await Loan.findById(payment.loanId);
         if (loan) {
           const lastScheduledEmiDate = calculateLastScheduledEmiDate(
@@ -1607,7 +1616,6 @@ export async function PUT(request) {
             updatedAt: new Date()
           };
           
-          // Update status to 'completed' if loan is now complete
           if (emiPaidCount >= loan.totalEmiCount) {
             updateData.status = 'completed';
             updateData.nextEmiDate = null;
@@ -1615,18 +1623,13 @@ export async function PUT(request) {
           
           await Loan.findByIdAndUpdate(payment.loanId, updateData);
 
-          console.log('✅ Loan statistics updated after payment edit:', {
-            lastEmiDate: lastScheduledEmiDate,
-            nextEmiDate: nextScheduledEmiDate,
-            status: updateData.status
-          });
+          console.log('✅ Loan statistics updated after payment edit');
         }
       } catch (loanUpdateError) {
         console.error('⚠️ Error updating loan statistics after edit:', loanUpdateError);
       }
     }
 
-    // Update customer total paid if needed
     if (originalAmount !== parseFloat(amount)) {
       try {
         const customerPayments = await EMIPayment.find({
@@ -1673,14 +1676,13 @@ export async function PUT(request) {
   }
 }
 
-// DELETE method to delete EMI payment
 export async function DELETE(request) {
   try {
     await connectDB();
     
     const { searchParams } = new URL(request.url);
     const paymentId = searchParams.get('id');
-    const deleteChain = searchParams.get('deleteChain') === 'true'; // ✅ NEW: Option to delete entire chain
+    const deleteChain = searchParams.get('deleteChain') === 'true';
     
     if (!paymentId) {
       return NextResponse.json(
@@ -1689,7 +1691,6 @@ export async function DELETE(request) {
       );
     }
 
-    // Clean payment ID
     const cleanedPaymentId = cleanId(paymentId);
     if (!mongoose.Types.ObjectId.isValid(cleanedPaymentId)) {
       return NextResponse.json(
@@ -1700,7 +1701,6 @@ export async function DELETE(request) {
 
     console.log('🟡 Deleting EMI payment:', { paymentId: cleanedPaymentId, deleteChain });
 
-    // Find the payment first to get related data
     const payment = await EMIPayment.findById(cleanedPaymentId);
     if (!payment) {
       return NextResponse.json(
@@ -1709,28 +1709,22 @@ export async function DELETE(request) {
       );
     }
 
-    // Store related data before deletion
     const { loanId, customerId, amount, partialChainId } = payment;
     let deletedPayments = [payment];
     let chainUpdateResult = null;
 
-    // ✅ NEW: Handle chain deletion if requested
     if (deleteChain && partialChainId) {
       console.log('🗑️ Deleting entire chain:', partialChainId);
       
-      // Find all payments in the chain
       const chainPayments = await EMIPayment.find({ partialChainId });
       deletedPayments = chainPayments;
       
-      // Delete all payments in the chain
       await EMIPayment.deleteMany({ partialChainId });
       
       console.log(`✅ Deleted ${chainPayments.length} payments in chain`);
     } else {
-      // Just delete the single payment
       await EMIPayment.findByIdAndDelete(cleanedPaymentId);
       
-      // If this payment was part of a chain, update the chain
       if (partialChainId) {
         chainUpdateResult = await EMIPayment.updateChainTotals(partialChainId);
       }
@@ -1738,7 +1732,6 @@ export async function DELETE(request) {
 
     console.log('✅ EMI payment deleted successfully:', cleanedPaymentId);
 
-    // Update loan statistics if payment had a loan ID
     if (loanId) {
       try {
         const loanPayments = await EMIPayment.find({
@@ -1749,7 +1742,6 @@ export async function DELETE(request) {
         const totalPaidAmount = loanPayments.reduce((sum, p) => sum + p.amount, 0);
         const emiPaidCount = loanPayments.length;
 
-        // Get loan to calculate remaining amount and update dates
         const loan = await Loan.findById(loanId);
         if (loan) {
           const lastScheduledEmiDate = calculateLastScheduledEmiDate(
@@ -1775,7 +1767,6 @@ export async function DELETE(request) {
             updatedAt: new Date()
           };
           
-          // Update status to 'completed' if loan is now complete
           if (emiPaidCount >= loan.totalEmiCount) {
             updateData.status = 'completed';
             updateData.nextEmiDate = null;
@@ -1783,18 +1774,13 @@ export async function DELETE(request) {
           
           await Loan.findByIdAndUpdate(loanId, updateData);
 
-          console.log('✅ Loan statistics updated after payment deletion:', {
-            lastEmiDate: lastScheduledEmiDate,
-            nextEmiDate: nextScheduledEmiDate,
-            status: updateData.status
-          });
+          console.log('✅ Loan statistics updated after payment deletion');
         }
       } catch (loanUpdateError) {
         console.error('⚠️ Error updating loan statistics after deletion:', loanUpdateError);
       }
     }
 
-    // Update customer total paid
     if (customerId) {
       try {
         const customerPayments = await EMIPayment.find({
@@ -1807,7 +1793,7 @@ export async function DELETE(request) {
         await Customer.findByIdAndUpdate(customerId, {
           totalPaid: totalCustomerPaid,
           updatedAt: new Date()
-        });  // FIXED: Changed from ) to }
+        });
 
         console.log('✅ Customer total paid updated after payment deletion');
       } catch (customerUpdateError) {
