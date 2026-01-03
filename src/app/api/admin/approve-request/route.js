@@ -1873,20 +1873,13 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
     try {
       session.startTransaction();
       
-      // Calculate next EMI date (should be same as emiStartDate for new renewed loan)
-      let nextEmiDateStr = getNextEmiDate(emiStartDateStr, requestedData.newLoanType, 0);
-
-// FIX: If nextEmiDateStr is invalid, use emiStartDateStr
-if (!nextEmiDateStr || !isValidYYYYMMDD(nextEmiDateStr)) {
-  console.warn('⚠️ nextEmiDateStr is invalid, using emiStartDateStr');
-  nextEmiDateStr = emiStartDateStr;
-}
-
+      // CRITICAL FIX: For NEW loans, nextEmiDate should be emiStartDate
+      let nextEmiDateStr = emiStartDateStr; // For new loans, next EMI = EMI start date
+      
       console.log('📅 DEBUG - EMI Date calculation for renewal:', {
         loanNumber: newLoanNumber,
         emiStartDateStr,
         loanType: requestedData.newLoanType,
-        emiPaidCount: 0,
         nextEmiDateStr,
         shouldBeEqual: nextEmiDateStr === emiStartDateStr
       });
@@ -1895,17 +1888,13 @@ if (!nextEmiDateStr || !isValidYYYYMMDD(nextEmiDateStr)) {
       const startDateStr = renewalDateStr; // Already in YYYY-MM-DD format
       const endDateStr = addDaysToString(renewalDateStr, newLoanDays);
 
-      // EXTRA VALIDATION: Ensure nextEmiDate is valid and not before emiStartDate
+      // Validate date strings
       if (!isValidYYYYMMDD(nextEmiDateStr)) {
         console.warn('⚠️ nextEmiDateStr is invalid, using emiStartDateStr');
         nextEmiDateStr = emiStartDateStr;
       }
-      if (nextEmiDateStr < emiStartDateStr) {
-        console.warn('⚠️ nextEmiDate is before emiStartDate, adjusting');
-        nextEmiDateStr = emiStartDateStr;
-      }
 
-      // **FIXED: Create new loan with string dates INCLUDING renewedDate**
+      // **FIXED: Create new loan with ALL required fields including nextEmiDate**
       const newLoan = new Loan({
         customerId: customerId,
         customerName: customer.name,
@@ -1919,11 +1908,11 @@ if (!nextEmiDateStr || !isValidYYYYMMDD(nextEmiDateStr)) {
         emiType: requestedData.emiType || 'fixed',
         customEmiAmount: requestedData.customEmiAmount ? parseFloat(requestedData.customEmiAmount) : null,
         emiStartDate: emiStartDateStr, // STORE AS STRING
+        // CRITICAL FIX: nextEmiDate MUST be set for new loans
+        nextEmiDate: nextEmiDateStr, // STORE AS STRING - REQUIRED FIELD
         totalEmiCount: newLoanDays,
         emiPaidCount: 0,
         lastEmiDate: null,
-        // FIXED: For new renewed loans, nextEmiDate should be emiStartDate (no increment)
-        nextEmiDate: nextEmiDateStr, // STORE AS STRING
         totalPaidAmount: 0,
         remainingAmount: totalLoanAmount,
         status: 'active',
@@ -1952,36 +1941,36 @@ if (!nextEmiDateStr || !isValidYYYYMMDD(nextEmiDateStr)) {
       console.log('🔍 DEBUG - Date fields validation for renewal:', {
         startDate: newLoan.startDate,
         endDate: newLoan.endDate,
-        nextEmiDate: newLoan.nextEmiDate,
+        nextEmiDate: newLoan.nextEmiDate, // Check this exists
         emiStartDate: newLoan.emiStartDate,
         dateApplied: newLoan.dateApplied,
-        renewedDate: newLoan.renewedDate, // NEW: Check renewedDate
+        renewedDate: newLoan.renewedDate,
         allAreStrings: typeof newLoan.startDate === 'string' && 
                       typeof newLoan.endDate === 'string' && 
                       typeof newLoan.nextEmiDate === 'string' && 
                       typeof newLoan.emiStartDate === 'string' && 
                       typeof newLoan.dateApplied === 'string' &&
-                      typeof newLoan.renewedDate === 'string', // NEW: Include renewedDate
+                      typeof newLoan.renewedDate === 'string',
         isValidStartDate: isValidYYYYMMDD(newLoan.startDate),
         isValidEndDate: isValidYYYYMMDD(newLoan.endDate),
         isValidNextEmiDate: isValidYYYYMMDD(newLoan.nextEmiDate),
         isValidEmiStartDate: isValidYYYYMMDD(newLoan.emiStartDate),
         isValidDateApplied: isValidYYYYMMDD(newLoan.dateApplied),
-        isValidRenewedDate: isValidYYYYMMDD(newLoan.renewedDate), // NEW: Validate renewedDate
+        isValidRenewedDate: isValidYYYYMMDD(newLoan.renewedDate),
         nextEmiDateEqualsEmiStartDate: newLoan.nextEmiDate === newLoan.emiStartDate
       });
 
       console.log('💾 Creating renewed loan with data:', {
         loanNumber: newLoan.loanNumber,
-        amount: newLoan.amount, // Principal amount
+        amount: newLoan.amount,
         emiAmount: newLoan.emiAmount,
         loanType: newLoan.loanType,
         loanDays: newLoan.loanDays,
-        totalLoanAmount: newLoan.totalLoanAmount, // Total amount
+        totalLoanAmount: newLoan.totalLoanAmount,
         dateApplied: newLoan.dateApplied,
         emiStartDate: newLoan.emiStartDate,
-        nextEmiDate: newLoan.nextEmiDate,
-        renewedDate: newLoan.renewedDate, // NEW: Include renewedDate
+        nextEmiDate: newLoan.nextEmiDate, // Ensure this shows
+        renewedDate: newLoan.renewedDate,
         startDate: newLoan.startDate,
         endDate: newLoan.endDate
       });
@@ -1993,7 +1982,7 @@ if (!nextEmiDateStr || !isValidYYYYMMDD(nextEmiDateStr)) {
       originalLoan.isRenewed = true;
       originalLoan.status = 'renewed';
       originalLoan.renewedLoanNumber = newLoanNumber;
-      originalLoan.renewedDate = getTodayDateString(); // Set renewedDate on original loan
+      originalLoan.renewedDate = getTodayDateString();
       originalLoan.updatedAt = new Date();
       // Clear future EMI dates since loan is renewed
       originalLoan.nextEmiDate = null;
@@ -2014,23 +2003,17 @@ if (!nextEmiDateStr || !isValidYYYYMMDD(nextEmiDateStr)) {
       console.log('✅ Loan renewal completed successfully:', {
         originalLoan: originalLoan.loanNumber,
         newLoan: newLoanNumber,
-        principalAmount: newLoanAmount, // Principal
-        totalLoanAmount: totalLoanAmount, // Total
+        principalAmount: newLoanAmount,
+        totalLoanAmount: totalLoanAmount,
         newEMI: newEmiAmount,
         newType: requestedData.newLoanType,
         newDays: newLoanDays,
         dateApplied: newLoan.dateApplied,
         emiStartDate: newLoan.emiStartDate,
-        nextEmiDate: newLoan.nextEmiDate,
-        renewedDate: newLoan.renewedDate, // NEW: Include renewedDate
+        nextEmiDate: newLoan.nextEmiDate, // This should show
+        renewedDate: newLoan.renewedDate,
         startDate: newLoan.startDate,
-        endDate: newLoan.endDate,
-        dateAppliedDisplay: formatToDDMMYYYY(newLoan.dateApplied),
-        emiStartDateDisplay: formatToDDMMYYYY(newLoan.emiStartDate),
-        nextEmiDateDisplay: formatToDDMMYYYY(newLoan.nextEmiDate),
-        renewedDateDisplay: formatToDDMMYYYY(newLoan.renewedDate), // NEW: Display renewedDate
-        startDateDisplay: formatToDDMMYYYY(newLoan.startDate),
-        endDateDisplay: formatToDDMMYYYY(newLoan.endDate)
+        endDate: newLoan.endDate
       });
 
       // Update the request
@@ -2063,25 +2046,18 @@ if (!nextEmiDateStr || !isValidYYYYMMDD(nextEmiDateStr)) {
             loanId: newLoan._id,
             loanNumber: newLoan.loanNumber,
             customerName: customer.name,
-            amount: newLoanAmount, // Principal
-            totalLoanAmount: totalLoanAmount, // Total
+            amount: newLoanAmount,
+            totalLoanAmount: totalLoanAmount,
             emiAmount: newEmiAmount,
             loanType: requestedData.newLoanType,
             loanDays: newLoanDays,
             originalLoanNumber: originalLoan.loanNumber,
-            renewedDate: newLoan.renewedDate, // NEW: Include renewedDate
+            renewedDate: newLoan.renewedDate,
             dateApplied: newLoan.dateApplied,
             emiStartDate: newLoan.emiStartDate,
             nextEmiDate: newLoan.nextEmiDate,
             startDate: newLoan.startDate,
-            endDate: newLoan.endDate,
-            // Display dates
-            dateAppliedDisplay: formatToDDMMYYYY(newLoan.dateApplied),
-            emiStartDateDisplay: formatToDDMMYYYY(newLoan.emiStartDate),
-            nextEmiDateDisplay: formatToDDMMYYYY(newLoan.nextEmiDate),
-            renewedDateDisplay: formatToDDMMYYYY(newLoan.renewedDate), // NEW: Display renewedDate
-            startDateDisplay: formatToDDMMYYYY(newLoan.startDate),
-            endDateDisplay: formatToDDMMYYYY(newLoan.endDate)
+            endDate: newLoan.endDate
           }
         }
       });
@@ -2090,6 +2066,16 @@ if (!nextEmiDateStr || !isValidYYYYMMDD(nextEmiDateStr)) {
       await session.abortTransaction();
       session.endSession();
       console.error('❌ Transaction error:', error);
+      
+      // Log detailed error for debugging
+      if (error.name === 'ValidationError') {
+        console.error('📋 Validation Error Details:', {
+          errors: error.errors,
+          nextEmiDateError: error.errors?.nextEmiDate,
+          renewedDateError: error.errors?.renewedDate
+        });
+      }
+      
       throw error;
     }
 
