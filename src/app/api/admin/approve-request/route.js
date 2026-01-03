@@ -1899,7 +1899,7 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
         nextEmiDateStr = emiStartDateStr;
       }
 
-      // **FIXED: Create new loan with string dates**
+      // **FIXED: Create new loan with string dates INCLUDING renewedDate**
       const newLoan = new Loan({
         customerId: customerId,
         customerName: customer.name,
@@ -1919,11 +1919,13 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
         // FIXED: For new renewed loans, nextEmiDate should be emiStartDate (no increment)
         nextEmiDate: nextEmiDateStr, // STORE AS STRING
         totalPaidAmount: 0,
-        remainingAmount: newLoanAmount,
+        remainingAmount: totalLoanAmount,
         status: 'active',
         createdBy: requestDoc.createdBy || 'system',
         // Track the original loan
         originalLoanNumber: originalLoan.loanNumber,
+        // CRITICAL FIX: Add renewedDate field for the NEW loan
+        renewedDate: renewalDateStr, // YYYY-MM-DD string - REQUIRED FIELD
         // Calculate daily EMI for compatibility
         dailyEMI: requestedData.newLoanType === 'Daily' ? newEmiAmount : 
                  requestedData.newLoanType === 'Weekly' ? newEmiAmount / 7 :
@@ -1947,16 +1949,19 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
         nextEmiDate: newLoan.nextEmiDate,
         emiStartDate: newLoan.emiStartDate,
         dateApplied: newLoan.dateApplied,
+        renewedDate: newLoan.renewedDate, // NEW: Check renewedDate
         allAreStrings: typeof newLoan.startDate === 'string' && 
                       typeof newLoan.endDate === 'string' && 
                       typeof newLoan.nextEmiDate === 'string' && 
                       typeof newLoan.emiStartDate === 'string' && 
-                      typeof newLoan.dateApplied === 'string',
+                      typeof newLoan.dateApplied === 'string' &&
+                      typeof newLoan.renewedDate === 'string', // NEW: Include renewedDate
         isValidStartDate: isValidYYYYMMDD(newLoan.startDate),
         isValidEndDate: isValidYYYYMMDD(newLoan.endDate),
         isValidNextEmiDate: isValidYYYYMMDD(newLoan.nextEmiDate),
         isValidEmiStartDate: isValidYYYYMMDD(newLoan.emiStartDate),
         isValidDateApplied: isValidYYYYMMDD(newLoan.dateApplied),
+        isValidRenewedDate: isValidYYYYMMDD(newLoan.renewedDate), // NEW: Validate renewedDate
         nextEmiDateEqualsEmiStartDate: newLoan.nextEmiDate === newLoan.emiStartDate
       });
 
@@ -1970,6 +1975,7 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
         dateApplied: newLoan.dateApplied,
         emiStartDate: newLoan.emiStartDate,
         nextEmiDate: newLoan.nextEmiDate,
+        renewedDate: newLoan.renewedDate, // NEW: Include renewedDate
         startDate: newLoan.startDate,
         endDate: newLoan.endDate
       });
@@ -1981,7 +1987,7 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
       originalLoan.isRenewed = true;
       originalLoan.status = 'renewed';
       originalLoan.renewedLoanNumber = newLoanNumber;
-      originalLoan.renewedDate = new Date();
+      originalLoan.renewedDate = getTodayDateString(); // Set renewedDate on original loan
       originalLoan.updatedAt = new Date();
       // Clear future EMI dates since loan is renewed
       originalLoan.nextEmiDate = null;
@@ -1990,7 +1996,8 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
         originalLoan: originalLoan.loanNumber,
         newLoanNumber: newLoanNumber,
         isRenewed: originalLoan.isRenewed,
-        status: originalLoan.status
+        status: originalLoan.status,
+        renewedDate: originalLoan.renewedDate
       });
       
       await originalLoan.save({ session });
@@ -2009,11 +2016,13 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
         dateApplied: newLoan.dateApplied,
         emiStartDate: newLoan.emiStartDate,
         nextEmiDate: newLoan.nextEmiDate,
+        renewedDate: newLoan.renewedDate, // NEW: Include renewedDate
         startDate: newLoan.startDate,
         endDate: newLoan.endDate,
         dateAppliedDisplay: formatToDDMMYYYY(newLoan.dateApplied),
         emiStartDateDisplay: formatToDDMMYYYY(newLoan.emiStartDate),
         nextEmiDateDisplay: formatToDDMMYYYY(newLoan.nextEmiDate),
+        renewedDateDisplay: formatToDDMMYYYY(newLoan.renewedDate), // NEW: Display renewedDate
         startDateDisplay: formatToDDMMYYYY(newLoan.startDate),
         endDateDisplay: formatToDDMMYYYY(newLoan.endDate)
       });
@@ -2039,6 +2048,7 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
             loanNumber: originalLoan.loanNumber,
             isRenewed: true,
             renewedLoanNumber: newLoanNumber,
+            renewedDate: originalLoan.renewedDate,
             status: 'renewed',
             dateAppliedDisplay: formatToDDMMYYYY(originalLoan.dateApplied),
             emiStartDateDisplay: formatToDDMMYYYY(originalLoan.emiStartDate)
@@ -2053,6 +2063,7 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
             loanType: requestedData.newLoanType,
             loanDays: newLoanDays,
             originalLoanNumber: originalLoan.loanNumber,
+            renewedDate: newLoan.renewedDate, // NEW: Include renewedDate
             dateApplied: newLoan.dateApplied,
             emiStartDate: newLoan.emiStartDate,
             nextEmiDate: newLoan.nextEmiDate,
@@ -2062,6 +2073,7 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
             dateAppliedDisplay: formatToDDMMYYYY(newLoan.dateApplied),
             emiStartDateDisplay: formatToDDMMYYYY(newLoan.emiStartDate),
             nextEmiDateDisplay: formatToDDMMYYYY(newLoan.nextEmiDate),
+            renewedDateDisplay: formatToDDMMYYYY(newLoan.renewedDate), // NEW: Display renewedDate
             startDateDisplay: formatToDDMMYYYY(newLoan.startDate),
             endDateDisplay: formatToDDMMYYYY(newLoan.endDate)
           }
