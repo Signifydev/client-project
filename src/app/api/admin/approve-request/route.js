@@ -1876,6 +1876,12 @@ async function approveLoanRenew(requestDoc, reason, processedBy) {
       // Calculate next EMI date (should be same as emiStartDate for new renewed loan)
       let nextEmiDateStr = getNextEmiDate(emiStartDateStr, requestedData.newLoanType, 0);
 
+// FIX: If nextEmiDateStr is invalid, use emiStartDateStr
+if (!nextEmiDateStr || !isValidYYYYMMDD(nextEmiDateStr)) {
+  console.warn('⚠️ nextEmiDateStr is invalid, using emiStartDateStr');
+  nextEmiDateStr = emiStartDateStr;
+}
+
       console.log('📅 DEBUG - EMI Date calculation for renewal:', {
         loanNumber: newLoanNumber,
         emiStartDateStr,
