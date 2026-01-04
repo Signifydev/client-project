@@ -96,48 +96,57 @@ export default function LoanDetailsModal({ stats, onClose }: LoanDetailsModalPro
             </button>
           </div>
 
-          {/* Time Range Filter */}
-          <div className="flex space-x-2 mb-4">
-            {['daily', 'weekly', 'monthly'].map((range) => (
-              <button
-                key={range}
-                onClick={() => handleTimeRangeChange(range)}
-                className={`px-4 py-2 rounded-md text-sm font-medium ${
-                  timeRange === range
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
-              >
-                {range.charAt(0).toUpperCase() + range.slice(1)}
-              </button>
-            ))}
-          </div>
+          {/* Single Filter Row - Loan Type & Time Range Combined */}
+          <div className="flex flex-wrap gap-3 mb-6">
+            {/* Time Range Filter */}
+            <div className="flex items-center space-x-2">
+              <span className="text-sm font-medium text-gray-700">Period:</span>
+              <div className="flex bg-gray-100 rounded-md p-1">
+                {['daily', 'weekly', 'monthly'].map((range) => (
+                  <button
+                    key={range}
+                    onClick={() => handleTimeRangeChange(range)}
+                    className={`px-3 py-1.5 rounded text-sm font-medium ${
+                      timeRange === range
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {range.charAt(0).toUpperCase() + range.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-          {/* Loan Type Filter */}
-          <div className="flex space-x-2 mb-6">
-            <button
-              onClick={() => handleLoanTypeFilter(null)}
-              className={`px-4 py-2 rounded-md text-sm font-medium ${
-                !selectedLoanType
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              All Loan Types
-            </button>
-            {['Daily', 'Weekly', 'Monthly'].map((type) => (
-              <button
-                key={type}
-                onClick={() => handleLoanTypeFilter(type)}
-                className={`px-4 py-2 rounded-md text-sm font-medium ${
-                  selectedLoanType === type
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
-              >
-                {type} Loans
-              </button>
-            ))}
+            {/* Loan Type Filter */}
+            <div className="flex items-center space-x-2">
+              <span className="text-sm font-medium text-gray-700">Loan Type:</span>
+              <div className="flex bg-gray-100 rounded-md p-1">
+                <button
+                  onClick={() => handleLoanTypeFilter(null)}
+                  className={`px-3 py-1.5 rounded text-sm font-medium ${
+                    !selectedLoanType
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  All Types
+                </button>
+                {['Daily', 'Weekly', 'Monthly'].map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => handleLoanTypeFilter(type)}
+                    className={`px-3 py-1.5 rounded text-sm font-medium ${
+                      selectedLoanType === type
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {type}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Summary Cards */}
