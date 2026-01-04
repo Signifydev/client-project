@@ -73,7 +73,7 @@ const calculateNumberOfEMIs = (
   }
 };
 
-// ✅ NEW: Calculate which installment number this payment is for
+// ✅ FIXED: Calculate which installment number this payment is for
 const calculateCurrentInstallmentNumber = (loan: Loan): number => {
   if (!loan) return 1;
   
@@ -81,12 +81,12 @@ const calculateCurrentInstallmentNumber = (loan: Loan): number => {
   return (loan.emiPaidCount || 0) + 1;
 };
 
-// ✅ NEW: Get correct EMI amount for the current installment
+// ✅ FIXED: Get correct EMI amount for the current installment
 const getCorrectEmiAmountForInstallment = (loan: Loan, installmentNumber: number): number => {
   if (!loan || !installmentNumber) return loan?.emiAmount || 0;
   
   console.log('🔍 Custom EMI Check:', {
-    loanType: loan.loanType,
+    loanNumber: loan.loanNumber,
     emiType: loan.emiType,
     totalEmiCount: loan.totalEmiCount,
     installmentNumber: installmentNumber,
@@ -111,7 +111,7 @@ const getCorrectEmiAmountForInstallment = (loan: Loan, installmentNumber: number
   return loan.emiAmount || 0;
 };
 
-// ✅ NEW: Calculate advance payment for custom EMI loans
+// ✅ FIXED: Calculate advance payment for custom EMI loans
 const calculateAdvancePaymentForCustomEMI = (
   loan: Loan,
   advanceFromDate: string,
@@ -219,18 +219,24 @@ export default function EMIUpdateModal({
   // Get the updateEMI function from useEMI hook
   const emiHook = useEMI(currentOperator.name);
   
-  // Create our own updateEMI function
+  // ✅ FIXED: Create our own updateEMI function with originalEmiAmount
   const updateEMI = async (emiData: EMIUpdateType) => {
     try {
-      console.log('📤 Sending to API:', {
+      // ✅ CRITICAL FIX: Get the correct EMI amount for this installment
+      const currentInstallment = calculateCurrentInstallmentNumber(selectedLoan!);
+      const correctEmiAmount = getCorrectEmiAmountForInstallment(selectedLoan!, currentInstallment);
+      
+      console.log('📤 Sending to API with correct EMI amount:', {
         ...emiData,
         operatorName: currentOperator.name,
         officeCategory: selectedCustomer?.officeCategory || 'Office 1',
         advanceFromDate: emiData.paymentType === 'advance' ? advanceFromDate : undefined,
         advanceToDate: emiData.paymentType === 'advance' ? advanceToDate : undefined,
         advanceEmiCount: emiData.paymentType === 'advance' ? numberOfEmis.toString() : undefined,
-        // ✅ CRITICAL FIX: Send total amount for advance payments
-        amount: emiData.paymentType === 'advance' ? totalAdvanceAmount.toString() : emiData.amount
+        // ✅ FIXED: Send total amount for advance payments
+        amount: emiData.paymentType === 'advance' ? totalAdvanceAmount.toString() : emiData.amount,
+        // ✅ CRITICAL FIX: Send original EMI amount for ALL payments
+        originalEmiAmount: correctEmiAmount
       });
 
       const response = await fetch('/api/data-entry/emi-payments', {
@@ -248,7 +254,9 @@ export default function EMIUpdateModal({
           // ✅ CRITICAL FIX: Send total amount for advance payments
           amount: emiData.paymentType === 'advance' ? totalAdvanceAmount.toString() : emiData.amount,
           // ✅ Also send advanceTotalAmount explicitly
-          advanceTotalAmount: emiData.paymentType === 'advance' ? totalAdvanceAmount.toString() : undefined
+          advanceTotalAmount: emiData.paymentType === 'advance' ? totalAdvanceAmount.toString() : undefined,
+          // ✅ CRITICAL FIX: Send original EMI amount (full EMI amount)
+          originalEmiAmount: correctEmiAmount
         }),
       });
 
@@ -283,9 +291,9 @@ export default function EMIUpdateModal({
 
   useEffect(() => {
     if (selectedLoan && selectedCustomer) {
-      // ✅ CRITICAL FIX: Calculate which installment we're paying
+      // ✅ FIXED: Calculate which installment we're paying
       const currentInstallment = calculateCurrentInstallmentNumber(selectedLoan);
-      // ✅ CRITICAL FIX: Get correct amount for this installment
+      // ✅ FIXED: Get correct amount for this installment
       const correctEmiAmount = getCorrectEmiAmountForInstallment(selectedLoan, currentInstallment);
       
       console.log('🎯 Setting correct EMI amount:', {
@@ -297,15 +305,19 @@ export default function EMIUpdateModal({
         standardEmiAmount: selectedLoan.emiAmount,
         customEmiAmount: selectedLoan.customEmiAmount,
         correctAmountForThisInstallment: correctEmiAmount,
-        isLastInstallment: currentInstallment === selectedLoan.totalEmiCount
+        isLastInstallment: currentInstallment === selectedLoan.totalEmiCount,
+        // ✅ NEW: Log original EMI amount for debugging
+        originalEmiAmountWillBeSent: correctEmiAmount
       });
       
       setEmiUpdate(prev => ({
         ...prev,
         loanId: selectedLoan._id || '',
         loanNumber: selectedLoan.loanNumber,
-        amount: correctEmiAmount.toString(), // ✅ Use CORRECT amount
-        paymentDate: new Date().toISOString().split('T')[0]
+        amount: correctEmiAmount.toString(), // ✅ Use CORRECT full EMI amount as default
+        paymentDate: new Date().toISOString().split('T')[0],
+        // ✅ NEW: Store the full EMI amount for reference
+        _fullEmiAmount: correctEmiAmount.toString() // This won't be sent to API, just for UI
       }));
       
       // Set default advance dates (today to today+7 days)
@@ -354,7 +366,7 @@ export default function EMIUpdateModal({
       return;
     }
 
-    // ✅ CRITICAL FIX: Use correct calculation for custom EMI loans
+    // ✅ FIXED: Use correct calculation for custom EMI loans
     if (selectedLoan.emiType === 'custom' && selectedLoan.loanType !== 'Daily') {
       const result = calculateAdvancePaymentForCustomEMI(selectedLoan, advanceFromDate, advanceToDate);
       
@@ -362,7 +374,7 @@ export default function EMIUpdateModal({
       setTotalAdvanceAmount(result.totalAmount);
       setAdvanceBreakdown(result.breakdown);
       
-      // ✅ CRITICAL FIX: Update emiUpdate with the CORRECT total amount
+      // ✅ FIXED: Update emiUpdate with the CORRECT total amount
       setEmiUpdate(prev => ({
         ...prev,
         amount: selectedLoan.emiAmount?.toString() || '0', // Keep standard amount for display
@@ -423,6 +435,29 @@ export default function EMIUpdateModal({
         alert('Please enter a valid amount');
         return;
       }
+      
+      // ✅ NEW: Validate partial payment amount
+      if (emiUpdate.status === 'Partial') {
+        const currentInstallment = calculateCurrentInstallmentNumber(selectedLoan!);
+        const fullEmiAmount = getCorrectEmiAmountForInstallment(selectedLoan!, currentInstallment);
+        const partialAmount = parseFloat(emiUpdate.amount);
+        
+        if (partialAmount >= fullEmiAmount) {
+          alert(`Partial payment (₹${partialAmount}) should be less than full EMI amount (₹${fullEmiAmount}). Please change status to "Paid" or reduce amount.`);
+          return;
+        }
+        
+        if (partialAmount <= 0) {
+          alert('Partial payment amount must be greater than 0');
+          return;
+        }
+        
+        console.log('✅ Partial payment validation passed:', {
+          partialAmount,
+          fullEmiAmount,
+          remaining: fullEmiAmount - partialAmount
+        });
+      }
     } else {
       // Advance payment validation
       if (!advanceFromDate || !advanceToDate) {
@@ -461,7 +496,11 @@ export default function EMIUpdateModal({
 
     setIsLoading(true);
     try {
-      // ✅ CRITICAL FIX: Prepare correct data for API
+      // ✅ FIXED: Calculate correct EMI amount to send as originalEmiAmount
+      const currentInstallment = calculateCurrentInstallmentNumber(selectedLoan!);
+      const correctEmiAmount = getCorrectEmiAmountForInstallment(selectedLoan!, currentInstallment);
+      
+      // ✅ FIXED: Prepare correct data for API
       const paymentData = {
         ...emiUpdate,
         advanceFromDate: emiUpdate.paymentType === 'advance' ? advanceFromDate : undefined,
@@ -469,12 +508,15 @@ export default function EMIUpdateModal({
         advanceEmiCount: emiUpdate.paymentType === 'advance' ? numberOfEmis.toString() : undefined,
         advanceTotalAmount: emiUpdate.paymentType === 'advance' ? totalAdvanceAmount.toString() : undefined,
         // ✅ For advance payments, send the TOTAL amount, not single EMI amount
-        amount: emiUpdate.paymentType === 'advance' ? totalAdvanceAmount.toString() : emiUpdate.amount
+        amount: emiUpdate.paymentType === 'advance' ? totalAdvanceAmount.toString() : emiUpdate.amount,
+        // ✅ CRITICAL FIX: Send original EMI amount (full amount)
+        originalEmiAmount: correctEmiAmount
       };
 
-      console.log('📤 Submitting payment:', {
+      console.log('📤 Submitting payment WITH originalEmiAmount:', {
         paymentType: emiUpdate.paymentType,
         amountSent: paymentData.amount,
+        originalEmiAmount: correctEmiAmount,
         totalAdvanceAmount,
         emiCount: numberOfEmis,
         perEmiAmount: selectedLoan?.emiAmount,
@@ -490,9 +532,18 @@ export default function EMIUpdateModal({
 
       await updateEMI(paymentData);
       
-      const message = emiUpdate.paymentType === 'advance' 
-        ? `${numberOfEmis} Advance EMI payments recorded successfully for period ${formatDateToDDMMYYYY(advanceFromDate)} to ${formatDateToDDMMYYYY(advanceToDate)}! Total: ₹${totalAdvanceAmount}`
-        : 'EMI payment recorded successfully!';
+      // ✅ FIXED: Show different messages for partial vs full payments
+      let message = '';
+      if (emiUpdate.paymentType === 'advance') {
+        message = `${numberOfEmis} Advance EMI payments recorded successfully for period ${formatDateToDDMMYYYY(advanceFromDate)} to ${formatDateToDDMMYYYY(advanceToDate)}! Total: ₹${totalAdvanceAmount}`;
+      } else if (emiUpdate.status === 'Partial') {
+        const fullEmiAmount = correctEmiAmount;
+        const partialAmount = parseFloat(emiUpdate.amount);
+        const remainingAmount = fullEmiAmount - partialAmount;
+        message = `Partial payment of ₹${partialAmount} recorded successfully. Remaining amount: ₹${remainingAmount}. Next EMI date will NOT advance until full payment is made.`;
+      } else {
+        message = 'EMI payment recorded successfully!';
+      }
       
       alert(message);
       onSuccess?.();
@@ -544,7 +595,7 @@ export default function EMIUpdateModal({
     return customer._id || `customer-${Math.random().toString(36).substr(2, 9)}`;
   };
 
-  // ✅ NEW: Helper to display EMI breakdown for custom loans
+  // ✅ FIXED: Helper to display EMI breakdown for custom loans
   const renderEMIBreakdown = () => {
     if (!selectedLoan || selectedLoan.emiType !== 'custom' || selectedLoan.loanType === 'Daily') {
       return null;
@@ -557,10 +608,16 @@ export default function EMIUpdateModal({
     const paidCount = selectedLoan.emiPaidCount || 0;
     const remainingCount = (selectedLoan.totalEmiCount || 0) - paidCount;
     
+    // ✅ NEW: Show full EMI amount vs partial payment
+    const currentFullEmiAmount = getCorrectEmiAmountForInstallment(selectedLoan, currentInstallment);
+    const isPartialPayment = emiUpdate.status === 'Partial';
+    const partialAmount = parseFloat(emiUpdate.amount) || 0;
+    const remainingAmount = currentFullEmiAmount - partialAmount;
+    
     return (
       <div className="mt-4 p-4 bg-purple-50 border-2 border-purple-200 rounded-xl">
         <h4 className="font-medium text-purple-900 text-lg mb-2">Custom EMI Details</h4>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white p-3 rounded-lg border border-purple-100">
             <p className="text-xs text-purple-700 mb-1">Regular EMI (Weeks 1-{selectedLoan.totalEmiCount - 1})</p>
             <p className="font-semibold text-purple-900">₹{regularAmount.toLocaleString()}</p>
@@ -579,19 +636,41 @@ export default function EMIUpdateModal({
               Paid: {paidCount}, Remaining: {remainingCount}
             </p>
           </div>
+          <div className={`p-3 rounded-lg border ${
+            isPartialPayment ? 'bg-yellow-50 border-yellow-300' : 'bg-green-50 border-green-300'
+          }`}>
+            <p className="text-xs text-gray-700 mb-1">
+              {isPartialPayment ? 'Partial Payment' : 'Full EMI'}
+            </p>
+            <p className="font-bold text-lg">
+              {isPartialPayment 
+                ? `₹${partialAmount.toLocaleString()} / ₹${currentFullEmiAmount.toLocaleString()}`
+                : `₹${currentFullEmiAmount.toLocaleString()}`}
+            </p>
+            {isPartialPayment && (
+              <p className="text-sm text-yellow-700 mt-1">
+                Remaining: ₹{remainingAmount.toLocaleString()}
+              </p>
+            )}
+          </div>
         </div>
         <div className="mt-3 pt-3 border-t border-purple-100">
           <p className="text-sm text-purple-800">
             {isLastInstallment 
-              ? `✅ This is the LAST installment. Amount should be ₹${customAmount.toLocaleString()} (custom amount)`
-              : `✅ This is a regular installment. Amount should be ₹${regularAmount.toLocaleString()}`}
+              ? `✅ This is the LAST installment. Full EMI amount is ₹${customAmount.toLocaleString()} (custom amount)`
+              : `✅ This is a regular installment. Full EMI amount is ₹${regularAmount.toLocaleString()}`}
           </p>
+          {isPartialPayment && (
+            <p className="text-sm text-yellow-800 mt-1">
+              ⚠️ Partial payment: Next EMI date will remain as {emiUpdate.paymentDate} until full payment is made.
+            </p>
+          )}
         </div>
       </div>
     );
   };
 
-  // ✅ NEW: Helper to display advance payment breakdown
+  // ✅ FIXED: Helper to display advance payment breakdown
   const renderAdvanceBreakdown = () => {
     if (advanceBreakdown.length === 0 || emiUpdate.paymentType !== 'advance') {
       return null;
@@ -767,7 +846,7 @@ export default function EMIUpdateModal({
                       <p className="text-green-800 font-semibold text-xl mt-1 mb-4">{selectedLoan.loanNumber}</p>
                       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                         <div className="bg-white p-4 rounded-lg border border-green-100">
-                          <p className="text-xs text-green-700 mb-1">EMI Amount</p>
+                          <p className="text-xs text-green-700 mb-1">Full EMI Amount</p>
                           <p className="font-semibold text-green-900 text-lg">
                             ₹{selectedLoan.emiAmount || 0}
                             {selectedLoan.emiType === 'custom' && selectedLoan.loanType !== 'Daily' && (
@@ -916,22 +995,40 @@ export default function EMIUpdateModal({
                             emiUpdate.status === 'Paid' ? 'bg-gray-50' : 'bg-white'
                           }`}
                           value={emiUpdate.amount}
-                          onChange={(e) => setEmiUpdate(prev => ({ ...prev, amount: e.target.value }))}
-                          placeholder="Amount will be auto-filled based on installment"
+                          onChange={(e) => {
+                            const newValue = e.target.value;
+                            setEmiUpdate(prev => ({ ...prev, amount: newValue }));
+                            
+                            // ✅ NEW: Validate partial amount doesn't exceed full EMI
+                            if (emiUpdate.status === 'Partial' && newValue) {
+                              const currentInstallment = calculateCurrentInstallmentNumber(selectedLoan);
+                              const fullEmiAmount = getCorrectEmiAmountForInstallment(selectedLoan, currentInstallment);
+                              const partialAmount = parseFloat(newValue);
+                              
+                              if (partialAmount >= fullEmiAmount) {
+                                alert(`Partial payment cannot be equal to or greater than full EMI amount (₹${fullEmiAmount})`);
+                                setEmiUpdate(prev => ({ 
+                                  ...prev, 
+                                  amount: fullEmiAmount.toString(),
+                                  status: 'Paid' // Auto-change to Paid
+                                }));
+                              }
+                            }
+                          }}
+                          placeholder="Enter amount"
                           min="0"
-                          readOnly={emiUpdate.status === 'Paid'} // ✅ Allow editing only for Partial
                         />
                       </div>
                       <div className="mt-2">
                         <p className="text-sm text-gray-500">
                           {selectedLoan.emiType === 'custom' && selectedLoan.loanType !== 'Daily' 
-                            ? `Installment ${calculateCurrentInstallmentNumber(selectedLoan)} of ${selectedLoan.totalEmiCount}: ₹${emiUpdate.amount || 0}`
-                            : `EMI Amount: ₹${selectedLoan.emiAmount || 0}`}
+                            ? `Installment ${calculateCurrentInstallmentNumber(selectedLoan)} of ${selectedLoan.totalEmiCount}: Full EMI is ₹${getCorrectEmiAmountForInstallment(selectedLoan, calculateCurrentInstallmentNumber(selectedLoan)).toLocaleString()}`
+                            : `Full EMI Amount: ₹${selectedLoan.emiAmount || 0}`}
                         </p>
                         <p className="text-xs text-gray-500 mt-1">
                           {emiUpdate.status === 'Paid' 
-                            ? 'Amount auto-filled for full payment' 
-                            : 'Enter partial amount manually'}
+                            ? '✅ Full payment - Next EMI date will advance'
+                            : '⚠️ Partial payment - Next EMI date will NOT advance'}
                         </p>
                       </div>
                     </div>
@@ -947,14 +1044,14 @@ export default function EMIUpdateModal({
                             key={status}
                             type="button"
                             onClick={() => {
-                              // ✅ CRITICAL FIX: When changing status, get correct amount for current installment
+                              // ✅ FIXED: When changing status, get correct amount for current installment
                               const currentInstallment = calculateCurrentInstallmentNumber(selectedLoan);
                               const correctAmount = getCorrectEmiAmountForInstallment(selectedLoan, currentInstallment);
                               
                               setEmiUpdate(prev => ({ 
                                 ...prev, 
                                 status: status as 'Paid' | 'Partial',
-                                // Auto-fill correct amount for Paid, keep current for Partial
+                                // Auto-fill correct full amount for Paid, keep current for Partial
                                 amount: status === 'Paid' ? correctAmount.toString() : prev.amount
                               }));
                             }}
@@ -966,10 +1063,20 @@ export default function EMIUpdateModal({
                                 : 'border-gray-200 text-gray-700 hover:border-gray-300'
                             }`}
                           >
-                            {status}
+                            <div className="flex items-center justify-center">
+                              {status}
+                              {status === 'Partial' && (
+                                <span className="ml-2 text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">
+                                  ⚠️ Date won't advance
+                                </span>
+                              )}
+                            </div>
                           </button>
                         ))}
                       </div>
+                      <p className="text-xs text-gray-500 mt-2">
+                        Partial payments keep the next EMI date unchanged until full payment is made.
+                      </p>
                     </div>
 
                     {/* Collected By - Auto-filled */}
@@ -1038,7 +1145,7 @@ export default function EMIUpdateModal({
                               </p>
                             </div>
                             <div className="text-center p-4 bg-gray-50 rounded-lg">
-                              <p className="text-xs text-gray-600 mb-1">Per EMI Amount</p>
+                              <p className="text-xs text-gray-600 mb-1">Full EMI Amount</p>
                               <p className="font-semibold text-green-900 text-xl">
                                 {selectedLoan.emiType === 'custom' && selectedLoan.loanType !== 'Daily'
                                   ? `₹${selectedLoan.emiAmount || 0} (Regular)`
@@ -1168,14 +1275,18 @@ export default function EMIUpdateModal({
                 {isLoading 
                   ? 'Processing...' 
                   : emiUpdate.paymentType === 'advance' 
-                    ? `Record ${numberOfEmis} Advance Payments (₹${totalAdvanceAmount})` // ✅ Show total amount
-                    : 'Record Payment'}
+                    ? `Record ${numberOfEmis} Advance Payments (₹${totalAdvanceAmount})`
+                    : emiUpdate.status === 'Partial'
+                      ? `Record Partial Payment (₹${emiUpdate.amount})`
+                      : `Record Full Payment (₹${emiUpdate.amount})`}
               </button>
             </div>
             <p className="text-xs text-gray-500 text-center mt-4">
               {emiUpdate.paymentType === 'advance' 
                 ? `Advance payment will create ${numberOfEmis} individual payment records.`
-                : 'EMI payments are recorded immediately and cannot be undone without admin approval.'}
+                : emiUpdate.status === 'Partial'
+                  ? 'Partial payments will keep the next EMI date unchanged until full payment is made.'
+                  : 'EMI payments are recorded immediately and cannot be undone without admin approval.'}
             </p>
           </div>
         </div>

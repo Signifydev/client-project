@@ -13,7 +13,7 @@ export interface EMITransaction {
   status: string;
   paymentMethod?: string;
   notes?: string;
-  // ✅ NEW: Chain fields from updated schema
+  // ✅ FIXED: Chain fields from updated schema
   partialChainId?: string;
   chainParentId?: string;
   chainChildrenIds?: string[];
@@ -22,9 +22,11 @@ export interface EMITransaction {
   isChainComplete?: boolean;
   chainSequence?: number;
   originalEmiAmount?: number;
+  // ✅ NEW: Add loanId for better chain filtering
+  loanId?: string;
 }
 
-// ✅ NEW: Chain information interface
+// ✅ FIXED: Chain information interface
 interface ChainInfo {
   chainId: string;
   parentPaymentId: string;
@@ -33,6 +35,7 @@ interface ChainInfo {
   customerId: string;
   customerName: string;
   installmentTotalAmount: number;
+  originalEmiAmount?: number; // ✅ NEW: Add original EMI amount
   totalPaidAmount: number;
   remainingAmount: number;
   isComplete: boolean;
@@ -44,10 +47,11 @@ interface ChainInfo {
     paymentDate: string;
     collectedBy: string;
     chainSequence: number;
+    originalEmiAmount?: number; // ✅ NEW: Add to payments
   }>;
 }
 
-// ✅ NEW: Edit options type
+// ✅ FIXED: Edit options type
 type EditMode = 'none' | 'edit-amount' | 'complete-partial';
 
 interface EMITransactionsModalProps {
@@ -84,12 +88,12 @@ const calculateTotalLoanAmount = (loan: any): number => {
   return loan.emiAmount * totalEmiCount;
 };
 
-// ✅ NEW: Format currency for display
+// ✅ FIXED: Format currency for display
 const formatCurrency = (amount: number): string => {
   return `₹${amount.toLocaleString('en-IN')}`;
 };
 
-// ✅ NEW: Get status color class
+// ✅ FIXED: Get status color class
 const getStatusColorClass = (status: string): string => {
   switch (status) {
     case 'Paid':
@@ -123,11 +127,11 @@ export default function EMITransactionsModal({
   const [isEditing, setIsEditing] = useState(false);
   const [editError, setEditError] = useState<string>('');
   
-  // ✅ NEW: State for chain information
+  // ✅ FIXED: State for chain information
   const [chainInfo, setChainInfo] = useState<ChainInfo | null>(null);
   const [loadingChain, setLoadingChain] = useState(false);
   
-  // ✅ NEW: State for complete partial payment
+  // ✅ FIXED: State for complete partial payment
   const [additionalAmount, setAdditionalAmount] = useState<string>('');
   const [remainingAmount, setRemainingAmount] = useState<number>(0);
   const [chainPayments, setChainPayments] = useState<EMITransaction[]>([]);
@@ -165,87 +169,101 @@ export default function EMITransactionsModal({
     ? Math.min((totalAmount / totalExpectedAmount) * 100, 100) 
     : 0;
   
-  // ✅ NEW: Fetch chain information for a transaction
+  // ✅ FIXED: Fetch chain information for a transaction
   const fetchChainInfo = async (transaction: EMITransaction) => {
-  if (!transaction._id && !transaction.partialChainId) return null;
-  
-  setLoadingChain(true);
-  try {
-    let url = `/api/data-entry/emi-payments?action=get-chain-info&`;
+    if (!transaction._id && !transaction.partialChainId) return null;
     
-    if (transaction.partialChainId) {
-      url += `chainId=${transaction.partialChainId}`;
-    } else {
-      url += `paymentId=${transaction._id}`;
-    }
-    
-    // ✅ FIXED: Add loanId parameter to filter chain by specific loan
-    if (transaction.loanNumber && transaction.loanNumber !== 'N/A') {
-      // We need to get loanId from the transaction or customer loans
-      const customerLoan = customer.loans?.find((l: any) => l.loanNumber === transaction.loanNumber);
-      if (customerLoan?._id) {
-        url += `&loanId=${customerLoan._id}`;
-      }
-    }
-    
-    const response = await fetch(url);
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch chain info: ${response.status} ${response.statusText}`);
-    }
-    
-    const result = await response.json();
-    
-    if (result.success && result.data) {
-      setChainInfo(result.data);
-      setChainPayments(result.data.payments || []);
+    setLoadingChain(true);
+    try {
+      let url = `/api/data-entry/emi-payments?action=get-chain-info&`;
       
-      // Calculate remaining amount for partial payments
-      if (transaction.status === 'Partial') {
-        setRemainingAmount(result.data.remainingAmount || 0);
+      if (transaction.partialChainId) {
+        url += `chainId=${transaction.partialChainId}`;
+      } else {
+        url += `paymentId=${transaction._id}`;
       }
       
-      return result.data;
+      // ✅ FIXED: Add loanId parameter to filter chain by specific loan
+      if (transaction.loanNumber && transaction.loanNumber !== 'N/A') {
+        // We need to get loanId from the transaction or customer loans
+        const customerLoan = customer.loans?.find((l: any) => l.loanNumber === transaction.loanNumber);
+        if (customerLoan?._id) {
+          url += `&loanId=${customerLoan._id}`;
+        }
+      }
+      
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch chain info: ${response.status} ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      
+      if (result.success && result.data) {
+        setChainInfo(result.data);
+        setChainPayments(result.data.payments || []);
+        
+        // ✅ CRITICAL FIX: Calculate remaining amount correctly
+        // Use originalEmiAmount if available, otherwise use installmentTotalAmount
+        const fullEmiAmount = result.data.originalEmiAmount || 
+                             result.data.installmentTotalAmount || 
+                             transaction.amount;
+        
+        const totalPaid = result.data.totalPaidAmount || transaction.amount;
+        const remaining = Math.max(0, fullEmiAmount - totalPaid);
+        
+        setRemainingAmount(remaining);
+        
+        console.log('🔗 Chain info fetched:', {
+          fullEmiAmount,
+          totalPaid,
+          remaining,
+          originalEmiAmount: result.data.originalEmiAmount,
+          installmentTotalAmount: result.data.installmentTotalAmount
+        });
+        
+        return result.data;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error fetching chain info:', error);
+      return null;
+    } finally {
+      setLoadingChain(false);
     }
-    return null;
-  } catch (error) {
-    console.error('Error fetching chain info:', error);
-    return null;
-  } finally {
-    setLoadingChain(false);
-  }
-};
+  };
   
-  // ✅ NEW: Handle edit button click
+  // ✅ FIXED: Handle edit button click
   const handleEditClick = async (transaction: EMITransaction) => {
-  console.log('Editing transaction:', transaction);
-  
-  // ✅ FIXED: Pass loanId to filter chain by specific loan
-  const chainData = await fetchChainInfo(transaction);
-  
-  setEditingTransaction(transaction);
-  setEditAmount(transaction.amount.toString());
-  setEditStatus(transaction.status);
-  setEditError('');
-  setAdditionalAmount('');
-  
-  // Determine which edit mode to show based on payment status
-  if (transaction.status === 'Partial') {
-    // For partial payments, show both options
-    setEditMode('edit-amount');
-  } else {
-    // For paid payments, only show edit amount option
-    setEditMode('edit-amount');
-  }
-  
-  // If it's a partial payment, calculate remaining amount
-  if (transaction.status === 'Partial' && chainData) {
-    setRemainingAmount(chainData.remainingAmount || 0);
-    setAdditionalAmount(chainData.remainingAmount?.toString() || '0');
-  }
-};
+    console.log('Editing transaction:', transaction);
+    
+    // ✅ FIXED: Pass loanId to filter chain by specific loan
+    const chainData = await fetchChainInfo(transaction);
+    
+    setEditingTransaction(transaction);
+    setEditAmount(transaction.amount.toString());
+    setEditStatus(transaction.status);
+    setEditError('');
+    setAdditionalAmount('');
+    
+    // Determine which edit mode to show based on payment status
+    if (transaction.status === 'Partial') {
+      // For partial payments, show both options
+      setEditMode('edit-amount');
+    } else {
+      // For paid payments, only show edit amount option
+      setEditMode('edit-amount');
+    }
+    
+    // If it's a partial payment, calculate remaining amount
+    if (transaction.status === 'Partial' && chainData) {
+      setRemainingAmount(chainData.remainingAmount || 0);
+      setAdditionalAmount(chainData.remainingAmount?.toString() || '0');
+    }
+  };
 
-  // ✅ NEW: Handle edit option change
+  // ✅ FIXED: Handle edit option change
   const handleEditOptionChange = (mode: EditMode) => {
     setEditMode(mode);
     setEditError('');
@@ -255,7 +273,7 @@ export default function EMITransactionsModal({
     }
   };
 
-  // ✅ NEW: Validate edit form
+  // ✅ FIXED: Validate edit form
   const validateEditForm = (): boolean => {
     setEditError('');
     
@@ -270,6 +288,13 @@ export default function EMITransactionsModal({
       if (editingTransaction?.status === 'Paid' && editStatus === 'Partial') {
         if (!chainInfo?.installmentTotalAmount) {
           setEditError('Cannot change to Partial without knowing the full installment amount');
+          return false;
+        }
+        
+        // ✅ NEW: Validate partial amount is less than full EMI
+        const fullEmiAmount = chainInfo.originalEmiAmount || chainInfo.installmentTotalAmount;
+        if (amount >= fullEmiAmount) {
+          setEditError(`Partial amount (₹${amount}) should be less than full EMI amount (₹${fullEmiAmount})`);
           return false;
         }
       }
@@ -289,7 +314,7 @@ export default function EMITransactionsModal({
     return true;
   };
 
-  // ✅ NEW: Handle edit amount (Option 1)
+  // ✅ FIXED: Handle edit amount (Option 1)
   const handleSaveEditAmount = async () => {
     if (!editingTransaction || !validateEditForm()) return;
     
@@ -347,7 +372,7 @@ export default function EMITransactionsModal({
     }
   };
 
-  // ✅ NEW: Handle complete partial payment (Option 2)
+  // ✅ FIXED: Handle complete partial payment (Option 2)
   const handleCompletePartialPayment = async () => {
     if (!editingTransaction || !validateEditForm()) return;
     
@@ -370,7 +395,7 @@ export default function EMITransactionsModal({
           notes: `Completion payment for partial chain ${editingTransaction.partialChainId}`,
           customerId: customer._id,
           customerName: customer.name,
-          loanId: editingTransaction.loanNumber ? undefined : undefined,
+          loanId: editingTransaction.loanId || undefined,
           loanNumber: editingTransaction.loanNumber
         }),
       });
@@ -433,9 +458,19 @@ export default function EMITransactionsModal({
     if (!editingTransaction) return null;
     
     const isPartialPayment = editingTransaction.status === 'Partial';
-    const installmentTotal = chainInfo?.installmentTotalAmount || editingTransaction.installmentTotalAmount || editingTransaction.amount;
-    const totalPaid = chainInfo?.totalPaidAmount || editingTransaction.installmentPaidAmount || editingTransaction.amount;
-    const calculatedRemaining = Math.max(0, installmentTotal - totalPaid);
+    
+    // ✅ CRITICAL FIX: Use original EMI amount (full amount) not partial amount
+    const fullEmiAmount = chainInfo?.originalEmiAmount || 
+                         editingTransaction.originalEmiAmount || 
+                         chainInfo?.installmentTotalAmount || 
+                         editingTransaction.installmentTotalAmount || 
+                         editingTransaction.amount;
+    
+    const totalPaid = chainInfo?.totalPaidAmount || 
+                     editingTransaction.installmentPaidAmount || 
+                     editingTransaction.amount;
+    
+    const calculatedRemaining = Math.max(0, fullEmiAmount - totalPaid);
     
     // ✅ FIX: Get correct chain payment count (not loan total)
     const actualChainPaymentCount = chainPayments.length || 1;
@@ -573,6 +608,29 @@ export default function EMITransactionsModal({
                       )}
                     </div>
                   </div>
+                  
+                  {/* ✅ NEW: Show full EMI amount for reference */}
+                  <div className="p-4 bg-gray-50 border-2 border-gray-200 rounded-xl">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-gray-600 mb-1">Full EMI Amount</p>
+                        <p className="font-bold text-gray-900 text-xl">
+                          {formatCurrency(fullEmiAmount)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600 mb-1">Current Amount</p>
+                        <p className="font-bold text-blue-900 text-xl">
+                          {formatCurrency(editingTransaction.amount)}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-500 mt-2">
+                      {editStatus === 'Partial' 
+                        ? '⚠️ Partial payments keep the next EMI date unchanged until full payment'
+                        : '✅ Full payments advance the next EMI date'}
+                    </p>
+                  </div>
                 </>
               )}
               
@@ -588,10 +646,14 @@ export default function EMITransactionsModal({
                         </p>
                       </div>
                       <div className="bg-white p-5 rounded-lg border border-blue-100">
-                        <p className="text-sm text-blue-700 mb-2">Installment Total</p>
+                        {/* ✅ FIXED: Change label from "Installment Total" to "EMI Amount" */}
+                        <p className="text-sm text-blue-700 mb-2">EMI Amount</p>
                         <p className="font-bold text-blue-900 text-2xl">
-                          {formatCurrency(installmentTotal)}
+                          {formatCurrency(fullEmiAmount)}
                         </p>
+                        {chainInfo?.originalEmiAmount && chainInfo.originalEmiAmount !== fullEmiAmount && (
+                          <p className="text-xs text-gray-500 mt-1">Full EMI amount</p>
+                        )}
                       </div>
                       <div className="bg-white p-5 rounded-lg border border-blue-100">
                         <p className="text-sm text-blue-700 mb-2">Remaining Amount</p>
@@ -647,14 +709,19 @@ export default function EMITransactionsModal({
                       <div className="text-right">
                         <p className="text-sm text-green-700 mb-2">New Status</p>
                         <p className={`font-bold text-lg px-4 py-2 rounded-full ${
-                          (totalPaid + (parseFloat(additionalAmount) || 0)) >= installmentTotal 
+                          (totalPaid + (parseFloat(additionalAmount) || 0)) >= fullEmiAmount 
                             ? 'bg-green-100 text-green-800 border border-green-300'
                             : 'bg-yellow-100 text-yellow-800 border border-yellow-300'
                         }`}>
-                          {(totalPaid + (parseFloat(additionalAmount) || 0)) >= installmentTotal ? 'Paid' : 'Partial'}
+                          {(totalPaid + (parseFloat(additionalAmount) || 0)) >= fullEmiAmount ? 'Paid' : 'Partial'}
                         </p>
                       </div>
                     </div>
+                    {(totalPaid + (parseFloat(additionalAmount) || 0)) >= fullEmiAmount && (
+                      <p className="text-sm text-green-700 mt-3">
+                        ✅ This will advance the next EMI date to the next period
+                      </p>
+                    )}
                   </div>
                 </>
               )}
@@ -699,6 +766,23 @@ export default function EMITransactionsModal({
                           </div>
                         </div>
                     ))}
+                  </div>
+                  {/* ✅ NEW: Show chain summary */}
+                  <div className="mt-4 pt-4 border-t border-purple-200">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-sm text-gray-600">Chain Total Paid</p>
+                        <p className="font-bold text-purple-900 text-xl">
+                          {formatCurrency(chainInfo?.totalPaidAmount || 0)}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm text-gray-600">Full EMI Amount</p>
+                        <p className="font-bold text-gray-900 text-xl">
+                          {formatCurrency(fullEmiAmount)}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -746,6 +830,23 @@ export default function EMITransactionsModal({
                     </div>
                   )}
                 </div>
+                {/* ✅ NEW: Show remaining amount for partial payments */}
+                {editMode === 'edit-amount' && editStatus === 'Partial' && (
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-sm text-gray-600">Full EMI Amount</p>
+                        <p className="font-bold text-gray-900">{formatCurrency(fullEmiAmount)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm text-gray-600">Will Remain</p>
+                        <p className="font-bold text-red-900">
+                          {formatCurrency(fullEmiAmount - (parseFloat(editAmount) || 0))}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -891,9 +992,23 @@ export default function EMITransactionsModal({
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
                           {transaction.loanNumber}
+                          {/* ✅ NEW: Show chain indicator */}
+                          {transaction.partialChainId && transaction.status === 'Partial' && (
+                            <span className="ml-2 text-xs text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full">
+                              Chain
+                            </span>
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">
-                          {formatCurrency(transaction.amount)}
+                          <div className="flex flex-col">
+                            <span>{formatCurrency(transaction.amount)}</span>
+                            {/* ✅ NEW: Show full EMI amount for partial payments */}
+                            {transaction.status === 'Partial' && transaction.originalEmiAmount && (
+                              <span className="text-xs text-gray-500">
+                                Full EMI: {formatCurrency(transaction.originalEmiAmount)}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColorClass(transaction.status)}`}>

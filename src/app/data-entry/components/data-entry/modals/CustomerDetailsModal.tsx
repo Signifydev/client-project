@@ -164,6 +164,40 @@ const getEMIAmountDisplay = (loan: Loan): string => {
 };
 
 // ============================================================================
+// NEW: Function to check if last payment was partial
+// ============================================================================
+const getLastPaymentStatus = (loan: Loan): { 
+  wasPartial: boolean; 
+  lastPayment: EMIHistory | null;
+  remainingAmount: number;
+} => {
+  if (!loan.emiHistory || !Array.isArray(loan.emiHistory) || loan.emiHistory.length === 0) {
+    return { wasPartial: false, lastPayment: null, remainingAmount: 0 };
+  }
+  
+  // Get the most recent payment (assuming emiHistory is sorted by date)
+  const sortedHistory = [...loan.emiHistory].sort((a, b) => 
+    new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime()
+  );
+  
+  const lastPayment = sortedHistory[0];
+  
+  // Check if last payment was partial
+  const wasPartial = lastPayment.status === 'Partial';
+  
+  // Calculate remaining amount if it was partial
+  let remainingAmount = 0;
+  if (wasPartial && lastPayment.originalEmiAmount) {
+    remainingAmount = Math.max(0, lastPayment.originalEmiAmount - lastPayment.amount);
+  } else if (wasPartial && loan.emiAmount) {
+    // Fallback: use loan EMI amount
+    remainingAmount = Math.max(0, loan.emiAmount - lastPayment.amount);
+  }
+  
+  return { wasPartial, lastPayment, remainingAmount };
+};
+
+// ============================================================================
 // NEW: Function to fetch EMI transactions for a customer
 // ============================================================================
 const fetchEMITransactions = async (customerId: string): Promise<EMITransaction[]> => {
@@ -522,21 +556,31 @@ export default function CustomerDetailsModal({
                           
                           // Format dates
                           const formattedNextEmiDate = formatLoanDate(loan.nextEmiDate);
-
-// FIX: Only show last payment date if payments have actually been made
-// Check if there are any payments (emiPaidCount > 0 OR totalPaidAmount > 0)
-const hasPayments = (loan.emiPaidCount && loan.emiPaidCount > 0) || (loan.totalPaidAmount && loan.totalPaidAmount > 0);
-const formattedLastPaymentDate = hasPayments && loan.lastEmiDate ? formatLoanDate(loan.lastEmiDate) : 'N/A';
-
-// Debug log to verify the fix
-console.log('🔍 Payment Status Check:', {
-  loanNumber: loan.loanNumber,
-  emiPaidCount: loan.emiPaidCount,
-  totalPaidAmount: loan.totalPaidAmount,
-  lastEmiDate: loan.lastEmiDate,
-  hasPayments: hasPayments,
-  displayValue: formattedLastPaymentDate
-});
+                          
+                          // ✅ FIXED: Check if payments have actually been made
+                          const hasFullPayments = (loan.emiPaidCount && loan.emiPaidCount > 0);
+                          const formattedLastPaymentDate = hasFullPayments && loan.lastEmiDate ? formatLoanDate(loan.lastEmiDate) : 'N/A';
+                          
+                          // ✅ NEW: Check if last payment was partial
+                          const lastPaymentInfo = getLastPaymentStatus(loan);
+                          const lastPaymentWasPartial = lastPaymentInfo.wasPartial;
+                          
+                          // ✅ FIXED: Determine if payment is due (for partial payments)
+                          const isPaymentDue = !hasFullPayments || lastPaymentWasPartial;
+                          
+                          // Debug log to verify the fix
+                          console.log('🔍 Payment Status Check:', {
+                            loanNumber: loan.loanNumber,
+                            emiPaidCount: loan.emiPaidCount,
+                            totalPaidAmount: loan.totalPaidAmount,
+                            lastEmiDate: loan.lastEmiDate,
+                            hasFullPayments,
+                            lastPaymentWasPartial,
+                            isPaymentDue,
+                            lastPaymentStatus: lastPaymentInfo.lastPayment?.status,
+                            nextEmiDate: formattedNextEmiDate
+                          });
+                          
                           const formattedEmiStartDate = formatLoanDate(loan.emiStartDate);
                           const formattedDateApplied = formatLoanDate(loan.dateApplied);
                           
@@ -606,11 +650,35 @@ console.log('🔍 Payment Status Check:', {
                                   </div>
                                   <div>
                                     <p className="text-xs font-medium text-gray-500 mb-1">Last Payment</p>
-                                    <p className="font-semibold text-gray-900 text-sm">{formattedLastPaymentDate}</p>
+                                    <p className="font-semibold text-gray-900 text-sm">
+                                      {formattedLastPaymentDate}
+                                      {lastPaymentWasPartial && (
+                                        <span className="ml-2 text-xs text-yellow-600 bg-yellow-100 px-2 py-1 rounded-full">
+                                          ⚠️ Partial
+                                        </span>
+                                      )}
+                                    </p>
+                                    {lastPaymentWasPartial && lastPaymentInfo.remainingAmount > 0 && (
+                                      <p className="text-xs text-yellow-600 mt-1">
+                                        ₹{lastPaymentInfo.remainingAmount.toLocaleString()} pending
+                                      </p>
+                                    )}
                                   </div>
                                   <div>
                                     <p className="text-xs font-medium text-gray-500 mb-1">Next EMI Date</p>
-                                    <p className="font-semibold text-gray-900 text-sm">{formattedNextEmiDate || 'N/A'}</p>
+                                    <p className="font-semibold text-gray-900 text-sm">
+                                      {formattedNextEmiDate || 'N/A'}
+                                      {lastPaymentWasPartial && (
+                                        <span className="ml-2 text-xs text-yellow-600 bg-yellow-100 px-2 py-1 rounded-full">
+                                          ⚠️ Due
+                                        </span>
+                                      )}
+                                    </p>
+                                    {lastPaymentWasPartial && (
+                                      <p className="text-xs text-yellow-600 mt-1">
+                                        EMI not completed. Next date remains {formattedNextEmiDate}
+                                      </p>
+                                    )}
                                   </div>
                                 </div>
                               </div>
