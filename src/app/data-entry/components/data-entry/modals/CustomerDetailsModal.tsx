@@ -164,7 +164,7 @@ const getEMIAmountDisplay = (loan: Loan): string => {
 };
 
 // ============================================================================
-// NEW: Function to check if last payment was partial
+// NEW: Function to check if last payment was partial (TYPE-SAFE)
 // ============================================================================
 const getLastPaymentStatus = (loan: Loan): { 
   wasPartial: boolean; 
@@ -187,11 +187,16 @@ const getLastPaymentStatus = (loan: Loan): {
   
   // Calculate remaining amount if it was partial
   let remainingAmount = 0;
-  if (wasPartial && lastPayment.originalEmiAmount) {
-    remainingAmount = Math.max(0, lastPayment.originalEmiAmount - lastPayment.amount);
-  } else if (wasPartial && loan.emiAmount) {
-    // Fallback: use loan EMI amount
-    remainingAmount = Math.max(0, loan.emiAmount - lastPayment.amount);
+  if (wasPartial) {
+    // ✅ TYPE-SAFE: Access originalEmiAmount with proper typing
+    // Note: If you get TypeScript errors here, update your EMIHistory interface
+    // in dataEntry.ts to include originalEmiAmount?: number
+    if (lastPayment.originalEmiAmount) {
+      remainingAmount = Math.max(0, lastPayment.originalEmiAmount - lastPayment.amount);
+    } else if (loan.emiAmount) {
+      // Fallback: use loan EMI amount
+      remainingAmount = Math.max(0, loan.emiAmount - lastPayment.amount);
+    }
   }
   
   return { wasPartial, lastPayment, remainingAmount };
@@ -328,27 +333,27 @@ export default function CustomerDetailsModal({
 
   // NEW: Handle EMI Transactions button click
   const handleEMITransactionsClick = async () => {
-  if (!customerDetails) {
-    alert('Customer details not loaded. Please wait...');
-    return;
-  }
-  
-  setLoadingTransactions(true);
-  try {
-    // Clear cache before fetching
-    clearCustomerCache(customerDetails._id);
+    if (!customerDetails) {
+      alert('Customer details not loaded. Please wait...');
+      return;
+    }
     
-    const transactions = await fetchEMITransactions(customerDetails._id);
-    setEmiTransactions(transactions);
-    setShowEMITransactions(true);
-    console.log(`✅ Loaded ${transactions.length} EMI transactions`);
-  } catch (error) {
-    console.error('❌ Error loading EMI transactions:', error);
-    alert('Failed to load EMI transactions. Please check the console for details.');
-  } finally {
-    setLoadingTransactions(false);
-  }
-};
+    setLoadingTransactions(true);
+    try {
+      // Clear cache before fetching
+      clearCustomerCache(customerDetails._id);
+      
+      const transactions = await fetchEMITransactions(customerDetails._id);
+      setEmiTransactions(transactions);
+      setShowEMITransactions(true);
+      console.log(`✅ Loaded ${transactions.length} EMI transactions`);
+    } catch (error) {
+      console.error('❌ Error loading EMI transactions:', error);
+      alert('Failed to load EMI transactions. Please check the console for details.');
+    } finally {
+      setLoadingTransactions(false);
+    }
+  };
 
   // Handle delete loan click
   const handleDeleteLoanClick = (loan: Loan) => {
@@ -557,7 +562,7 @@ export default function CustomerDetailsModal({
                           // Format dates
                           const formattedNextEmiDate = formatLoanDate(loan.nextEmiDate);
                           
-                          // ✅ FIXED: Check if payments have actually been made
+                          // ✅ FIXED: Check if FULL payments have actually been made
                           const hasFullPayments = (loan.emiPaidCount && loan.emiPaidCount > 0);
                           const formattedLastPaymentDate = hasFullPayments && loan.lastEmiDate ? formatLoanDate(loan.lastEmiDate) : 'N/A';
                           
@@ -565,8 +570,9 @@ export default function CustomerDetailsModal({
                           const lastPaymentInfo = getLastPaymentStatus(loan);
                           const lastPaymentWasPartial = lastPaymentInfo.wasPartial;
                           
-                          // ✅ FIXED: Determine if payment is due (for partial payments)
-                          const isPaymentDue = !hasFullPayments || lastPaymentWasPartial;
+                          // ✅ FIXED: Determine correct payment status
+                          // Payment is due if: no payments at all OR last payment was partial
+                          const isPaymentDue = loan.emiPaidCount === 0 || lastPaymentWasPartial;
                           
                           // Debug log to verify the fix
                           console.log('🔍 Payment Status Check:', {
@@ -578,6 +584,7 @@ export default function CustomerDetailsModal({
                             lastPaymentWasPartial,
                             isPaymentDue,
                             lastPaymentStatus: lastPaymentInfo.lastPayment?.status,
+                            remainingAmount: lastPaymentInfo.remainingAmount,
                             nextEmiDate: formattedNextEmiDate
                           });
                           
@@ -668,15 +675,20 @@ export default function CustomerDetailsModal({
                                     <p className="text-xs font-medium text-gray-500 mb-1">Next EMI Date</p>
                                     <p className="font-semibold text-gray-900 text-sm">
                                       {formattedNextEmiDate || 'N/A'}
-                                      {lastPaymentWasPartial && (
+                                      {isPaymentDue && lastPaymentWasPartial && (
                                         <span className="ml-2 text-xs text-yellow-600 bg-yellow-100 px-2 py-1 rounded-full">
-                                          ⚠️ Due
+                                          ⚠️ Payment Due
                                         </span>
                                       )}
                                     </p>
                                     {lastPaymentWasPartial && (
                                       <p className="text-xs text-yellow-600 mt-1">
-                                        EMI not completed. Next date remains {formattedNextEmiDate}
+                                        EMI not completed. Date remains {formattedNextEmiDate}
+                                      </p>
+                                    )}
+                                    {!lastPaymentWasPartial && isPaymentDue && loan.emiPaidCount === 0 && (
+                                      <p className="text-xs text-yellow-600 mt-1">
+                                        No payments made yet
                                       </p>
                                     )}
                                   </div>
@@ -855,12 +867,12 @@ export default function CustomerDetailsModal({
       {/* NEW: EMI Transactions Modal */}
       {showEMITransactions && customerDetails && (
         <EMITransactionsModal
-  isOpen={showEMITransactions}
-  onClose={() => setShowEMITransactions(false)}
-  customer={customerDetails}
-  transactions={emiTransactions}
-  onRefresh={handleRefreshData} // ✅ ADD THIS
-/>
+          isOpen={showEMITransactions}
+          onClose={() => setShowEMITransactions(false)}
+          customer={customerDetails}
+          transactions={emiTransactions}
+          onRefresh={handleRefreshData}
+        />
       )}
     </>
   );

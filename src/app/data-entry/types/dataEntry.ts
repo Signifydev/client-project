@@ -127,7 +127,7 @@ export interface EMIScheduleDetails {
 // =============================================
 
 /**
- * EMI History record for loan payments
+ * EMI History record for loan payments - UPDATED WITH PARTIAL PAYMENT SUPPORT
  */
 export interface EMIHistory {
   _id?: string;
@@ -152,6 +152,16 @@ export interface EMIHistory {
   // Edit/delete functionality
   customerId?: string;
   customerName?: string;
+  
+  // ✅ NEW: Partial payment properties for accurate tracking
+  originalEmiAmount?: number;      // Full EMI amount for partial payments
+  installmentTotalAmount?: number; // Total installment amount
+  installmentPaidAmount?: number;  // Amount paid so far in installment
+  partialChainId?: string;         // Chain ID for partial payments
+  isChainComplete?: boolean;       // Whether partial chain is complete
+  
+  // ✅ NEW: Fields for correct EMI amount display
+  emiAmount?: number;              // The actual EMI amount for this payment
 }
 
 /**
@@ -201,6 +211,10 @@ export interface Loan {
   // ADD THESE LINES for backward compatibility
   loanAmount?: number; // For backward compatibility
   lastPaymentDate?: string; // For backward compatibility
+  
+  // ✅ NEW: Fields for proper payment tracking
+  lastPaymentStatus?: 'Paid' | 'Partial' | 'Advance'; // Status of last payment
+  lastPaymentAmount?: number; // Amount of last payment
 }
 
 // =============================================
@@ -231,6 +245,9 @@ export interface EMIPayment {
   isChainComplete?: boolean;
   chainSequence?: number;
   
+  // ✅ NEW: Critical field for partial payment fixes
+  originalEmiAmount?: number; // The full EMI amount for this payment
+  
   // Existing fields
   createdAt?: string;
   updatedAt?: string;
@@ -240,6 +257,13 @@ export interface EMIPayment {
   customerId?: string;
   customerName?: string;
   customerNumber?: string;
+  paymentMethod?: string;
+  
+  // ✅ NEW: Loan information for context
+  loanType?: string;
+  emiType?: 'fixed' | 'custom';
+  emiAmount?: number;
+  customEmiAmount?: number;
 }
 
 /**
@@ -252,6 +276,12 @@ export interface EMIPaymentChainInfo {
   paidAmount: number;
   remainingAmount: number;
   isComplete: boolean;
+  
+  // ✅ NEW: Critical fields for partial payment fixes
+  originalEmiAmount?: number;      // Full EMI amount for this chain
+  installmentTotalAmount?: number; // Total installment amount
+  loanId?: string;                 // Loan ID for filtering
+  loanNumber?: string;             // Loan number for display
 }
 
 /**
@@ -263,6 +293,7 @@ export interface CompletePartialPaymentRequest {
   paymentDate: string;
   collectedBy: string;
   notes?: string;
+  loanId?: string; // ✅ NEW: Added for better chain tracking
 }
 
 /**
@@ -275,6 +306,7 @@ export interface CompletePartialPaymentResponse {
     newPayment: EMIPayment;
     chainId: string;
     totalPaid: number;
+    remainingAmount: number; // ✅ NEW: Added for clarity
   };
 }
 
@@ -288,6 +320,7 @@ export interface EditPaymentRequest {
   collectedBy?: string;
   notes?: string;
   paymentDate?: string;
+  originalEmiAmount?: number; // ✅ NEW: Added for partial payment fixes
 }
 
 /**
@@ -302,6 +335,7 @@ export interface EditPaymentResponse {
       totalAmount: number;
       paidAmount: number;
       remaining: number;
+      originalEmiAmount?: number; // ✅ NEW: Added
     };
   };
 }
@@ -321,7 +355,10 @@ export interface PartialPaymentInfo {
   alreadyPaid: number;
   remainingAmount: number;
   installmentTotal: number;
+  originalEmiAmount: number; // ✅ NEW: Added for accuracy
   canComplete: boolean;
+  chainId?: string;
+  loanId?: string;
 }
 
 /**
@@ -358,8 +395,10 @@ export interface ChainCalculationResult {
   totalAmount: number;
   paidAmount: number;
   remainingAmount: number;
+  originalEmiAmount: number; // ✅ NEW: Added
   isComplete: boolean;
   paymentsCount: number;
+  chainId?: string;
 }
 
 /**
@@ -372,6 +411,7 @@ export interface ChainPayment {
   status: string;
   collectedBy: string;
   sequence: number;
+  originalEmiAmount?: number; // ✅ NEW: Added
 }
 
 // =============================================
@@ -440,7 +480,7 @@ export interface NewCustomerStep3 {
 // =============================================
 
 /**
- * EMI Update data structure
+ * EMI Update data structure - UPDATED WITH PARTIAL PAYMENT SUPPORT
  */
 export interface EMIUpdate {
   customerId: string;
@@ -460,6 +500,9 @@ export interface EMIUpdate {
   advanceToDate?: string;
   advanceEmiCount?: string;
   advanceTotalAmount?: string;
+  
+  // ✅ NEW: Critical field for partial payment fixes
+  originalEmiAmount?: number | string; // The full EMI amount for this payment
 }
 
 /**
@@ -574,6 +617,8 @@ export interface TodayStats {
   newCustomers: number;
   pendingRequests: number;
   totalCollection: number;
+  partialPaymentsCount?: number; // ✅ NEW: Added for partial payment tracking
+  partialPaymentsAmount?: number; // ✅ NEW: Added for partial payment tracking
 }
 
 // =============================================
@@ -594,6 +639,10 @@ export interface CalendarDay {
   // Added for custom EMI identification
   isCustomInstallment?: boolean;
   installmentNumber?: number;
+  // ✅ NEW: For partial payment tracking
+  partialPaymentAmount?: number;
+  fullEmiAmount?: number;
+  remainingAmount?: number;
 }
 
 /**
@@ -625,6 +674,8 @@ export interface CollectionData {
       loanNumber: string;
       emiAmount: number;
       collectedAmount: number;
+      isPartial?: boolean; // ✅ NEW: Added for partial payment tracking
+      remainingAmount?: number; // ✅ NEW: Added for partial payment tracking
     }>;
   }>;
   summary: {
@@ -632,6 +683,8 @@ export interface CollectionData {
     office1Collection: number;
     office2Collection: number;
     totalCustomers: number;
+    partialPaymentsCount?: number; // ✅ NEW: Added
+    partialPaymentsAmount?: number; // ✅ NEW: Added
   };
 }
 
@@ -657,6 +710,10 @@ export interface Collection {
   loanNumber?: string;
   createdAt?: string;
   updatedAt?: string;
+  // ✅ NEW: For partial payment tracking
+  isPartial?: boolean;
+  originalEmiAmount?: number;
+  remainingAmount?: number;
 }
 
 /**
@@ -675,6 +732,10 @@ export interface Payment {
   loanId?: string;
   loanNumber?: string;
   customerNumber?: string;
+  // ✅ NEW: For partial payment tracking
+  originalEmiAmount?: number;
+  isChainComplete?: boolean;
+  partialChainId?: string;
 }
 
 // =============================================
@@ -693,6 +754,7 @@ export interface UseCustomersReturn {
     total: number;
     active: number;
     overdue: number;
+    partialPayments?: number; // ✅ NEW: Added
   };
 }
 
@@ -709,6 +771,8 @@ export interface UseEMIReturn {
     overdueCount: number;
     totalCustomers: number;
     filteredCount: number;
+    partialPaymentsCount?: number; // ✅ NEW: Added
+    partialPaymentsAmount?: number; // ✅ NEW: Added
   };
 }
 
@@ -724,6 +788,10 @@ export interface UseCollectionReturn {
     totalCollected: number;
     todayCollection: number;
     collectionCount: number;
+    partialPayments?: { // ✅ NEW: Added
+      count: number;
+      amount: number;
+    };
   };
 }
 
@@ -997,6 +1065,10 @@ export interface PaymentData {
   officeCategory: string;
   operatorName: string;
   status?: string;
+  // ✅ NEW: Added for partial payment tracking
+  originalEmiAmount?: number;
+  isPartial?: boolean;
+  remainingAmount?: number;
 }
 
 /**
@@ -1006,6 +1078,10 @@ export interface CollectionStats {
   todaysCollection: number;
   numberOfCustomersPaid: number;
   totalCollections: number;
+  partialPayments?: { // ✅ NEW: Added
+    count: number;
+    amount: number;
+  };
 }
 
 /**
@@ -1026,12 +1102,18 @@ export interface CollectionApiResponse {
         loanNumber: string;
         emiAmount: number;
         collectedAmount: number;
+        isPartial?: boolean; // ✅ NEW: Added
+        remainingAmount?: number; // ✅ NEW: Added
       }>;
     }>;
     statistics?: {
       todaysCollection: number;
       numberOfCustomersPaid: number;
       totalCollections: number;
+      partialPayments?: { // ✅ NEW: Added
+        count: number;
+        amount: number;
+      };
     };
     summary?: {
       totalCollection: number;
@@ -1040,6 +1122,8 @@ export interface CollectionApiResponse {
       totalCustomers: number;
       totalTransactions?: number;
       numberOfCustomersPaid?: number;
+      partialPaymentsCount?: number; // ✅ NEW: Added
+      partialPaymentsAmount?: number; // ✅ NEW: Added
     };
   };
   error?: string;
@@ -1075,6 +1159,9 @@ export interface LoanEMIDetails {
   nextDueDate?: string;
   paymentHistory: EMIPayment[];
   activeChainId?: string;
+  // ✅ NEW: Added for partial payment fixes
+  originalEmiAmount?: number;
+  isPartialPending?: boolean;
 }
 
 /**
@@ -1087,6 +1174,10 @@ export interface PaymentChainResponse {
   paidAmount: number;
   remainingAmount: number;
   isComplete: boolean;
+  // ✅ NEW: Critical fields for partial payment fixes
+  originalEmiAmount?: number;
+  loanId?: string;
+  loanNumber?: string;
 }
 
 /**
@@ -1099,6 +1190,7 @@ export interface UpdateEMIPaymentRequest {
   collectedBy?: string;
   notes?: string;
   paymentDate?: string;
+  originalEmiAmount?: number; // ✅ NEW: Added for partial payment fixes
 }
 
 /**
@@ -1110,4 +1202,47 @@ export interface CompletePartialPaymentBody {
   paymentDate: string;
   collectedBy: string;
   notes?: string;
+  loanId?: string; // ✅ NEW: Added for better chain tracking
+  originalEmiAmount?: number; // ✅ NEW: Added for consistency
+}
+
+// =============================================
+// EMI TRANSACTION TYPES FOR MODAL (NEW)
+// =============================================
+
+/**
+ * EMI Transaction for modal display
+ */
+export interface EMITransaction {
+  _id: string;
+  paymentDate: string;
+  amount: number;
+  loanNumber: string;
+  collectedBy: string;
+  status: string;
+  paymentMethod?: string;
+  notes?: string;
+  // ✅ NEW: Added for partial payment fixes
+  originalEmiAmount?: number;
+  partialChainId?: string;
+  installmentTotalAmount?: number;
+  installmentPaidAmount?: number;
+  isChainComplete?: boolean;
+  loanId?: string;
+}
+
+// =============================================
+// PARTIAL PAYMENT STATUS TYPES (NEW)
+// =============================================
+
+/**
+ * Partial payment status information
+ */
+export interface PartialPaymentStatus {
+  wasPartial: boolean;
+  lastPayment: EMIHistory | null;
+  remainingAmount: number;
+  lastPaymentDate?: string;
+  nextEmiDate?: string;
+  isPaymentDue: boolean;
 }
