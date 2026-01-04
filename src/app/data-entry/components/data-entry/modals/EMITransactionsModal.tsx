@@ -171,68 +171,100 @@ export default function EMITransactionsModal({
   
   // ✅ FIXED: Fetch chain information for a transaction
   const fetchChainInfo = async (transaction: EMITransaction) => {
-    if (!transaction._id && !transaction.partialChainId) return null;
+  if (!transaction._id && !transaction.partialChainId) return null;
+  
+  console.log('🔗 DEBUG 1: Starting chain fetch for transaction:', {
+    _id: transaction._id,
+    partialChainId: transaction.partialChainId,
+    amount: transaction.amount,
+    originalEmiAmount: transaction.originalEmiAmount,
+    installmentTotalAmount: transaction.installmentTotalAmount,
+    loanId: transaction.loanId,
+    loanNumber: transaction.loanNumber,
+    status: transaction.status
+  });
+  
+  setLoadingChain(true);
+  try {
+    let url = `/api/data-entry/emi-payments?action=get-chain-info&`;
     
-    setLoadingChain(true);
-    try {
-      let url = `/api/data-entry/emi-payments?action=get-chain-info&`;
-      
-      if (transaction.partialChainId) {
-        url += `chainId=${transaction.partialChainId}`;
-      } else {
-        url += `paymentId=${transaction._id}`;
-      }
-      
-      // ✅ FIXED: Add loanId parameter to filter chain by specific loan
-      if (transaction.loanNumber && transaction.loanNumber !== 'N/A') {
-        // We need to get loanId from the transaction or customer loans
-        const customerLoan = customer.loans?.find((l: any) => l.loanNumber === transaction.loanNumber);
-        if (customerLoan?._id) {
-          url += `&loanId=${customerLoan._id}`;
-        }
-      }
-      
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch chain info: ${response.status} ${response.statusText}`);
-      }
-      
-      const result = await response.json();
-      
-      if (result.success && result.data) {
-        setChainInfo(result.data);
-        setChainPayments(result.data.payments || []);
-        
-        // ✅ CRITICAL FIX: Calculate remaining amount correctly
-        // Use originalEmiAmount if available, otherwise use installmentTotalAmount
-        const fullEmiAmount = result.data.originalEmiAmount || 
-                             result.data.installmentTotalAmount || 
-                             transaction.amount;
-        
-        const totalPaid = result.data.totalPaidAmount || transaction.amount;
-        const remaining = Math.max(0, fullEmiAmount - totalPaid);
-        
-        setRemainingAmount(remaining);
-        
-        console.log('🔗 Chain info fetched:', {
-          fullEmiAmount,
-          totalPaid,
-          remaining,
-          originalEmiAmount: result.data.originalEmiAmount,
-          installmentTotalAmount: result.data.installmentTotalAmount
-        });
-        
-        return result.data;
-      }
-      return null;
-    } catch (error) {
-      console.error('Error fetching chain info:', error);
-      return null;
-    } finally {
-      setLoadingChain(false);
+    if (transaction.partialChainId) {
+      url += `chainId=${transaction.partialChainId}`;
+    } else {
+      url += `paymentId=${transaction._id}`;
     }
-  };
+    
+    // ✅ FIXED: Add loanId parameter to filter chain by specific loan
+    if (transaction.loanNumber && transaction.loanNumber !== 'N/A') {
+      // We need to get loanId from the transaction or customer loans
+      const customerLoan = customer.loans?.find((l: any) => l.loanNumber === transaction.loanNumber);
+      if (customerLoan?._id) {
+        url += `&loanId=${customerLoan._id}`;
+        console.log('🔗 DEBUG 2: Added loanId to URL:', customerLoan._id);
+      } else {
+        console.log('🔗 DEBUG 2: No matching loan found for loanNumber:', transaction.loanNumber);
+      }
+    } else {
+      console.log('🔗 DEBUG 2: No loanNumber or loanNumber is N/A');
+    }
+    
+    console.log('🔗 DEBUG 3: Full API URL:', url);
+    
+    const response = await fetch(url);
+    
+    console.log('🔗 DEBUG 4: Response status:', response.status);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch chain info: ${response.status} ${response.statusText}`);
+    }
+    
+    const result = await response.json();
+    
+    console.log('🔗 DEBUG 5: API Response data:', {
+      success: result.success,
+      hasData: !!result.data,
+      originalEmiAmount: result.data?.originalEmiAmount,
+      installmentTotalAmount: result.data?.installmentTotalAmount,
+      totalPaidAmount: result.data?.totalPaidAmount,
+      fullData: result.data
+    });
+    
+    if (result.success && result.data) {
+      setChainInfo(result.data);
+      setChainPayments(result.data.payments || []);
+      
+      // ✅ CRITICAL FIX: Calculate remaining amount correctly
+      // Use originalEmiAmount if available, otherwise use installmentTotalAmount
+      const fullEmiAmount = result.data.originalEmiAmount || 
+                           result.data.installmentTotalAmount || 
+                           transaction.amount;
+      
+      const totalPaid = result.data.totalPaidAmount || transaction.amount;
+      const remaining = Math.max(0, fullEmiAmount - totalPaid);
+      
+      setRemainingAmount(remaining);
+      
+      console.log('🔗 DEBUG 6: Calculated amounts:', {
+        fullEmiAmount,
+        totalPaid,
+        remaining,
+        transactionAmount: transaction.amount,
+        dataOriginalEmiAmount: result.data.originalEmiAmount,
+        dataInstallmentTotalAmount: result.data.installmentTotalAmount
+      });
+      
+      return result.data;
+    } else {
+      console.log('🔗 DEBUG 7: API returned failure or no data');
+      return null;
+    }
+  } catch (error) {
+    console.error('🔗 ERROR fetching chain info:', error);
+    return null;
+  } finally {
+    setLoadingChain(false);
+  }
+};
   
   // ✅ FIXED: Handle edit button click
   const handleEditClick = async (transaction: EMITransaction) => {
