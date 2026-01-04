@@ -196,14 +196,15 @@ export default function EMIUpdateModal({
   onSuccess
 }: EMIUpdateModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [emiUpdate, setEmiUpdate] = useState<EMIUpdateType>({
+  const [emiUpdate, setEmiUpdate] = useState<EMIUpdateType & { installmentNumber?: number }>({
     customerId: '',
     customerName: '',
     paymentDate: new Date().toISOString().split('T')[0],
     amount: '',
     status: 'Paid',
     collectedBy: currentOperator.name || 'Operator',
-    paymentType: 'single'
+    paymentType: 'single',
+    installmentNumber: 1
   });
   const [customerLoans, setCustomerLoans] = useState<Loan[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -219,14 +220,14 @@ export default function EMIUpdateModal({
   // Get the updateEMI function from useEMI hook
   const emiHook = useEMI(currentOperator.name);
   
-  // ✅ FIXED: Create our own updateEMI function with originalEmiAmount
-  const updateEMI = async (emiData: EMIUpdateType) => {
+  // ✅ FIXED: Create our own updateEMI function with originalEmiAmount and installmentNumber
+  const updateEMI = async (emiData: EMIUpdateType & { installmentNumber?: number }) => {
     try {
       // ✅ CRITICAL FIX: Get the correct EMI amount for this installment
       const currentInstallment = calculateCurrentInstallmentNumber(selectedLoan!);
       const correctEmiAmount = getCorrectEmiAmountForInstallment(selectedLoan!, currentInstallment);
       
-      console.log('📤 Sending to API with correct EMI amount:', {
+      console.log('📤 Sending to API with correct EMI amount and installment number:', {
         ...emiData,
         operatorName: currentOperator.name,
         officeCategory: selectedCustomer?.officeCategory || 'Office 1',
@@ -236,7 +237,9 @@ export default function EMIUpdateModal({
         // ✅ FIXED: Send total amount for advance payments
         amount: emiData.paymentType === 'advance' ? totalAdvanceAmount.toString() : emiData.amount,
         // ✅ CRITICAL FIX: Send original EMI amount for ALL payments
-        originalEmiAmount: correctEmiAmount
+        originalEmiAmount: correctEmiAmount,
+        // ✅ NEW: Send installment number to API
+        installmentNumber: emiData.installmentNumber || currentInstallment
       });
 
       const response = await fetch('/api/data-entry/emi-payments', {
@@ -256,7 +259,9 @@ export default function EMIUpdateModal({
           // ✅ Also send advanceTotalAmount explicitly
           advanceTotalAmount: emiData.paymentType === 'advance' ? totalAdvanceAmount.toString() : undefined,
           // ✅ CRITICAL FIX: Send original EMI amount (full EMI amount)
-          originalEmiAmount: correctEmiAmount
+          originalEmiAmount: correctEmiAmount,
+          // ✅ NEW: Send installment number to API
+          installmentNumber: emiData.installmentNumber || currentInstallment
         }),
       });
 
@@ -306,8 +311,6 @@ export default function EMIUpdateModal({
         customEmiAmount: selectedLoan.customEmiAmount,
         correctAmountForThisInstallment: correctEmiAmount,
         isLastInstallment: currentInstallment === selectedLoan.totalEmiCount,
-        // ✅ NEW: Log original EMI amount for debugging
-        originalEmiAmountWillBeSent: correctEmiAmount
       });
       
       setEmiUpdate(prev => ({
@@ -316,6 +319,7 @@ export default function EMIUpdateModal({
         loanNumber: selectedLoan.loanNumber,
         amount: correctEmiAmount.toString(), // ✅ Use CORRECT full EMI amount as default
         paymentDate: new Date().toISOString().split('T')[0],
+        installmentNumber: currentInstallment, // ✅ Store installment number
         // ✅ NEW: Store the full EMI amount for reference
         _fullEmiAmount: correctEmiAmount.toString() // This won't be sent to API, just for UI
       }));
@@ -496,11 +500,11 @@ export default function EMIUpdateModal({
 
     setIsLoading(true);
     try {
-      // ✅ FIXED: Calculate correct EMI amount to send as originalEmiAmount
+      // ✅ FIXED: Calculate correct EMI amount and installment number
       const currentInstallment = calculateCurrentInstallmentNumber(selectedLoan!);
       const correctEmiAmount = getCorrectEmiAmountForInstallment(selectedLoan!, currentInstallment);
       
-      // ✅ FIXED: Prepare correct data for API
+      // ✅ FIXED: Prepare correct data for API with installmentNumber
       const paymentData = {
         ...emiUpdate,
         advanceFromDate: emiUpdate.paymentType === 'advance' ? advanceFromDate : undefined,
@@ -510,12 +514,15 @@ export default function EMIUpdateModal({
         // ✅ For advance payments, send the TOTAL amount, not single EMI amount
         amount: emiUpdate.paymentType === 'advance' ? totalAdvanceAmount.toString() : emiUpdate.amount,
         // ✅ CRITICAL FIX: Send original EMI amount (full amount)
-        originalEmiAmount: correctEmiAmount
+        originalEmiAmount: correctEmiAmount,
+        // ✅ NEW: Send installment number to API
+        installmentNumber: emiUpdate.installmentNumber || currentInstallment
       };
 
-      console.log('📤 Submitting payment WITH originalEmiAmount:', {
+      console.log('📤 Submitting payment WITH installmentNumber:', {
         paymentType: emiUpdate.paymentType,
         amountSent: paymentData.amount,
+        installmentNumber: paymentData.installmentNumber,
         originalEmiAmount: correctEmiAmount,
         totalAdvanceAmount,
         emiCount: numberOfEmis,
@@ -540,9 +547,9 @@ export default function EMIUpdateModal({
         const fullEmiAmount = correctEmiAmount;
         const partialAmount = parseFloat(emiUpdate.amount);
         const remainingAmount = fullEmiAmount - partialAmount;
-        message = `Partial payment of ₹${partialAmount} recorded successfully. Remaining amount: ₹${remainingAmount}. Next EMI date will NOT advance until full payment is made.`;
+        message = `Partial payment of ₹${partialAmount} recorded successfully for installment ${currentInstallment}. Remaining amount: ₹${remainingAmount}. Next EMI date will NOT advance until full payment is made.`;
       } else {
-        message = 'EMI payment recorded successfully!';
+        message = `EMI payment of ₹${correctEmiAmount} for installment ${currentInstallment} recorded successfully!`;
       }
       
       alert(message);
@@ -557,7 +564,8 @@ export default function EMIUpdateModal({
         amount: '',
         status: 'Paid',
         collectedBy: currentOperator.name || 'Operator',
-        paymentType: 'single'
+        paymentType: 'single',
+        installmentNumber: 1
       });
       setAdvanceFromDate('');
       setAdvanceToDate('');
@@ -585,12 +593,12 @@ export default function EMIUpdateModal({
     });
   }, [customers, searchQuery]);
 
-  // Helper function to get loan ID safely - FIXED: Use _id instead of id
+  // Helper function to get loan ID safely
   const getLoanId = (loan: Loan): string => {
     return loan._id || `loan-${Math.random().toString(36).substr(2, 9)}`;
   };
 
-  // Helper function to get customer ID safely - FIXED: Use _id instead of id
+  // Helper function to get customer ID safely
   const getCustomerId = (customer: Customer): string => {
     return customer._id || `customer-${Math.random().toString(36).substr(2, 9)}`;
   };
@@ -885,6 +893,27 @@ export default function EMIUpdateModal({
                         <span className="ml-3 text-sm text-gray-600">
                           Paid: {selectedLoan.emiPaidCount || 0} of {selectedLoan.totalEmiCount || 0}
                         </span>
+                      </div>
+                      
+                      {/* ✅ Show Current Installment Info */}
+                      <div className="mt-4 p-3 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm text-gray-700 mb-1">Current Installment</p>
+                            <p className="font-bold text-gray-900 text-lg">
+                              #{calculateCurrentInstallmentNumber(selectedLoan)} of {selectedLoan.totalEmiCount}
+                              {calculateCurrentInstallmentNumber(selectedLoan) === selectedLoan.totalEmiCount && (
+                                <span className="ml-2 text-yellow-700">(LAST Installment)</span>
+                              )}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm text-gray-700 mb-1">Full EMI Due</p>
+                            <p className="font-bold text-green-900 text-lg">
+                              ₹{getCorrectEmiAmountForInstallment(selectedLoan, calculateCurrentInstallmentNumber(selectedLoan)).toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
                       </div>
                       
                       {/* ✅ Show Custom EMI Breakdown */}
@@ -1283,10 +1312,10 @@ export default function EMIUpdateModal({
             </div>
             <p className="text-xs text-gray-500 text-center mt-4">
               {emiUpdate.paymentType === 'advance' 
-                ? `Advance payment will create ${numberOfEmis} individual payment records.`
+                ? `Advance payment will create ${numberOfEmis} individual payment records for installments ${emiUpdate.installmentNumber || calculateCurrentInstallmentNumber(selectedLoan!)} to ${(emiUpdate.installmentNumber || calculateCurrentInstallmentNumber(selectedLoan!)) + numberOfEmis - 1}.`
                 : emiUpdate.status === 'Partial'
-                  ? 'Partial payments will keep the next EMI date unchanged until full payment is made.'
-                  : 'EMI payments are recorded immediately and cannot be undone without admin approval.'}
+                  ? `Partial payments for installment ${emiUpdate.installmentNumber || calculateCurrentInstallmentNumber(selectedLoan!)} will keep the next EMI date unchanged until full payment is made.`
+                  : `EMI payment for installment ${emiUpdate.installmentNumber || calculateCurrentInstallmentNumber(selectedLoan!)} will be recorded immediately.`}
             </p>
           </div>
         </div>
