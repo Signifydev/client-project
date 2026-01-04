@@ -6,40 +6,13 @@ export async function GET(request) {
   try {
     await connectDB();
     const { searchParams } = new URL(request.url);
-    const range = searchParams.get('range') || 'daily';
     const loanType = searchParams.get('loanType') || null;
     
     const db = mongoose.connection.db;
-    const today = new Date();
-    let startDate = new Date();
     
-    // Set date range based on selection
-    switch(range) {
-      case 'daily':
-        startDate.setDate(today.getDate() - 1);
-        break;
-      case 'weekly':
-        startDate.setDate(today.getDate() - 7);
-        break;
-      case 'monthly':
-        startDate.setDate(today.getDate() - 30);
-        break;
-      default:
-        startDate.setDate(today.getDate() - 30);
-    }
-    
-    // Format dates to YYYY-MM-DD
-    const formatDate = (date) => {
-      return date.toISOString().split('T')[0];
-    };
-    
-    const startDateStr = formatDate(startDate);
-    const todayStr = formatDate(today);
-    
-    // 1. GET LOANS AGGREGATION
+    // 1. GET LOANS AGGREGATION (ALL TIME, NOT FILTERED BY DATE)
     const loanMatchStage = {
       $match: {
-        createdAt: { $gte: new Date(startDateStr), $lte: new Date(todayStr) },
         status: 'active' // Only active loans
       }
     };
@@ -83,17 +56,13 @@ export async function GET(request) {
       }
     ]).toArray();
     
-    // 2. GET RECOVERED AMOUNTS FROM EMI PAYMENTS
-    const emiMatchStage = {
-      $match: {
-        paymentDate: { $gte: startDateStr, $lte: todayStr },
-        status: { $in: ['Paid', 'Partial'] } // Only count actual payments
-      }
-    };
-    
-    // Join with loans to get loanType for payments
+    // 2. GET RECOVERED AMOUNTS FROM EMI PAYMENTS (ALL TIME)
     const emiAggregation = await db.collection('emipayments').aggregate([
-      emiMatchStage,
+      {
+        $match: {
+          status: { $in: ['Paid', 'Partial'] } // Only count actual payments
+        }
+      },
       {
         $lookup: {
           from: 'loans',
@@ -193,9 +162,7 @@ export async function GET(request) {
     
     return NextResponse.json({ 
       success: true, 
-      data: result,
-      range,
-      period: { startDate: startDateStr, endDate: todayStr }
+      data: result
     });
   } catch (error) {
     console.error('Error fetching loan details:', error);

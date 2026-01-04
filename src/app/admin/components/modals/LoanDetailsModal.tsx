@@ -9,15 +9,14 @@ interface LoanDetailsModalProps {
 }
 
 export default function LoanDetailsModal({ stats, onClose }: LoanDetailsModalProps) {
-  const [timeRange, setTimeRange] = useState('daily');
   const [loanData, setLoanData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedLoanType, setSelectedLoanType] = useState<string | null>(null);
 
-  const fetchLoanDetails = async (range: string, loanType: string | null = null) => {
+  const fetchLoanDetails = async (loanType: string | null = null) => {
     try {
       setLoading(true);
-      const url = `/api/admin/loan-details?range=${range}${loanType ? `&loanType=${loanType}` : ''}`;
+      const url = `/api/admin/loan-details${loanType ? `?loanType=${loanType}` : ''}`;
       const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
@@ -34,12 +33,8 @@ export default function LoanDetailsModal({ stats, onClose }: LoanDetailsModalPro
   };
 
   useEffect(() => {
-    fetchLoanDetails(timeRange, selectedLoanType);
-  }, [timeRange, selectedLoanType]);
-
-  const handleTimeRangeChange = (range: string) => {
-    setTimeRange(range);
-  };
+    fetchLoanDetails(selectedLoanType);
+  }, [selectedLoanType]);
 
   const handleLoanTypeFilter = (loanType: string | null) => {
     setSelectedLoanType(loanType);
@@ -70,9 +65,17 @@ export default function LoanDetailsModal({ stats, onClose }: LoanDetailsModalPro
   // Get display title
   const getDisplayTitle = () => {
     if (selectedLoanType) {
-      return `${selectedLoanType} Loans Details`;
+      return `${selectedLoanType} Loans Summary`;
     }
-    return 'Total Loan Amount Details';
+    return 'Total Loan Amount Summary';
+  };
+
+  // Get display subtitle
+  const getDisplaySubtitle = () => {
+    if (selectedLoanType) {
+      return `Showing all ${selectedLoanType.toLowerCase()} loans data`;
+    }
+    return 'Showing all loan types data';
   };
 
   return (
@@ -83,10 +86,7 @@ export default function LoanDetailsModal({ stats, onClose }: LoanDetailsModalPro
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-2xl font-bold text-gray-900">{getDisplayTitle()}</h2>
-              <p className="text-sm text-gray-600 mt-1">
-                {timeRange.charAt(0).toUpperCase() + timeRange.slice(1)} view • 
-                {selectedLoanType ? ` ${selectedLoanType} loans only` : ' All loan types'}
-              </p>
+              <p className="text-sm text-gray-600 mt-1">{getDisplaySubtitle()}</p>
             </div>
             <button 
               onClick={onClose}
@@ -96,56 +96,35 @@ export default function LoanDetailsModal({ stats, onClose }: LoanDetailsModalPro
             </button>
           </div>
 
-          {/* Single Filter Row - Loan Type & Time Range Combined */}
-          <div className="flex flex-wrap gap-3 mb-6">
-            {/* Time Range Filter */}
-            <div className="flex items-center space-x-2">
-              <span className="text-sm font-medium text-gray-700">Period:</span>
-              <div className="flex bg-gray-100 rounded-md p-1">
-                {['daily', 'weekly', 'monthly'].map((range) => (
-                  <button
-                    key={range}
-                    onClick={() => handleTimeRangeChange(range)}
-                    className={`px-3 py-1.5 rounded text-sm font-medium ${
-                      timeRange === range
-                        ? 'bg-blue-600 text-white'
-                        : 'text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {range.charAt(0).toUpperCase() + range.slice(1)}
-                  </button>
-                ))}
-              </div>
+          {/* Loan Type Filter */}
+          <div className="mb-6">
+            <div className="flex items-center space-x-2 mb-2">
+              <span className="text-sm font-medium text-gray-700">Filter by Loan Type:</span>
             </div>
-
-            {/* Loan Type Filter */}
-            <div className="flex items-center space-x-2">
-              <span className="text-sm font-medium text-gray-700">Loan Type:</span>
-              <div className="flex bg-gray-100 rounded-md p-1">
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => handleLoanTypeFilter(null)}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  !selectedLoanType
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                All Loan Types
+              </button>
+              {['Daily', 'Weekly', 'Monthly'].map((type) => (
                 <button
-                  onClick={() => handleLoanTypeFilter(null)}
-                  className={`px-3 py-1.5 rounded text-sm font-medium ${
-                    !selectedLoanType
+                  key={type}
+                  onClick={() => handleLoanTypeFilter(type)}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    selectedLoanType === type
                       ? 'bg-blue-600 text-white'
-                      : 'text-gray-700 hover:bg-gray-200'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                   }`}
                 >
-                  All Types
+                  {type} Loans
                 </button>
-                {['Daily', 'Weekly', 'Monthly'].map((type) => (
-                  <button
-                    key={type}
-                    onClick={() => handleLoanTypeFilter(type)}
-                    className={`px-3 py-1.5 rounded text-sm font-medium ${
-                      selectedLoanType === type
-                        ? 'bg-blue-600 text-white'
-                        : 'text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {type}
-                  </button>
-                ))}
-              </div>
+              ))}
             </div>
           </div>
 
@@ -156,9 +135,7 @@ export default function LoanDetailsModal({ stats, onClose }: LoanDetailsModalPro
                 {selectedLoanType ? selectedLoanType : 'Total'} Loans
               </p>
               <p className="text-2xl font-bold text-blue-900">{totals.totalLoans}</p>
-              <p className="text-xs text-blue-700 mt-1">
-                {timeRange.charAt(0).toUpperCase() + timeRange.slice(1)} Count
-              </p>
+              <p className="text-xs text-blue-700 mt-1">Active loans count</p>
             </div>
             
             <div className="bg-green-50 p-4 rounded-lg border border-green-200">
@@ -196,10 +173,10 @@ export default function LoanDetailsModal({ stats, onClose }: LoanDetailsModalPro
           <div className="bg-white border border-gray-200 rounded-lg">
             <div className="p-4 border-b border-gray-200">
               <h3 className="text-lg font-semibold text-gray-900">
-                Loan Breakdown {selectedLoanType ? `(${selectedLoanType})` : ''}
+                {selectedLoanType ? `${selectedLoanType} Loans` : 'All Loans'} Breakdown
               </h3>
               <p className="text-sm text-gray-600">
-                Showing data from last {timeRange === 'daily' ? '1 day' : timeRange === 'weekly' ? '7 days' : '30 days'}
+                Showing comprehensive loan data including amounts, recoveries, and payments
               </p>
             </div>
             
@@ -217,7 +194,7 @@ export default function LoanDetailsModal({ stats, onClose }: LoanDetailsModalPro
                         Loan Type
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                        New Loans
+                        Loans Count
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                         Total Amount
@@ -292,7 +269,7 @@ export default function LoanDetailsModal({ stats, onClose }: LoanDetailsModalPro
                           <div className="text-gray-400 text-4xl mb-4">📊</div>
                           <h3 className="text-lg font-medium text-gray-900 mb-2">No loan data available</h3>
                           <p className="text-sm text-gray-600">
-                            No {selectedLoanType ? selectedLoanType.toLowerCase() : ''} loans found for {timeRange} range
+                            No {selectedLoanType ? selectedLoanType.toLowerCase() : ''} loans found in the system
                           </p>
                         </td>
                       </tr>
@@ -344,7 +321,7 @@ export default function LoanDetailsModal({ stats, onClose }: LoanDetailsModalPro
               <span className="inline-block w-3 h-3 bg-red-500 rounded-full mx-2 mr-1"></span>
               Recovery &lt;50%
             </p>
-            <p className="mt-1">Data includes active loans only. Renewed and completed loans are excluded.</p>
+            <p className="mt-1">Data includes all active loans in the system. Renewed and completed loans are excluded.</p>
           </div>
         </div>
       </div>
