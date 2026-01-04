@@ -1434,8 +1434,8 @@ async function handleGetChainInfo(request) {
           loanNumber: payment.loanNumber,
           customerId: payment.customerId,
           customerName: payment.customerName,
-          installmentTotalAmount: payment.amount,
-          originalEmiAmount: payment.originalEmiAmount || payment.amount,
+          installmentTotalAmount: payment.installmentTotalAmount || payment.amount,
+          originalEmiAmount: payment.originalEmiAmount || payment.installmentTotalAmount || payment.amount,
           totalPaidAmount: payment.amount,
           remainingAmount: 0,
           isComplete: payment.status === 'Paid',
@@ -1447,7 +1447,7 @@ async function handleGetChainInfo(request) {
             paymentDate: payment.paymentDate,
             collectedBy: payment.collectedBy,
             chainSequence: 1,
-            originalEmiAmount: payment.originalEmiAmount
+            originalEmiAmount: payment.originalEmiAmount || payment.installmentTotalAmount || payment.amount
           }]
         };
         
@@ -1496,7 +1496,7 @@ async function handleGetChainInfo(request) {
           paymentDate: p.paymentDate,
           collectedBy: p.collectedBy,
           chainSequence: p.chainSequence,
-          originalEmiAmount: p.originalEmiAmount
+          originalEmiAmount: p.originalEmiAmount || p.installmentTotalAmount || p.amount
         }))
       };
     } else {
@@ -1588,6 +1588,7 @@ export async function GET(request) {
     }
 
     const payments = await EMIPayment.find(query)
+      .select('_id customerId customerName loanId loanNumber paymentDate amount status collectedBy paymentMethod notes isVerified paymentType isAdvancePayment advanceFromDate advanceToDate advanceEmiCount advanceTotalAmount partialChainId chainParentId chainChildrenIds installmentTotalAmount installmentPaidAmount isChainComplete chainSequence originalEmiAmount createdAt updatedAt')
       .populate('customerId', 'name phone businessName area loanNumber')
       .populate('loanId', 'loanNumber loanType emiAmount amount emiPaidCount totalPaidAmount lastEmiDate nextEmiDate')
       .sort({ paymentDate: -1, createdAt: -1 })
@@ -1826,58 +1827,58 @@ export async function PUT(request) {
           
           await Loan.findByIdAndUpdate(payment.loanId, updateData);
 
-          console.log('✅ Loan statistics updated after payment edit (FIXED logic)');
-        }
-      } catch (loanUpdateError) {
-        console.error('⚠️ Error updating loan statistics after edit:', loanUpdateError);
-      }
-    }
-
-    if (originalAmount !== parseFloat(amount)) {
-      try {
-        const customerPayments = await EMIPayment.find({
-          customerId: payment.customerId,
-          status: { $in: ['Paid', 'Partial', 'Advance'] }
-        });
-        
-        const totalCustomerPaid = customerPayments.reduce((sum, p) => sum + p.amount, 0);
-        
-        await Customer.findByIdAndUpdate(payment.customerId, {
-          totalPaid: totalCustomerPaid,
-          updatedAt: new Date()
-        });
-
-        console.log('✅ Customer total paid updated after payment edit');
-      } catch (customerUpdateError) {
-        console.error('⚠️ Error updating customer total paid:', customerUpdateError);
-      }
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: 'EMI payment updated successfully',
-      data: {
-        payment,
-        chainUpdate: chainUpdateResult,
-        changes: {
-          amount: { from: originalAmount, to: parseFloat(amount) },
-          date: { from: originalPaymentDate, to: paymentDateStr },
-          status: { from: originalStatus, to: payment.status }
+            console.log('✅ Loan statistics updated after payment edit (FIXED logic)');
+          }
+        } catch (loanUpdateError) {
+          console.error('⚠️ Error updating loan statistics after edit:', loanUpdateError);
         }
       }
-    });
 
-  } catch (error) {
-    console.error('❌ Error updating EMI payment:', error);
-    return NextResponse.json(
-      { 
-        success: false,
-        error: 'Failed to update EMI payment: ' + error.message 
-      },
-      { status: 500 }
-    );
+      if (originalAmount !== parseFloat(amount)) {
+        try {
+          const customerPayments = await EMIPayment.find({
+            customerId: payment.customerId,
+            status: { $in: ['Paid', 'Partial', 'Advance'] }
+          });
+          
+          const totalCustomerPaid = customerPayments.reduce((sum, p) => sum + p.amount, 0);
+          
+          await Customer.findByIdAndUpdate(payment.customerId, {
+            totalPaid: totalCustomerPaid,
+            updatedAt: new Date()
+          });
+
+          console.log('✅ Customer total paid updated after payment edit');
+        } catch (customerUpdateError) {
+          console.error('⚠️ Error updating customer total paid:', customerUpdateError);
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: 'EMI payment updated successfully',
+        data: {
+          payment,
+          chainUpdate: chainUpdateResult,
+          changes: {
+            amount: { from: originalAmount, to: parseFloat(amount) },
+            date: { from: originalPaymentDate, to: paymentDateStr },
+            status: { from: originalStatus, to: payment.status }
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Error updating EMI payment:', error);
+      return NextResponse.json(
+        { 
+          success: false,
+          error: 'Failed to update EMI payment: ' + error.message 
+        },
+        { status: 500 }
+      );
+    }
   }
-}
 
 export async function DELETE(request) {
   try {
