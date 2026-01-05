@@ -17,6 +17,7 @@ import {
 } from '@/src/app/data-entry/utils/emiPaymentUtils';
 
 // ✅ EDIT ANY PAYMENT (PUT /api/data-entry/emi-payments/:id)
+// ✅ SIMPLIFIED: Edit payment without complex transactions
 export async function PUT(request, { params }) {
   try {
     await connectDB();
@@ -24,18 +25,17 @@ export async function PUT(request, { params }) {
     const { id } = params;
     const data = await request.json();
     
-    console.log('🟡 Editing payment with MANUAL control:', { id, updates: data });
+    console.log('✏️ Editing payment (Simplified):', { id, updates: data });
     
     const {
       amount,
       status,
       paymentDate,
       notes,
-      collectedBy,
-      updateChainTotals = true
+      collectedBy
     } = data;
 
-    // ✅ CRITICAL CHANGE: Only validate amount > 0, NOT against remaining
+    // Basic validation
     if (!amount || amount <= 0) {
       return NextResponse.json({
         success: false,
@@ -68,49 +68,93 @@ export async function PUT(request, { params }) {
 
     const cleanedPaymentId = paymentIdValidation.cleanedId;
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
+    // Get the payment
+    const payment = await EMIPayment.findById(cleanedPaymentId);
+    if (!payment) {
+      return NextResponse.json({
+        success: false,
+        error: 'Payment not found'
+      }, { status: 404 });
+    }
 
-    try {
-      const payment = await EMIPayment.findById(cleanedPaymentId).session(session);
-      if (!payment) {
-        await session.abortTransaction();
-        return NextResponse.json({
-          success: false,
-          error: 'Payment not found'
-        }, { status: 404 });
+    // Save original values
+    const originalAmount = payment.amount;
+    const originalStatus = payment.status;
+    const originalDate = payment.paymentDate;
+
+    // Update payment
+    payment.amount = parseFloat(amount);
+    if (paymentDateStr) payment.paymentDate = paymentDateStr;
+    payment.status = status;
+    if (notes !== undefined) payment.notes = notes;
+    if (collectedBy) payment.collectedBy = collectedBy;
+    payment.updatedAt = new Date();
+
+    // Add edit note
+    const editNote = `Edited: Amount ${originalAmount}→${amount}, Status ${originalStatus}→${status}`;
+    if (paymentDateStr && originalDate !== paymentDateStr) {
+      payment.notes = `${editNote}, Date ${formatToDDMMYYYY(originalDate)}→${formatToDDMMYYYY(paymentDateStr)}. ${payment.notes || ''}`;
+    } else {
+      payment.notes = `${editNote}. ${payment.notes || ''}`;
+    }
+
+    // Save the updated payment
+    await payment.save();
+
+    // Update chain totals if part of a chain
+    if (payment.partialChainId) {
+      try {
+        const chainPayments = await EMIPayment.find({ 
+          partialChainId: payment.partialChainId 
+        });
+        
+        const totalAmount = chainPayments.reduce((sum, p) => sum + p.amount, 0);
+        const parentPayment = chainPayments.find(p => !p.chainParentId) || chainPayments[0];
+        const fullEmiAmount = parentPayment.originalEmiAmount || parentPayment.installmentTotalAmount;
+        const isChainComplete = totalAmount >= fullEmiAmount;
+        
+        // Update all chain payments
+        await EMIPayment.updateMany(
+          { partialChainId: payment.partialChainId },
+          { 
+            $set: { 
+              installmentPaidAmount: totalAmount,
+              isChainComplete: isChainComplete,
+              status: isChainComplete ? 'Paid' : { $cond: { if: { $eq: ['$status', 'Partial'] }, then: 'Partial', else: '$status' } },
+              updatedAt: new Date()
+            } 
+          }
+        );
+      } catch (chainError) {
+        console.error('⚠️ Error updating chain:', chainError);
       }
+    }
 
-      const originalAmount = payment.amount;
-      const originalPaymentDate = payment.paymentDate;
-      const originalStatus = payment.status;
-
-      // ✅ CRITICAL: Update payment with manual values (NO AUTO-CALCULATION)
-      payment.amount = parseFloat(amount);
-      if (paymentDateStr) payment.paymentDate = paymentDateStr;
-      payment.status = status;
-      payment.notes = notes || payment.notes;
-      payment.collectedBy = collectedBy || payment.collectedBy;
-      payment.updatedAt = new Date();
-
-      // Add edit note
-      const editNote = `Edited: Amount ${originalAmount}→${amount}, Status ${originalStatus}→${status}`;
-      if (paymentDateStr && originalPaymentDate !== paymentDateStr) {
-        payment.notes = `${editNote}, Date ${formatToDDMMYYYY(originalPaymentDate)}→${formatToDDMMYYYY(paymentDateStr)}. ${payment.notes || ''}`;
-      } else {
-        payment.notes = `${editNote}. ${payment.notes || ''}`;
+    // Update loan and customer totals
+    if (payment.loanId) {
+      try {
+        const allLoanPayments = await EMIPayment.find({
+          loanId: payment.loanId,
+          status: { $in: ['Paid', 'Partial', 'Advance'] }
+        });
+        
+        const totalLoanPaid = allLoanPayments.reduce((sum, p) => sum + p.amount, 0);
+        
+        const loan = await Loan.findById(payment.loanId);
+        if (loan) {
+          await Loan.findByIdAndUpdate(payment.loanId, {
+            totalPaidAmount: totalLoanPaid,
+            remainingAmount: Math.max(0, loan.amount - totalLoanPaid),
+            updatedAt: new Date()
+          });
+        }
+      } catch (loanError) {
+        console.error('⚠️ Error updating loan:', loanError);
       }
+    }
 
-      // Update chain totals if partial payment
-      let chainUpdateResult = null;
-      if (updateChainTotals && payment.partialChainId) {
-        chainUpdateResult = await EMIPayment.updateChainTotals(payment.partialChainId);
-      }
-
-      await payment.save({ session });
-
-      // Update customer total
-      if (originalAmount !== parseFloat(amount) && payment.customerId) {
+    if (originalAmount !== parseFloat(amount) && payment.customerId) {
+      try {
         const customerPayments = await EMIPayment.find({
           customerId: payment.customerId,
           status: { $in: ['Paid', 'Partial', 'Advance'] }
@@ -118,46 +162,27 @@ export async function PUT(request, { params }) {
         
         const totalCustomerPaid = customerPayments.reduce((sum, p) => sum + p.amount, 0);
         
-        await Customer.findByIdAndUpdate(
-          payment.customerId,
-          { totalPaid: totalCustomerPaid, updatedAt: new Date() },
-          { session }
-        );
+        await Customer.findByIdAndUpdate(payment.customerId, {
+          totalPaid: totalCustomerPaid,
+          updatedAt: new Date()
+        });
+      } catch (customerError) {
+        console.error('⚠️ Error updating customer:', customerError);
       }
-
-      await session.commitTransaction();
-
-      // Update loan statistics
-      if (payment.loanId) {
-        try {
-          await updateLoanStatisticsAfterEdit(payment.loanId);
-        } catch (loanUpdateError) {
-          console.error('⚠️ Error updating loan statistics:', loanUpdateError);
-        }
-      }
-
-      return NextResponse.json({
-        success: true,
-        message: 'Payment updated successfully',
-        data: {
-          payment,
-          chainUpdate: chainUpdateResult,
-          chainUpdated: !!chainUpdateResult,
-          loanStatsUpdated: !!payment.loanId,
-          changes: {
-            amount: { from: originalAmount, to: parseFloat(amount) },
-            status: { from: originalStatus, to: status }
-          }
-        }
-      });
-
-    } catch (transactionError) {
-      await session.abortTransaction();
-      console.error('❌ Transaction error:', transactionError);
-      throw transactionError;
-    } finally {
-      session.endSession();
     }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Payment updated successfully',
+      data: {
+        payment,
+        changes: {
+          amount: { from: originalAmount, to: parseFloat(amount) },
+          status: { from: originalStatus, to: status },
+          date: paymentDateStr ? { from: originalDate, to: paymentDateStr } : null
+        }
+      }
+    });
 
   } catch (error) {
     console.error('❌ Error editing payment:', error);

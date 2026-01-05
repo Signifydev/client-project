@@ -15,6 +15,7 @@ import {
 } from '@/src/app/data-entry/utils/emiPaymentUtils';
 
 // ✅ COMPLETE PARTIAL PAYMENT (POST /api/data-entry/emi-payments/:id/complete)
+// ✅ SIMPLIFIED: Complete partial payment WITHOUT model methods
 export async function POST(request, { params }) {
   try {
     await connectDB();
@@ -22,7 +23,7 @@ export async function POST(request, { params }) {
     const { id } = params;
     const data = await request.json();
     
-    console.log('🟡 Completing partial payment with CUSTOM date:', { id, data });
+    console.log('🔨 Completing partial payment (Simplified):', { id, data });
     
     const {
       additionalAmount,
@@ -45,8 +46,8 @@ export async function POST(request, { params }) {
       }, { status: 400 });
     }
 
-    // ✅ CRITICAL: Validate date but DON'T validate amount against remaining
-    const paymentDateStr = paymentDate ? formatToYYYYMMDD(paymentDate) : formatToYYYYMMDD(new Date());
+    // Validate date
+    const paymentDateStr = paymentDate ? formatToYYYYMMDD(paymentDate) : getCurrentDateString();
     if (!isValidYYYYMMDD(paymentDateStr)) {
       return NextResponse.json({
         success: false,
@@ -54,6 +55,7 @@ export async function POST(request, { params }) {
       }, { status: 400 });
     }
 
+    // Validate payment ID
     const paymentIdValidation = validateAndCleanObjectId(id, 'Payment ID');
     if (!paymentIdValidation.isValid) {
       return NextResponse.json({
@@ -64,6 +66,7 @@ export async function POST(request, { params }) {
 
     const cleanedPaymentId = paymentIdValidation.cleanedId;
 
+    // Get parent payment
     const parentPayment = await EMIPayment.findById(cleanedPaymentId);
     if (!parentPayment) {
       return NextResponse.json({
@@ -79,119 +82,193 @@ export async function POST(request, { params }) {
       }, { status: 400 });
     }
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
+    // Get chain payments manually (without transactions)
+    const chainPayments = await EMIPayment.find({ 
+      partialChainId: parentPayment.partialChainId 
+    });
 
-    try {
-      // Get chain info for reference (NOT for validation)
-      const chainPayments = await EMIPayment.find({
-        partialChainId: parentPayment.partialChainId
-      }).session(session);
+    // Calculate totals manually
+    const totalPaidSoFar = chainPayments.reduce((sum, p) => sum + p.amount, 0);
+    const fullEmiAmount = parentPayment.originalEmiAmount || 
+                         parentPayment.installmentTotalAmount || 
+                         parentPayment.amount;
+    
+    const suggestedRemaining = Math.max(0, fullEmiAmount - totalPaidSoFar);
+    const chainSequence = chainPayments.length + 1;
 
-      const totalPaidSoFar = chainPayments.reduce((sum, p) => sum + p.amount, 0);
-      const fullEmiAmount = parentPayment.installmentTotalAmount || parentPayment.originalEmiAmount || 0;
-      
-      // ✅ CRITICAL: Show remaining but DON'T restrict amount
-      const remainingAmount = Math.max(0, fullEmiAmount - totalPaidSoFar);
-      
-      console.log('📊 Chain reference info:', {
-        fullEmiAmount,
-        totalPaidSoFar,
-        remainingAmount,
-        additionalAmount: parseFloat(additionalAmount)
-      });
+    console.log('📊 Chain calculation:', {
+      chainPayments: chainPayments.length,
+      totalPaidSoFar,
+      fullEmiAmount,
+      suggestedRemaining,
+      chainSequence
+    });
 
-      // Create completion payment
-      const completionPayment = new EMIPayment({
-        customerId: parentPayment.customerId,
-        customerName: parentPayment.customerName,
-        loanId: parentPayment.loanId,
-        loanNumber: parentPayment.loanNumber,
-        paymentDate: paymentDateStr,
-        amount: parseFloat(additionalAmount),
-        status: 'Paid',
-        collectedBy: collectedBy,
-        paymentMethod: parentPayment.paymentMethod || 'Cash',
-        notes: notes || `Completion payment for partial chain`,
-        paymentType: 'single',
-        isAdvancePayment: false,
-        partialChainId: parentPayment.partialChainId,
-        chainParentId: parentPayment._id,
-        originalEmiAmount: parentPayment.originalEmiAmount,
-        installmentNumber: parentPayment.installmentNumber,
-        expectedDueDate: parentPayment.expectedDueDate,
-        chainSequence: (chainPayments.length || 1) + 1
-      });
+    // ✅ STEP 1: Create the completion payment
+    const completionPayment = new EMIPayment({
+      customerId: parentPayment.customerId,
+      customerName: parentPayment.customerName,
+      loanId: parentPayment.loanId,
+      loanNumber: parentPayment.loanNumber,
+      paymentDate: paymentDateStr,
+      amount: parseFloat(additionalAmount),
+      status: 'Paid',
+      collectedBy: collectedBy,
+      notes: notes || `Completion payment for installment ${parentPayment.installmentNumber}`,
+      paymentMethod: parentPayment.paymentMethod || 'Cash',
+      paymentType: 'single',
+      isAdvancePayment: false,
+      partialChainId: parentPayment.partialChainId,
+      chainParentId: parentPayment._id,
+      installmentTotalAmount: fullEmiAmount,
+      originalEmiAmount: fullEmiAmount,
+      chainSequence: chainSequence,
+      installmentNumber: parentPayment.installmentNumber,
+      expectedDueDate: parentPayment.expectedDueDate,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
 
-      await completionPayment.save({ session });
+    // Save completion payment
+    await completionPayment.save();
 
-      // Update chain status if complete
-      const newTotalPaid = totalPaidSoFar + parseFloat(additionalAmount);
-      const isChainComplete = newTotalPaid >= fullEmiAmount;
-
-      if (isChainComplete) {
-        await EMIPayment.updateMany(
-          { partialChainId: parentPayment.partialChainId },
-          { 
-            $set: { 
-              isChainComplete: true,
-              status: 'Paid'
-            } 
-          },
-          { session }
-        );
+    // ✅ STEP 2: Update parent payment (add child ID)
+    await EMIPayment.findByIdAndUpdate(
+      parentPayment._id,
+      { 
+        $addToSet: { chainChildrenIds: completionPayment._id },
+        updatedAt: new Date()
       }
+    );
 
-      // Update customer total
+    // ✅ STEP 3: Calculate new chain total
+    const newTotalPaid = totalPaidSoFar + parseFloat(additionalAmount);
+    const isChainComplete = newTotalPaid >= fullEmiAmount;
+
+    // ✅ STEP 4: Update all chain payments if complete
+    if (isChainComplete) {
+      await EMIPayment.updateMany(
+        { partialChainId: parentPayment.partialChainId },
+        { 
+          $set: { 
+            status: 'Paid', 
+            isChainComplete: true,
+            installmentPaidAmount: newTotalPaid,
+            updatedAt: new Date()
+          } 
+        }
+      );
+    } else {
+      // Update chain totals without changing status
+      await EMIPayment.updateMany(
+        { partialChainId: parentPayment.partialChainId },
+        { 
+          $set: { 
+            installmentPaidAmount: newTotalPaid,
+            updatedAt: new Date()
+          } 
+        }
+      );
+    }
+
+    // ✅ STEP 5: Update loan statistics
+    if (parentPayment.loanId) {
+      try {
+        // Get all payments for this loan
+        const allLoanPayments = await EMIPayment.find({
+          loanId: parentPayment.loanId,
+          status: { $in: ['Paid', 'Partial', 'Advance'] }
+        });
+        
+        const totalLoanPaid = allLoanPayments.reduce((sum, p) => sum + p.amount, 0);
+        
+        const loan = await Loan.findById(parentPayment.loanId);
+        if (loan) {
+          // Only update if chain is complete
+          if (isChainComplete) {
+            const fullLoanPayments = await EMIPayment.find({
+              loanId: parentPayment.loanId,
+              status: { $in: ['Paid', 'Advance'] }
+            });
+            
+            const emiPaidCount = fullLoanPayments.length;
+            
+            const lastScheduledEmiDate = calculateLastScheduledEmiDate(
+              loan.emiStartDate || loan.dateApplied,
+              loan.loanType,
+              emiPaidCount
+            );
+            
+            const nextScheduledEmiDate = calculateNextScheduledEmiDate(
+              lastScheduledEmiDate,
+              loan.loanType,
+              loan.emiStartDate || loan.dateApplied,
+              emiPaidCount,
+              loan.totalEmiCount
+            );
+            
+            await Loan.findByIdAndUpdate(parentPayment.loanId, {
+              emiPaidCount: emiPaidCount,
+              totalPaidAmount: totalLoanPaid,
+              remainingAmount: Math.max(0, loan.amount - totalLoanPaid),
+              lastEmiDate: lastScheduledEmiDate,
+              nextEmiDate: nextScheduledEmiDate,
+              updatedAt: new Date()
+            });
+          } else {
+            // Just update total paid amount
+            await Loan.findByIdAndUpdate(parentPayment.loanId, {
+              totalPaidAmount: totalLoanPaid,
+              remainingAmount: Math.max(0, loan.amount - totalLoanPaid),
+              updatedAt: new Date()
+            });
+          }
+        }
+      } catch (loanUpdateError) {
+        console.error('⚠️ Error updating loan stats:', loanUpdateError);
+        // Don't fail the whole operation
+      }
+    }
+
+    // ✅ STEP 6: Update customer total
+    try {
       const customerPayments = await EMIPayment.find({
         customerId: parentPayment.customerId,
         status: { $in: ['Paid', 'Partial', 'Advance'] }
-      }).session(session);
+      });
       
       const totalCustomerPaid = customerPayments.reduce((sum, p) => sum + p.amount, 0);
       
-      await Customer.findByIdAndUpdate(
-        parentPayment.customerId,
-        { totalPaid: totalCustomerPaid, updatedAt: new Date() },
-        { session }
-      );
-
-      // Update loan if chain is complete
-      let loanUpdateResult = null;
-      if (isChainComplete && parentPayment.loanId) {
-        loanUpdateResult = await updateLoanForCompletedChain(parentPayment.loanId, session);
-      }
-
-      await session.commitTransaction();
-
-      // Get updated chain info
-      const updatedChain = await EMIPayment.find({
-        partialChainId: parentPayment.partialChainId
-      }).sort({ chainSequence: 1 });
-
-      return NextResponse.json({
-        success: true,
-        message: 'Partial payment completed successfully',
-        data: {
-          originalPayment: parentPayment,
-          completionPayment: completionPayment,
-          chainId: parentPayment.partialChainId,
-          totalPaid: newTotalPaid,
-          remainingBefore: remainingAmount,
-          remainingAfter: Math.max(0, remainingAmount - parseFloat(additionalAmount)),
-          isChainComplete: isChainComplete,
-          loanUpdated: !!loanUpdateResult,
-          chainPayments: updatedChain
-        }
+      await Customer.findByIdAndUpdate(parentPayment.customerId, {
+        totalPaid: totalCustomerPaid,
+        updatedAt: new Date()
       });
-
-    } catch (transactionError) {
-      await session.abortTransaction();
-      console.error('❌ Transaction error:', transactionError);
-      throw transactionError;
-    } finally {
-      session.endSession();
+    } catch (customerError) {
+      console.error('⚠️ Error updating customer:', customerError);
     }
+
+    console.log('✅ Partial payment completed successfully (Simplified):', {
+      parentPaymentId: cleanedPaymentId,
+      completionPaymentId: completionPayment._id,
+      additionalAmount,
+      newTotalPaid,
+      isChainComplete
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: 'Partial payment completed successfully',
+      data: {
+        originalPayment: parentPayment,
+        completionPayment: completionPayment,
+        chainId: parentPayment.partialChainId,
+        totalPaid: newTotalPaid,
+        remainingBefore: suggestedRemaining,
+        remainingAfter: Math.max(0, suggestedRemaining - parseFloat(additionalAmount)),
+        isChainComplete: isChainComplete,
+        loanUpdated: !!parentPayment.loanId
+      }
+    });
 
   } catch (error) {
     console.error('❌ Error completing partial payment:', error);
