@@ -1,13 +1,39 @@
 import mongoose from 'mongoose';
 
 // ==============================================
+// TYPE DEFINITIONS
+// ==============================================
+
+interface Loan {
+  emiStartDate?: string;
+  loanType?: string;
+  emiAmount?: number;
+  customEmiAmount?: number;
+  totalEmiCount?: number;
+  loanDays?: number;
+  emiType?: string;
+  totalLoanAmount?: number;
+  amount?: number;
+  dateApplied?: string;
+  emiPaidCount?: number;
+}
+
+interface ValidationResult {
+  isValid: boolean;
+  error?: string;
+  cleanedId?: mongoose.Types.ObjectId;
+  originalId?: string;
+  cleanedIdString?: string;
+}
+
+// ==============================================
 // DATE UTILITY FUNCTIONS
 // ==============================================
 
 /**
  * Get current date as YYYY-MM-DD string
  */
-export function getCurrentDateString() {
+export function getCurrentDateString(): string {
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -18,7 +44,7 @@ export function getCurrentDateString() {
 /**
  * Validate if string is in YYYY-MM-DD format
  */
-export function isValidYYYYMMDD(dateString) {
+export function isValidYYYYMMDD(dateString: string): boolean {
   if (!dateString || typeof dateString !== 'string') return false;
   
   const pattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -39,7 +65,7 @@ export function isValidYYYYMMDD(dateString) {
 /**
  * Parse YYYY-MM-DD string to Date object
  */
-function parseDateString(dateString) {
+function parseDateString(dateString: string): Date {
   if (!isValidYYYYMMDD(dateString)) {
     console.error('Invalid date string:', dateString);
     return new Date();
@@ -52,7 +78,7 @@ function parseDateString(dateString) {
 /**
  * Format Date object to YYYY-MM-DD string
  */
-export function formatToYYYYMMDD(dateInput) {
+export function formatToYYYYMMDD(dateInput: Date | string | null): string {
   if (!dateInput) return '';
   
   try {
@@ -87,7 +113,7 @@ export function formatToYYYYMMDD(dateInput) {
 /**
  * Format date to DD/MM/YYYY for display
  */
-export function formatToDDMMYYYY(dateString) {
+export function formatToDDMMYYYY(dateString: string): string {
   if (!isValidYYYYMMDD(dateString)) return '';
   
   const [year, month, day] = dateString.split('-');
@@ -97,7 +123,7 @@ export function formatToDDMMYYYY(dateString) {
 /**
  * Add days to a date string
  */
-export function addDays(dateString, days) {
+export function addDays(dateString: string, days: number): string {
   const date = parseDateString(dateString);
   date.setDate(date.getDate() + days);
   return formatToYYYYMMDD(date);
@@ -106,7 +132,7 @@ export function addDays(dateString, days) {
 /**
  * Add months to a date string
  */
-export function addMonths(dateString, months) {
+export function addMonths(dateString: string, months: number): string {
   const date = parseDateString(dateString);
   date.setMonth(date.getMonth() + months);
   return formatToYYYYMMDD(date);
@@ -119,15 +145,15 @@ export function addMonths(dateString, months) {
 /**
  * Clean ID by removing temp/fallback prefixes
  */
-export function cleanId(id) {
-  if (!id) return id;
+export function cleanId(id: string | null | undefined): string {
+  if (!id) return '';
   return id.replace(/(_default|_temp|_new|fallback_)/, '');
 }
 
 /**
  * Validate and clean MongoDB ObjectId
  */
-export function validateAndCleanObjectId(id, fieldName = 'ID') {
+export function validateAndCleanObjectId(id: string, fieldName: string = 'ID'): ValidationResult {
   if (!id) {
     return { isValid: false, error: `${fieldName} is required` };
   }
@@ -156,8 +182,12 @@ export function validateAndCleanObjectId(id, fieldName = 'ID') {
 /**
  * Calculate which installment number this payment is for
  */
-export function calculateInstallmentNumber(emiStartDate, loanType, paymentDate) {
-  if (!emiStartDate || !paymentDate) return 1;
+export function calculateInstallmentNumber(
+  emiStartDate: string | null | undefined, 
+  loanType: string | null | undefined, 
+  paymentDate: string | null | undefined
+): number {
+  if (!emiStartDate || !paymentDate || !loanType) return 1;
   
   const startDate = parseDateString(emiStartDate);
   const payDate = parseDateString(paymentDate);
@@ -183,9 +213,13 @@ export function calculateInstallmentNumber(emiStartDate, loanType, paymentDate) 
 /**
  * Calculate expected due date for a specific installment
  */
-export function calculateExpectedDueDate(emiStartDate, loanType, installmentNumber) {
-  if (!emiStartDate || !installmentNumber || installmentNumber < 1) {
-    return emiStartDate;
+export function calculateExpectedDueDate(
+  emiStartDate: string | null | undefined, 
+  loanType: string | null | undefined, 
+  installmentNumber: number
+): string {
+  if (!emiStartDate || !installmentNumber || installmentNumber < 1 || !loanType) {
+    return emiStartDate || getCurrentDateString();
   }
   
   const startDate = parseDateString(emiStartDate);
@@ -211,7 +245,11 @@ export function calculateExpectedDueDate(emiStartDate, loanType, installmentNumb
 /**
  * Generate partial chain ID with installment number
  */
-export function generatePartialChainId(loanId, expectedDueDate, installmentNumber) {
+export function generatePartialChainId(
+  loanId: string | mongoose.Types.ObjectId, 
+  expectedDueDate: string, 
+  installmentNumber: number
+): string {
   if (!loanId) {
     console.error('❌ CRITICAL: Cannot generate chain ID without loanId');
     throw new Error('Loan ID is required for chain ID generation');
@@ -229,16 +267,20 @@ export function generatePartialChainId(loanId, expectedDueDate, installmentNumbe
 /**
  * Calculate last scheduled EMI date
  */
-export function calculateLastScheduledEmiDate(emiStartDate, loanType, totalEmisPaid) {
-  if (!emiStartDate || totalEmisPaid <= 0) return emiStartDate;
+export function calculateLastScheduledEmiDate(
+  emiStartDate: string | null | undefined, 
+  loanType: string | null | undefined, 
+  totalEmisPaid: number
+): string {
+  if (!emiStartDate || !loanType || totalEmisPaid <= 0) return emiStartDate || getCurrentDateString();
   
   if (!isValidYYYYMMDD(emiStartDate)) {
     console.error('Invalid emiStartDate:', emiStartDate);
-    return emiStartDate;
+    return emiStartDate || getCurrentDateString();
   }
   
   const startDate = parseDateString(emiStartDate);
-  let lastScheduledDate = new Date(startDate);
+  const lastScheduledDate = new Date(startDate);
   
   switch(loanType) {
     case 'Daily':
@@ -260,19 +302,25 @@ export function calculateLastScheduledEmiDate(emiStartDate, loanType, totalEmisP
 /**
  * Calculate next scheduled EMI date
  */
-export function calculateNextScheduledEmiDate(lastScheduledEmiDate, loanType, emiStartDate, emiPaidCount, totalEmiCount) {
+export function calculateNextScheduledEmiDate(
+  lastScheduledEmiDate: string | null | undefined, 
+  loanType: string | null | undefined, 
+  emiStartDate: string | null | undefined, 
+  emiPaidCount: number, 
+  totalEmiCount: number
+): string | null {
   if (emiPaidCount >= totalEmiCount) {
     return null;
   }
   
-  if (!lastScheduledEmiDate) return emiStartDate || getCurrentDateString();
+  if (!lastScheduledEmiDate || !loanType) return emiStartDate || getCurrentDateString();
   
   if (!isValidYYYYMMDD(lastScheduledEmiDate)) {
     console.error('Invalid lastScheduledEmiDate:', lastScheduledEmiDate);
     return emiStartDate || getCurrentDateString();
   }
   
-  let nextDate;
+  let nextDate: string;
   
   switch(loanType) {
     case 'Daily':
@@ -300,7 +348,7 @@ export function calculateNextScheduledEmiDate(lastScheduledEmiDate, loanType, em
 /**
  * Calculate correct EMI amount for an installment (considering custom EMI)
  */
-export function calculateCorrectEmiAmount(loan, installmentNumber) {
+export function calculateCorrectEmiAmount(loan: Loan | null, installmentNumber: number): number {
   if (!loan) return 0;
   
   let emiAmount = loan.emiAmount || 0;
@@ -318,7 +366,7 @@ export function calculateCorrectEmiAmount(loan, installmentNumber) {
 /**
  * Calculate days between two dates
  */
-export function calculateDaysBetween(startDate, endDate) {
+export function calculateDaysBetween(startDate: string, endDate: string): number {
   const start = parseDateString(startDate);
   const end = parseDateString(endDate);
   const timeDiff = end.getTime() - start.getTime();
@@ -332,7 +380,7 @@ export function calculateDaysBetween(startDate, endDate) {
 /**
  * Validate payment date (must be today or in past)
  */
-export function validatePaymentDate(paymentDate) {
+export function validatePaymentDate(paymentDate: string): boolean {
   const today = getCurrentDateString();
   return paymentDate <= today;
 }
@@ -340,7 +388,7 @@ export function validatePaymentDate(paymentDate) {
 /**
  * Validate advance payment dates
  */
-export function validateAdvanceDates(advanceFromDate, advanceToDate) {
+export function validateAdvanceDates(advanceFromDate: string, advanceToDate: string): ValidationResult {
   if (!advanceFromDate || !advanceToDate) {
     return { isValid: false, error: 'From date and to date are required' };
   }
@@ -368,14 +416,14 @@ export function validateAdvanceDates(advanceFromDate, advanceToDate) {
 /**
  * Format amount for display with currency symbol
  */
-export function formatCurrency(amount) {
+export function formatCurrency(amount: number): string {
   return `₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /**
  * Get status color class for UI
  */
-export function getStatusColorClass(status) {
+export function getStatusColorClass(status: string): string {
   switch (status) {
     case 'Paid':
       return 'bg-green-100 text-green-800';
@@ -395,7 +443,7 @@ export function getStatusColorClass(status) {
 /**
  * Create a payment reference ID
  */
-export function generatePaymentReference(customerId, paymentDate) {
+export function generatePaymentReference(customerId: string | mongoose.Types.ObjectId, paymentDate: string): string {
   const datePart = paymentDate.replace(/-/g, '');
   const customerPart = customerId.toString().slice(-6);
   return `PAY-${datePart}-${customerPart}-${Date.now().toString().slice(-4)}`;
@@ -404,14 +452,14 @@ export function generatePaymentReference(customerId, paymentDate) {
 /**
  * Calculate suggested remaining amount for a chain (guidance only)
  */
-export function calculateSuggestedRemaining(originalEmiAmount, totalPaidSoFar) {
+export function calculateSuggestedRemaining(originalEmiAmount: number, totalPaidSoFar: number): number {
   return Math.max(0, originalEmiAmount - totalPaidSoFar);
 }
 
 /**
  * Check if a payment should advance the loan schedule
  */
-export function shouldAdvanceLoanSchedule(paymentStatus, previousStatus) {
+export function shouldAdvanceLoanSchedule(paymentStatus: string, previousStatus: string): boolean {
   // Only advance when payment becomes fully paid
   if (previousStatus === 'Partial' && paymentStatus === 'Paid') {
     return true;
@@ -429,8 +477,8 @@ export function shouldAdvanceLoanSchedule(paymentStatus, previousStatus) {
 /**
  * Get next working day (skip weekends)
  */
-export function getNextWorkingDay(dateString, daysToAdd = 1) {
-  let date = parseDateString(dateString);
+export function getNextWorkingDay(dateString: string, daysToAdd: number = 1): string {
+  const date = parseDateString(dateString);
   let daysAdded = 0;
   
   while (daysAdded < daysToAdd) {
@@ -449,7 +497,7 @@ export function getNextWorkingDay(dateString, daysToAdd = 1) {
 /**
  * Calculate total loan amount including interest
  */
-export function calculateTotalLoanAmount(loan) {
+export function calculateTotalLoanAmount(loan: Loan): number {
   if (loan.totalLoanAmount !== undefined && loan.totalLoanAmount !== null) {
     return loan.totalLoanAmount;
   }
@@ -459,12 +507,12 @@ export function calculateTotalLoanAmount(loan) {
   if (loan.emiType === 'custom' && loan.loanType !== 'Daily') {
     const regularPeriods = totalEmiCount - 1;
     const lastPeriod = 1;
-    const regularAmount = loan.emiAmount * regularPeriods;
-    const lastAmount = (loan.customEmiAmount || loan.emiAmount) * lastPeriod;
+    const regularAmount = (loan.emiAmount || 0) * regularPeriods;
+    const lastAmount = (loan.customEmiAmount || loan.emiAmount || 0) * lastPeriod;
     return regularAmount + lastAmount;
   }
   
-  return loan.emiAmount * totalEmiCount;
+  return (loan.emiAmount || 0) * totalEmiCount;
 }
 
 // ==============================================
