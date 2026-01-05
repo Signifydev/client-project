@@ -13,7 +13,6 @@ export interface EMITransaction {
   status: string;
   paymentMethod?: string;
   notes?: string;
-  // ✅ FIXED: Chain fields from updated schema
   partialChainId?: string;
   chainParentId?: string;
   chainChildrenIds?: string[];
@@ -22,11 +21,10 @@ export interface EMITransaction {
   isChainComplete?: boolean;
   chainSequence?: number;
   originalEmiAmount?: number;
-  // ✅ NEW: Add loanId for better chain filtering
   loanId?: string;
 }
 
-// ✅ FIXED: Chain information interface
+// ✅ UPDATED: Chain information interface with suggestedRemaining
 interface ChainInfo {
   chainId: string;
   parentPaymentId: string;
@@ -35,9 +33,9 @@ interface ChainInfo {
   customerId: string;
   customerName: string;
   installmentTotalAmount: number;
-  originalEmiAmount?: number; // ✅ NEW: Add original EMI amount
+  originalEmiAmount?: number;
   totalPaidAmount: number;
-  remainingAmount: number;
+  suggestedRemaining: number; // ✅ CHANGED: From remainingAmount to suggestedRemaining
   isComplete: boolean;
   paymentCount: number;
   payments: Array<{
@@ -47,11 +45,17 @@ interface ChainInfo {
     paymentDate: string;
     collectedBy: string;
     chainSequence: number;
-    originalEmiAmount?: number; // ✅ NEW: Add to payments
+    originalEmiAmount?: number;
   }>;
+  loanInfo?: { // ✅ NEW: Added loan info for reference
+    loanNumber: string;
+    emiAmount: number;
+    loanType: string;
+    totalEmiCount: number;
+    emiPaidCount: number;
+  };
 }
 
-// ✅ FIXED: Edit options type
 type EditMode = 'none' | 'edit-amount' | 'complete-partial';
 
 interface EMITransactionsModalProps {
@@ -66,14 +70,11 @@ interface EMITransactionsModalProps {
 // HELPER FUNCTIONS
 // ============================================================================
 
-// Helper function to calculate total loan amount for a loan
 const calculateTotalLoanAmount = (loan: any): number => {
-  // Check if virtual totalLoanAmount exists
   if (loan.totalLoanAmount !== undefined && loan.totalLoanAmount !== null) {
     return loan.totalLoanAmount;
   }
   
-  // If not, calculate manually considering custom EMI
   const totalEmiCount = loan.totalEmiCount || loan.loanDays || 0;
   
   if (loan.emiType === 'custom' && loan.loanType !== 'Daily') {
@@ -84,16 +85,13 @@ const calculateTotalLoanAmount = (loan: any): number => {
     return regularAmount + lastAmount;
   }
   
-  // For fixed EMI or Daily loans
   return loan.emiAmount * totalEmiCount;
 };
 
-// ✅ FIXED: Format currency for display
 const formatCurrency = (amount: number): string => {
   return `₹${amount.toLocaleString('en-IN')}`;
 };
 
-// ✅ FIXED: Get status color class
 const getStatusColorClass = (status: string): string => {
   switch (status) {
     case 'Paid':
@@ -124,19 +122,18 @@ export default function EMITransactionsModal({
   const [editMode, setEditMode] = useState<EditMode>('none');
   const [editAmount, setEditAmount] = useState<string>('');
   const [editStatus, setEditStatus] = useState<string>('Paid');
+  const [editDate, setEditDate] = useState<string>(''); // ✅ NEW: For editing payment date
   const [isEditing, setIsEditing] = useState(false);
   const [editError, setEditError] = useState<string>('');
   
-  // ✅ FIXED: State for chain information
   const [chainInfo, setChainInfo] = useState<ChainInfo | null>(null);
   const [loadingChain, setLoadingChain] = useState(false);
   
-  // ✅ FIXED: State for complete partial payment
   const [additionalAmount, setAdditionalAmount] = useState<string>('');
-  const [remainingAmount, setRemainingAmount] = useState<number>(0);
+  const [completionDate, setCompletionDate] = useState<string>(''); // ✅ NEW: For completion date
   const [chainPayments, setChainPayments] = useState<EMITransaction[]>([]);
 
-  // Calculate total expected amount for comparison
+  // Calculate total expected amount
   const calculateTotalExpectedAmount = () => {
     if (!customer.loans || !Array.isArray(customer.loans)) return 0;
     
@@ -147,10 +144,10 @@ export default function EMITransactionsModal({
 
   const totalExpectedAmount = calculateTotalExpectedAmount();
   
-  // Get unique loan numbers from transactions
+  // Get unique loan numbers
   const loanNumbers = ['all', ...new Set(transactions.map(t => t.loanNumber))];
   
-  // Filter transactions based on selected loan
+  // Filter transactions
   useEffect(() => {
     if (selectedLoan === 'all') {
       setFilteredTransactions(transactions);
@@ -159,154 +156,110 @@ export default function EMITransactionsModal({
     }
   }, [selectedLoan, transactions]);
   
-  // Calculate statistics
+  // Statistics
   const totalAmount = filteredTransactions.reduce((sum, t) => sum + t.amount, 0);
   const paidCount = filteredTransactions.filter(t => t.status === 'Paid' || t.status === 'Advance').length;
   const partialCount = filteredTransactions.filter(t => t.status === 'Partial').length;
   
-  // Calculate collection percentage
   const collectionPercentage = totalExpectedAmount > 0 
     ? Math.min((totalAmount / totalExpectedAmount) * 100, 100) 
     : 0;
   
-  // ✅ FIXED: Fetch chain information for a transaction
+  // ✅ UPDATED: Fetch chain info using new API endpoint
   const fetchChainInfo = async (transaction: EMITransaction) => {
-  if (!transaction._id && !transaction.partialChainId) return null;
-  
-  console.log('🔗 DEBUG 1: Starting chain fetch for transaction:', {
-    _id: transaction._id,
-    partialChainId: transaction.partialChainId,
-    amount: transaction.amount,
-    originalEmiAmount: transaction.originalEmiAmount,
-    installmentTotalAmount: transaction.installmentTotalAmount,
-    loanId: transaction.loanId,
-    loanNumber: transaction.loanNumber,
-    status: transaction.status
-  });
-  
-  setLoadingChain(true);
-  try {
-    let url = `/api/data-entry/emi-payments?action=get-chain-info&`;
+    if (!transaction._id) return null;
     
-    if (transaction.partialChainId) {
-      url += `chainId=${transaction.partialChainId}`;
-    } else {
-      url += `paymentId=${transaction._id}`;
-    }
+    console.log('🔗 Fetching chain info for transaction:', transaction._id);
     
-    // ✅ FIXED: Add loanId parameter to filter chain by specific loan
-    if (transaction.loanNumber && transaction.loanNumber !== 'N/A') {
-      // We need to get loanId from the transaction or customer loans
-      const customerLoan = customer.loans?.find((l: any) => l.loanNumber === transaction.loanNumber);
-      if (customerLoan?._id) {
-        url += `&loanId=${customerLoan._id}`;
-        console.log('🔗 DEBUG 2: Added loanId to URL:', customerLoan._id);
-      } else {
-        console.log('🔗 DEBUG 2: No matching loan found for loanNumber:', transaction.loanNumber);
+    setLoadingChain(true);
+    try {
+      // ✅ UPDATED: Use new API endpoint
+      const response = await fetch(`/api/data-entry/emi-payments/chain/payment?paymentId=${transaction._id}`);
+      
+      console.log('🔗 API Response status:', response.status);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch chain info: ${response.status} ${response.statusText}`);
       }
-    } else {
-      console.log('🔗 DEBUG 2: No loanNumber or loanNumber is N/A');
-    }
-    
-    console.log('🔗 DEBUG 3: Full API URL:', url);
-    
-    const response = await fetch(url);
-    
-    console.log('🔗 DEBUG 4: Response status:', response.status);
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch chain info: ${response.status} ${response.statusText}`);
-    }
-    
-    const result = await response.json();
-    
-    console.log('🔗 DEBUG 5: API Response data:', {
-      success: result.success,
-      hasData: !!result.data,
-      originalEmiAmount: result.data?.originalEmiAmount,
-      installmentTotalAmount: result.data?.installmentTotalAmount,
-      totalPaidAmount: result.data?.totalPaidAmount,
-      fullData: result.data
-    });
-    
-    if (result.success && result.data) {
-      setChainInfo(result.data);
-      setChainPayments(result.data.payments || []);
       
-      // ✅ CRITICAL FIX: Calculate remaining amount correctly
-      // Use originalEmiAmount if available, otherwise use installmentTotalAmount
-      const fullEmiAmount = result.data.originalEmiAmount || 
-                           result.data.installmentTotalAmount || 
-                           transaction.amount;
+      const result = await response.json();
       
-      const totalPaid = result.data.totalPaidAmount || transaction.amount;
-      const remaining = Math.max(0, fullEmiAmount - totalPaid);
-      
-      setRemainingAmount(remaining);
-      
-      console.log('🔗 DEBUG 6: Calculated amounts:', {
-        fullEmiAmount,
-        totalPaid,
-        remaining,
-        transactionAmount: transaction.amount,
-        dataOriginalEmiAmount: result.data.originalEmiAmount,
-        dataInstallmentTotalAmount: result.data.installmentTotalAmount
+      console.log('🔗 Chain info result:', {
+        success: result.success,
+        hasData: !!result.data,
+        data: result.data
       });
       
-      return result.data;
-    } else {
-      console.log('🔗 DEBUG 7: API returned failure or no data');
+      if (result.success && result.data) {
+        setChainInfo(result.data);
+        setChainPayments(result.data.payments || []);
+        
+        // ✅ CHANGED: Use suggestedRemaining (guidance only)
+        const suggestedRemaining = result.data.suggestedRemaining || 0;
+        
+        console.log('🔗 Chain amounts:', {
+          fullEmiAmount: result.data.originalEmiAmount || result.data.installmentTotalAmount,
+          totalPaid: result.data.totalPaidAmount,
+          suggestedRemaining: suggestedRemaining
+        });
+        
+        return result.data;
+      } else {
+        console.log('🔗 No chain data returned');
+        return null;
+      }
+    } catch (error) {
+      console.error('🔗 ERROR fetching chain info:', error);
       return null;
+    } finally {
+      setLoadingChain(false);
     }
-  } catch (error) {
-    console.error('🔗 ERROR fetching chain info:', error);
-    return null;
-  } finally {
-    setLoadingChain(false);
-  }
-};
-
+  };
   
-  // ✅ FIXED: Handle edit button click
+  // ✅ UPDATED: Handle edit button click
   const handleEditClick = async (transaction: EMITransaction) => {
-    console.log('Editing transaction:', transaction);
+    console.log('🔄 Editing transaction:', transaction);
     
-    // ✅ FIXED: Pass loanId to filter chain by specific loan
     const chainData = await fetchChainInfo(transaction);
     
     setEditingTransaction(transaction);
     setEditAmount(transaction.amount.toString());
     setEditStatus(transaction.status);
+    setEditDate(transaction.paymentDate); // ✅ NEW: Set current date
     setEditError('');
     setAdditionalAmount('');
     
-    // Determine which edit mode to show based on payment status
+    // ✅ NEW: Set completion date to tomorrow as default
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    setCompletionDate(tomorrow.toISOString().split('T')[0]);
+    
+    // For partial payments, show both options
     if (transaction.status === 'Partial') {
-      // For partial payments, show both options
       setEditMode('edit-amount');
     } else {
-      // For paid payments, only show edit amount option
       setEditMode('edit-amount');
     }
     
-    // If it's a partial payment, calculate remaining amount
+    // If partial payment, set additional amount to suggested remaining
     if (transaction.status === 'Partial' && chainData) {
-      setRemainingAmount(chainData.remainingAmount || 0);
-      setAdditionalAmount(chainData.remainingAmount?.toString() || '0');
+      const suggestedRemaining = chainData.suggestedRemaining || 0;
+      setAdditionalAmount(suggestedRemaining.toString());
     }
   };
 
-  // ✅ FIXED: Handle edit option change
+  // ✅ UPDATED: Handle edit option change
   const handleEditOptionChange = (mode: EditMode) => {
     setEditMode(mode);
     setEditError('');
     
-    if (mode === 'complete-partial' && editingTransaction && remainingAmount > 0) {
-      setAdditionalAmount(remainingAmount.toString());
+    if (mode === 'complete-partial' && editingTransaction && chainInfo) {
+      const suggestedRemaining = chainInfo.suggestedRemaining || 0;
+      setAdditionalAmount(suggestedRemaining.toString());
     }
   };
 
-  // ✅ FIXED: Validate edit form
+  // ✅ UPDATED: Validate edit form with MANUAL CONTROL
   const validateEditForm = (): boolean => {
     setEditError('');
     
@@ -317,20 +270,9 @@ export default function EMITransactionsModal({
         return false;
       }
       
-      // If changing from Paid to Partial, we need installment total amount
-      if (editingTransaction?.status === 'Paid' && editStatus === 'Partial') {
-        if (!chainInfo?.installmentTotalAmount) {
-          setEditError('Cannot change to Partial without knowing the full installment amount');
-          return false;
-        }
-        
-        // ✅ NEW: Validate partial amount is less than full EMI
-        const fullEmiAmount = chainInfo.originalEmiAmount || chainInfo.installmentTotalAmount;
-        if (amount >= fullEmiAmount) {
-          setEditError(`Partial amount (₹${amount}) should be less than full EMI amount (₹${fullEmiAmount})`);
-          return false;
-        }
-      }
+      // ✅ REMOVED: No validation against full EMI amount
+      // Users can enter ANY valid amount
+      
     } else if (editMode === 'complete-partial') {
       const amount = parseFloat(additionalAmount);
       if (isNaN(amount) || amount <= 0) {
@@ -338,8 +280,12 @@ export default function EMITransactionsModal({
         return false;
       }
       
-      if (amount > remainingAmount) {
-        setEditError(`Additional amount cannot exceed remaining amount of ${formatCurrency(remainingAmount)}`);
+      // ✅ REMOVED: No validation against remaining amount
+      // Users can enter ANY valid amount
+      
+      // Validate completion date
+      if (!completionDate) {
+        setEditError('Please select a completion date');
         return false;
       }
     }
@@ -347,7 +293,7 @@ export default function EMITransactionsModal({
     return true;
   };
 
-  // ✅ FIXED: Handle edit amount (Option 1)
+  // ✅ UPDATED: Handle edit amount (Option 1) with new API endpoint
   const handleSaveEditAmount = async () => {
     if (!editingTransaction || !validateEditForm()) return;
     
@@ -355,18 +301,18 @@ export default function EMITransactionsModal({
     setEditError('');
     
     try {
-      console.log('Saving edited amount for transaction:', editingTransaction._id);
+      console.log('💾 Saving edited amount for transaction:', editingTransaction._id);
       
-      const response = await fetch('/api/data-entry/emi-payments?action=edit-payment', {
-        method: 'POST',
+      // ✅ UPDATED: Use new PUT endpoint
+      const response = await fetch(`/api/data-entry/emi-payments/${editingTransaction._id}`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          paymentId: editingTransaction._id,
           amount: parseFloat(editAmount),
-          paymentDate: editingTransaction.paymentDate,
           status: editStatus,
+          paymentDate: editDate || editingTransaction.paymentDate,
           collectedBy: editingTransaction.collectedBy,
           notes: `Edited: Amount changed from ₹${editingTransaction.amount} to ₹${editAmount}`,
           updateChainTotals: true
@@ -376,8 +322,14 @@ export default function EMITransactionsModal({
       const result = await response.json();
       
       if (response.ok && result.success) {
-        console.log('✅ Transaction amount updated successfully');
-        alert('Transaction amount updated successfully!');
+        console.log('✅ Transaction amount updated successfully:', result.data);
+        
+        // ✅ NEW: Show success message with details
+        alert(`✅ Transaction updated successfully!
+• New Amount: ${formatCurrency(parseFloat(editAmount))}
+• Status: ${editStatus}
+• Chain Updated: ${result.data.chainUpdated ? 'Yes' : 'No'}
+• Loan Stats Updated: ${result.data.loanStatsUpdated ? 'Yes' : 'No'}`);
         
         // Refresh transactions
         if (onRefresh) {
@@ -388,24 +340,25 @@ export default function EMITransactionsModal({
         setEditingTransaction(null);
         setEditMode('none');
         
-        // Refresh the page after a short delay to show updated data
+        // Refresh after delay
         setTimeout(() => {
           if (onRefresh) onRefresh();
         }, 1000);
       } else {
-        setEditError(result.error || 'Failed to update transaction amount');
-        alert(`Failed to update transaction: ${result.error || 'Unknown error'}`);
+        const errorMsg = result.error || 'Failed to update transaction amount';
+        setEditError(errorMsg);
+        alert(`❌ Failed to update transaction: ${errorMsg}`);
       }
     } catch (error: any) {
       console.error('Error updating transaction amount:', error);
       setEditError(error.message || 'Error updating transaction amount');
-      alert(`Error updating transaction: ${error.message || 'Unknown error'}`);
+      alert(`❌ Error updating transaction: ${error.message || 'Unknown error'}`);
     } finally {
       setIsEditing(false);
     }
   };
 
-  // ✅ FIXED: Handle complete partial payment (Option 2)
+  // ✅ UPDATED: Handle complete partial payment (Option 2) with new API endpoint
   const handleCompletePartialPayment = async () => {
     if (!editingTransaction || !validateEditForm()) return;
     
@@ -413,31 +366,36 @@ export default function EMITransactionsModal({
     setEditError('');
     
     try {
-      console.log('Completing partial payment for transaction:', editingTransaction._id);
+      console.log('🔨 Completing partial payment for transaction:', editingTransaction._id);
       
-      const response = await fetch('/api/data-entry/emi-payments?action=complete-partial', {
+      // ✅ UPDATED: Use new POST complete endpoint
+      const response = await fetch(`/api/data-entry/emi-payments/${editingTransaction._id}/complete`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          parentPaymentId: editingTransaction._id,
           additionalAmount: parseFloat(additionalAmount),
-          paymentDate: new Date().toISOString().split('T')[0], // Current date
+          paymentDate: completionDate, // ✅ Use custom completion date
           collectedBy: editingTransaction.collectedBy,
-          notes: `Completion payment for partial chain ${editingTransaction.partialChainId}`,
-          customerId: customer._id,
-          customerName: customer.name,
-          loanId: editingTransaction.loanId || undefined,
-          loanNumber: editingTransaction.loanNumber
+          notes: `Completion payment for partial chain ${editingTransaction.partialChainId || 'N/A'}`,
+          // ✅ NOTE: customerId, customerName, loanId, loanNumber are NOT needed in new API
         }),
       });
       
       const result = await response.json();
       
       if (response.ok && result.success) {
-        console.log('✅ Partial payment completed successfully');
-        alert(`Partial payment completed successfully! Added ${formatCurrency(parseFloat(additionalAmount))} to payment chain.`);
+        console.log('✅ Partial payment completed successfully:', result.data);
+        
+        // ✅ NEW: Show detailed success message
+        alert(`✅ Partial payment completed successfully!
+• Added Amount: ${formatCurrency(parseFloat(additionalAmount))}
+• Completion Date: ${formatToDDMMYYYY(completionDate)}
+• New Total Paid: ${formatCurrency(result.data.totalPaid)}
+• Chain Complete: ${result.data.isChainComplete ? 'Yes' : 'No'}
+• Remaining After: ${formatCurrency(result.data.remainingAfter)}
+• Loan Updated: ${result.data.loanUpdated ? 'Yes' : 'No'}`);
         
         // Refresh transactions
         if (onRefresh) {
@@ -448,18 +406,19 @@ export default function EMITransactionsModal({
         setEditingTransaction(null);
         setEditMode('none');
         
-        // Refresh the page after a short delay to show updated data
+        // Refresh after delay
         setTimeout(() => {
           if (onRefresh) onRefresh();
         }, 1000);
       } else {
-        setEditError(result.error || 'Failed to complete partial payment');
-        alert(`Failed to complete partial payment: ${result.error || 'Unknown error'}`);
+        const errorMsg = result.error || 'Failed to complete partial payment';
+        setEditError(errorMsg);
+        alert(`❌ Failed to complete partial payment: ${errorMsg}`);
       }
     } catch (error: any) {
       console.error('Error completing partial payment:', error);
       setEditError(error.message || 'Error completing partial payment');
-      alert(`Error completing partial payment: ${error.message || 'Unknown error'}`);
+      alert(`❌ Error completing partial payment: ${error.message || 'Unknown error'}`);
     } finally {
       setIsEditing(false);
     }
@@ -480,19 +439,22 @@ export default function EMITransactionsModal({
     setEditMode('none');
     setEditAmount('');
     setEditStatus('Paid');
+    setEditDate('');
     setAdditionalAmount('');
+    setCompletionDate('');
     setEditError('');
     setChainInfo(null);
     setChainPayments([]);
   };
 
-  // ✅ FIXED: Render edit modal content with correct size and chain display
+  // ✅ UPDATED: Render edit modal content with MANUAL CONTROL
   const renderEditModalContent = () => {
     if (!editingTransaction) return null;
     
     const isPartialPayment = editingTransaction.status === 'Partial';
+    const today = new Date().toISOString().split('T')[0];
     
-    // ✅ CRITICAL FIX: Use original EMI amount (full amount) not partial amount
+    // Calculate amounts for reference
     const fullEmiAmount = chainInfo?.originalEmiAmount || 
                          editingTransaction.originalEmiAmount || 
                          chainInfo?.installmentTotalAmount || 
@@ -503,14 +465,12 @@ export default function EMITransactionsModal({
                      editingTransaction.installmentPaidAmount || 
                      editingTransaction.amount;
     
-    const calculatedRemaining = Math.max(0, fullEmiAmount - totalPaid);
+    const suggestedRemaining = chainInfo?.suggestedRemaining || Math.max(0, fullEmiAmount - totalPaid);
     
-    // ✅ FIX: Get correct chain payment count (not loan total)
     const actualChainPaymentCount = chainPayments.length || 1;
     
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 z-[201] flex items-center justify-center p-4">
-        {/* ✅ FIXED: Changed max-w-md to max-w-5xl to match CustomerDetails modal size */}
         <div className="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
           <div className="px-8 py-5 border-b border-gray-200">
             <h3 className="text-2xl font-bold text-gray-900">
@@ -527,14 +487,27 @@ export default function EMITransactionsModal({
                 Date: {formatToDDMMYYYY(editingTransaction.paymentDate)}
               </p>
               <p className="ml-3 text-sm text-gray-600">
-                {/* ✅ FIXED: Show actual chain payments, not "50 Payments" */}
                 Chain: {actualChainPaymentCount} payment{actualChainPaymentCount !== 1 ? 's' : ''}
               </p>
+            </div>
+            
+            {/* ✅ NEW: Manual Control Notice */}
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-start">
+                <span className="text-blue-600 mr-2">ℹ️</span>
+                <div>
+                  <p className="font-medium text-blue-800">Manual Control Enabled</p>
+                  <p className="text-sm text-blue-600">
+                    You can enter any valid amount. The system will not restrict you based on remaining balance.
+                    {editMode === 'complete-partial' && ' You can also set any future date for completion.'}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
           
           <div className="p-8">
-            {/* ✅ FIXED: Edit Mode Selection - Updated layout */}
+            {/* Edit Mode Selection */}
             {isPartialPayment && (
               <div className="mb-8">
                 <h4 className="text-lg font-medium text-gray-900 mb-4">Select Edit Option:</h4>
@@ -555,12 +528,13 @@ export default function EMITransactionsModal({
                         )}
                       </div>
                       <div>
-                        <p className="font-bold text-gray-900 text-lg">Option 1: Edit EMI Amount</p>
-                        <p className="text-gray-600 mt-2">Correct the amount of this specific payment</p>
+                        <p className="font-bold text-gray-900 text-lg">Option 1: Edit Payment</p>
+                        <p className="text-gray-600 mt-2">Edit amount, status, or date of this payment</p>
                         <ul className="text-sm text-gray-500 mt-3 space-y-1">
-                          <li>• Change payment amount</li>
+                          <li>• Change payment amount (any value)</li>
                           <li>• Update payment status</li>
-                          <li>• Adjust payment date if needed</li>
+                          <li>• Adjust payment date</li>
+                          <li>• No validation against remaining</li>
                         </ul>
                       </div>
                     </div>
@@ -582,12 +556,13 @@ export default function EMITransactionsModal({
                         )}
                       </div>
                       <div>
-                        <p className="font-bold text-gray-900 text-lg">Option 2: Complete Partial Payment</p>
-                        <p className="text-gray-600 mt-2">Add remaining amount to complete this installment</p>
+                        <p className="font-bold text-gray-900 text-lg">Option 2: Complete Payment</p>
+                        <p className="text-gray-600 mt-2">Add completion payment to partial chain</p>
                         <ul className="text-sm text-gray-500 mt-3 space-y-1">
-                          <li>• Add additional payment</li>
-                          <li>• Complete the installment</li>
-                          <li>• Mark as fully paid</li>
+                          <li>• Add any additional amount</li>
+                          <li>• Set custom completion date</li>
+                          <li>• Creates separate transaction</li>
+                          <li>• Shows both in history</li>
                         </ul>
                       </div>
                     </div>
@@ -600,7 +575,7 @@ export default function EMITransactionsModal({
               {/* Edit Amount Option */}
               {editMode === 'edit-amount' && (
                 <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Amount (₹)
@@ -614,11 +589,12 @@ export default function EMITransactionsModal({
                           value={editAmount}
                           onChange={(e) => setEditAmount(e.target.value)}
                           className="w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                          placeholder="Enter amount"
+                          placeholder="Enter any amount"
                           step="0.01"
                           min="0"
                         />
                       </div>
+                      <p className="text-xs text-gray-500 mt-2">Enter any positive amount</p>
                     </div>
                     
                     <div>
@@ -629,24 +605,33 @@ export default function EMITransactionsModal({
                         value={editStatus}
                         onChange={(e) => setEditStatus(e.target.value)}
                         className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                        disabled={!isPartialPayment}
                       >
                         <option value="Paid">Paid</option>
                         <option value="Partial">Partial</option>
                         <option value="Advance">Advance</option>
                         <option value="Overdue">Overdue</option>
                       </select>
-                      {!isPartialPayment && (
-                        <p className="text-sm text-gray-500 mt-2">Status cannot be changed for non-partial payments</p>
-                      )}
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Payment Date
+                      </label>
+                      <input
+                        type="date"
+                        value={editDate}
+                        onChange={(e) => setEditDate(e.target.value)}
+                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
+                        max={today}
+                      />
                     </div>
                   </div>
                   
-                  {/* ✅ NEW: Show full EMI amount for reference */}
+                  {/* Reference Information */}
                   <div className="p-4 bg-gray-50 border-2 border-gray-200 rounded-xl">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <p className="text-sm text-gray-600 mb-1">Full EMI Amount</p>
+                        <p className="text-sm text-gray-600 mb-1">Full EMI Amount (Reference)</p>
                         <p className="font-bold text-gray-900 text-xl">
                           {formatCurrency(fullEmiAmount)}
                         </p>
@@ -658,11 +643,14 @@ export default function EMITransactionsModal({
                         </p>
                       </div>
                     </div>
-                    <p className="text-sm text-gray-500 mt-2">
-                      {editStatus === 'Partial' 
-                        ? '⚠️ Partial payments keep the next EMI date unchanged until full payment'
-                        : '✅ Full payments advance the next EMI date'}
-                    </p>
+                    <div className="mt-3 pt-3 border-t border-gray-300">
+                      <p className="text-sm font-medium text-gray-700">Effect on Loan Schedule:</p>
+                      <p className="text-sm text-gray-600 mt-1">
+                        {editStatus === 'Partial' 
+                          ? '⚠️ Partial payments keep the next EMI date unchanged until full payment'
+                          : '✅ Full payments advance the next EMI date to next period'}
+                      </p>
+                    </div>
                   </div>
                 </>
               )}
@@ -679,56 +667,64 @@ export default function EMITransactionsModal({
                         </p>
                       </div>
                       <div className="bg-white p-5 rounded-lg border border-blue-100">
-                        {/* ✅ FIXED: Change label from "Installment Total" to "EMI Amount" */}
-                        <p className="text-sm text-blue-700 mb-2">EMI Amount</p>
+                        <p className="text-sm text-blue-700 mb-2">EMI Amount (Reference)</p>
                         <p className="font-bold text-blue-900 text-2xl">
                           {formatCurrency(fullEmiAmount)}
                         </p>
-                        {chainInfo?.originalEmiAmount && chainInfo.originalEmiAmount !== fullEmiAmount && (
-                          <p className="text-xs text-gray-500 mt-1">Full EMI amount</p>
-                        )}
+                        <p className="text-xs text-gray-500 mt-1">Full installment amount</p>
                       </div>
                       <div className="bg-white p-5 rounded-lg border border-blue-100">
-                        <p className="text-sm text-blue-700 mb-2">Remaining Amount</p>
-                        <p className="font-bold text-red-900 text-2xl">
-                          {formatCurrency(calculatedRemaining)}
+                        <p className="text-sm text-blue-700 mb-2">Suggested Remaining</p>
+                        <p className="font-bold text-purple-900 text-2xl">
+                          {formatCurrency(suggestedRemaining)}
                         </p>
+                        <p className="text-xs text-gray-500 mt-1">Guidance only</p>
                       </div>
                     </div>
                   </div>
                   
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Add Amount (₹)
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <span className="text-gray-500 text-lg">₹</span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Add Amount (₹)
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <span className="text-gray-500 text-lg">₹</span>
+                        </div>
+                        <input
+                          type="number"
+                          value={additionalAmount}
+                          onChange={(e) => {
+                            setAdditionalAmount(e.target.value);
+                            setEditError(''); // Clear error on change
+                          }}
+                          className="w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
+                          placeholder="Enter any amount"
+                          step="0.01"
+                          min="0"
+                        />
                       </div>
-                      <input
-                        type="number"
-                        value={additionalAmount}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setAdditionalAmount(value);
-                          
-                          const amount = parseFloat(value);
-                          if (!isNaN(amount) && amount > calculatedRemaining) {
-                            setEditError(`Cannot exceed remaining amount of ${formatCurrency(calculatedRemaining)}`);
-                          } else {
-                            setEditError('');
-                          }
-                        }}
-                        className="w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                        placeholder="Enter amount to add"
-                        step="0.01"
-                        min="0"
-                        max={calculatedRemaining}
-                      />
+                      <p className="text-xs text-gray-500 mt-2">
+                        You can enter any amount. Suggested: {formatCurrency(suggestedRemaining)}
+                      </p>
                     </div>
-                    <p className="text-sm text-gray-500 mt-2">
-                      Maximum: {formatCurrency(calculatedRemaining)}
-                    </p>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Completion Date
+                      </label>
+                      <input
+                        type="date"
+                        value={completionDate}
+                        onChange={(e) => setCompletionDate(e.target.value)}
+                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
+                        min={today}
+                      />
+                      <p className="text-xs text-gray-500 mt-2">
+                        Set when this completion payment was collected
+                      </p>
+                    </div>
                   </div>
                   
                   <div className="p-6 bg-green-50 border-2 border-green-200 rounded-xl">
@@ -738,28 +734,36 @@ export default function EMITransactionsModal({
                         <p className="font-bold text-green-900 text-3xl">
                           {formatCurrency(totalPaid + (parseFloat(additionalAmount) || 0))}
                         </p>
+                        <p className="text-sm text-green-600 mt-1">
+                          Completion on: {completionDate ? formatToDDMMYYYY(completionDate) : 'Select date'}
+                        </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm text-green-700 mb-2">New Status</p>
+                        <p className="text-sm text-green-700 mb-2">Chain Status After</p>
                         <p className={`font-bold text-lg px-4 py-2 rounded-full ${
                           (totalPaid + (parseFloat(additionalAmount) || 0)) >= fullEmiAmount 
                             ? 'bg-green-100 text-green-800 border border-green-300'
                             : 'bg-yellow-100 text-yellow-800 border border-yellow-300'
                         }`}>
-                          {(totalPaid + (parseFloat(additionalAmount) || 0)) >= fullEmiAmount ? 'Paid' : 'Partial'}
+                          {(totalPaid + (parseFloat(additionalAmount) || 0)) >= fullEmiAmount ? 'Complete' : 'Still Partial'}
                         </p>
                       </div>
                     </div>
                     {(totalPaid + (parseFloat(additionalAmount) || 0)) >= fullEmiAmount && (
                       <p className="text-sm text-green-700 mt-3">
-                        ✅ This will advance the next EMI date to the next period
+                        ✅ This will create a new payment on {formatToDDMMYYYY(completionDate)} and advance the next EMI date
+                      </p>
+                    )}
+                    {(totalPaid + (parseFloat(additionalAmount) || 0)) < fullEmiAmount && (
+                      <p className="text-sm text-yellow-700 mt-3">
+                        ⚠️ Chain will remain partial. You can add more payments later.
                       </p>
                     )}
                   </div>
                 </>
               )}
               
-              {/* ✅ FIXED: Show chain payments if available */}
+              {/* Show chain payments if available */}
               {chainPayments.length > 0 && (
                 <div className="mt-8 p-6 bg-purple-50 border-2 border-purple-200 rounded-xl">
                   <h4 className="font-bold text-purple-900 text-lg mb-4">
@@ -800,21 +804,45 @@ export default function EMITransactionsModal({
                         </div>
                     ))}
                   </div>
-                  {/* ✅ NEW: Show chain summary */}
                   <div className="mt-4 pt-4 border-t border-purple-200">
-                    <div className="flex justify-between items-center">
+                    <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-sm text-gray-600">Chain Total Paid</p>
                         <p className="font-bold text-purple-900 text-xl">
                           {formatCurrency(chainInfo?.totalPaidAmount || 0)}
                         </p>
                       </div>
-                      <div className="text-right">
+                      <div>
                         <p className="text-sm text-gray-600">Full EMI Amount</p>
                         <p className="font-bold text-gray-900 text-xl">
                           {formatCurrency(fullEmiAmount)}
                         </p>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Loan Info Reference */}
+              {chainInfo?.loanInfo && (
+                <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-xl">
+                  <h5 className="font-medium text-blue-900 mb-3">Loan Information (Reference)</h5>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <p className="text-sm text-blue-700 mb-1">Loan Number</p>
+                      <p className="font-bold text-blue-900">{chainInfo.loanInfo.loanNumber}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-blue-700 mb-1">Loan Type</p>
+                      <p className="font-bold text-blue-900">{chainInfo.loanInfo.loanType}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-blue-700 mb-1">EMI Amount</p>
+                      <p className="font-bold text-blue-900">{formatCurrency(chainInfo.loanInfo.emiAmount)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-blue-700 mb-1">Payments Made</p>
+                      <p className="font-bold text-blue-900">{chainInfo.loanInfo.emiPaidCount}/{chainInfo.loanInfo.totalEmiCount}</p>
                     </div>
                   </div>
                 </div>
@@ -863,23 +891,6 @@ export default function EMITransactionsModal({
                     </div>
                   )}
                 </div>
-                {/* ✅ NEW: Show remaining amount for partial payments */}
-                {editMode === 'edit-amount' && editStatus === 'Partial' && (
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <p className="text-sm text-gray-600">Full EMI Amount</p>
-                        <p className="font-bold text-gray-900">{formatCurrency(fullEmiAmount)}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm text-gray-600">Will Remain</p>
-                        <p className="font-bold text-red-900">
-                          {formatCurrency(fullEmiAmount - (parseFloat(editAmount) || 0))}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           </div>
@@ -1025,7 +1036,6 @@ export default function EMITransactionsModal({
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
                           {transaction.loanNumber}
-                          {/* ✅ NEW: Show chain indicator */}
                           {transaction.partialChainId && transaction.status === 'Partial' && (
                             <span className="ml-2 text-xs text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full">
                               Chain
@@ -1035,7 +1045,6 @@ export default function EMITransactionsModal({
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">
                           <div className="flex flex-col">
                             <span>{formatCurrency(transaction.amount)}</span>
-                            {/* ✅ NEW: Show full EMI amount for partial payments */}
                             {transaction.status === 'Partial' && transaction.originalEmiAmount && (
                               <span className="text-xs text-gray-500">
                                 Full EMI: {formatCurrency(transaction.originalEmiAmount)}
