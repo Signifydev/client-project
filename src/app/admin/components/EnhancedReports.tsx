@@ -14,27 +14,44 @@ export default function EnhancedReportsView({ onBack }: EnhancedReportsProps) {
   const [loading, setLoading] = useState(true);
 
   const fetchReportData = async (range: string, customStart?: string, customEnd?: string) => {
-    try {
-      setLoading(true);
-      let url = `/api/admin/reports?range=${range}`;
-      if (range === 'custom' && customStart && customEnd) {
-        url += `&startDate=${customStart}&endDate=${customEnd}`;
-      }
-      
-      const response = await fetch(url);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setReportData(data.data);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching report data:', error);
-      setReportData(null);
-    } finally {
-      setLoading(false);
+  try {
+    setLoading(true);
+    let url = `/api/admin/reports?range=${range}`;
+    if (range === 'custom' && customStart && customEnd) {
+      url += `&startDate=${customStart}&endDate=${customEnd}`;
     }
-  };
+    
+    console.log('📤 Fetching report data from:', url);
+    
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    console.log('📥 Report API Response:', {
+      success: data.success,
+      dataLength: Object.keys(data.data || {}).length,
+      hasWarning: !!data.warning,
+      sampleData: data.data?._debug?.sampleData
+    });
+    
+    if (response.ok && data.success) {
+      setReportData(data.data);
+      
+      // Check if using sample data
+      if (data.warning || data.data?._debug?.sampleData) {
+        console.warn('⚠️ Using sample/fake data in reports');
+        // You can show a warning to user here
+      }
+    } else {
+      console.error('Report API error:', data.error);
+      setReportData(null);
+    }
+  } catch (error) {
+    console.error('Error fetching report data:', error);
+    setReportData(null);
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     fetchReportData(dateRange);

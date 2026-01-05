@@ -265,6 +265,7 @@ export default function EMITransactionsModal({
     setLoadingChain(false);
   }
 };
+
   
   // ✅ FIXED: Handle edit button click
   const handleEditClick = async (transaction: EMITransaction) => {
