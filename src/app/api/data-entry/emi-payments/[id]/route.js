@@ -14,7 +14,7 @@ import {
   validateAndCleanObjectId,
   calculateLastScheduledEmiDate,
   calculateNextScheduledEmiDate
-} from '@/lib/utils/emiPaymentUtils';
+} from '@/src/app/data-entry/utils/emiPaymentUtils';
 
 // ✅ EDIT ANY PAYMENT (PUT /api/data-entry/emi-payments/:id)
 export async function PUT(request, { params }) {

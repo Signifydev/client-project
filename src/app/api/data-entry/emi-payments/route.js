@@ -19,7 +19,7 @@ import {
   generatePartialChainId,
   calculateLastScheduledEmiDate,
   calculateNextScheduledEmiDate
-} from '@/lib/utils/emiPaymentUtils';
+} from '@/src/app/data-entry/utils/emiPaymentUtils';
 
 // Check for duplicate payments
 const checkForDuplicatePayments = async (cleanedCustomerId, finalLoanId, finalLoanNumber, paymentType, paymentDate, advanceFromDate, advanceToDate) => {

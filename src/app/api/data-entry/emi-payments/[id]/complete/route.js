@@ -12,7 +12,7 @@ import {
   validateAndCleanObjectId,
   calculateLastScheduledEmiDate,
   calculateNextScheduledEmiDate
-} from '@/lib/utils/emiPaymentUtils';
+} from '@/src/app/data-entry/utils/emiPaymentUtils';
 
 // ✅ COMPLETE PARTIAL PAYMENT (POST /api/data-entry/emi-payments/:id/complete)
 export async function POST(request, { params }) {
