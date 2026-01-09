@@ -21,7 +21,80 @@ import {
   calculateNextScheduledEmiDate
 } from '@/src/app/data-entry/utils/emiPaymentUtils';
 
-// Check for duplicate payments
+// ==============================================
+// HELPER FUNCTIONS
+// ==============================================
+
+/**
+ * Parse date string (YYYY-MM-DD) to Date object
+ */
+function parseDateString(dateString) {
+  if (!dateString || typeof dateString !== 'string') return new Date();
+  
+  const [year, month, day] = dateString.split('-').map(Number);
+  if (isNaN(year) || isNaN(month) || isNaN(day)) {
+    return new Date();
+  }
+  
+  return new Date(year, month - 1, day);
+}
+
+/**
+ * Calculate number of EMIs in a date range based on loan type
+ */
+function calculateNumberOfEMIs(loanType, startDate, endDate) {
+  if (!loanType || !startDate || !endDate) return 0;
+  
+  const start = parseDateString(startDate);
+  const end = parseDateString(endDate);
+  
+  if (end < start) return 0;
+  
+  switch(loanType) {
+    case 'Daily':
+      // Daily loans: count each day between dates (inclusive)
+      const timeDiff = end.getTime() - start.getTime();
+      const dayDiff = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+      return dayDiff + 1; // +1 to include both start and end dates
+      
+    case 'Weekly':
+      // Weekly loans: count weeks
+      const weeksDiff = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 7));
+      return weeksDiff + 1;
+      
+    case 'Monthly':
+      // Monthly loans: count months
+      const monthsDiff = (end.getFullYear() - start.getFullYear()) * 12 + 
+                         (end.getMonth() - start.getMonth());
+      return Math.max(monthsDiff + 1, 1);
+      
+    default:
+      const defaultDiff = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      return defaultDiff + 1;
+  }
+}
+
+/**
+ * Calculate correct EMI amount for an installment (considering custom EMI)
+ */
+function calculateCorrectEmiAmountForInstallment(loan, installmentNumber) {
+  if (!loan) return 0;
+  
+  let emiAmount = loan.emiAmount || 0;
+  
+  // Check for custom EMI in last installment
+  if (loan.emiType === 'custom' && loan.loanType !== 'Daily') {
+    if (installmentNumber === loan.totalEmiCount) {
+      emiAmount = loan.customEmiAmount || loan.emiAmount || 0;
+    }
+  }
+  
+  return emiAmount;
+}
+
+/**
+ * Check for duplicate payments
+ */
 const checkForDuplicatePayments = async (cleanedCustomerId, finalLoanId, finalLoanNumber, paymentType, paymentDate, advanceFromDate, advanceToDate) => {
   const formattedPaymentDate = formatToYYYYMMDD(paymentDate);
   
@@ -65,6 +138,10 @@ const checkForDuplicatePayments = async (cleanedCustomerId, finalLoanId, finalLo
   
   return null;
 };
+
+// ==============================================
+// API ROUTES
+// ==============================================
 
 // ✅ CREATE NEW PAYMENT
 export async function POST(request) {
@@ -213,6 +290,12 @@ export async function POST(request) {
             status: duplicateCheck.status
           }
         }, { status: 409 });
+      } else if (paymentType === 'advance' && duplicateCheck.isDuplicate) {
+        return NextResponse.json({ 
+          success: false,
+          error: `Advance payment conflicts with existing payments on dates: ${duplicateCheck.conflictingDates.join(', ')}`,
+          conflictingDates: duplicateCheck.conflictingDates
+        }, { status: 409 });
       }
     }
 
@@ -220,8 +303,116 @@ export async function POST(request) {
     let payments = [];
 
     if (paymentType === 'advance') {
-      // Handle advance payments (same as before)
-      // ... keep your existing advance payment logic
+      // ✅ FIXED: Handle advance payments - Create individual payments for each installment
+      const advanceFromStr = formatToYYYYMMDD(advanceFromDate);
+      const advanceToStr = formatToYYYYMMDD(advanceToDate);
+      
+      if (!advanceFromStr || !advanceToStr) {
+        return NextResponse.json({ 
+          success: false,
+          error: 'Invalid advance date format'
+        }, { status: 400 });
+      }
+      
+      // Validate advance date range
+      const advanceFromDateObj = parseDateString(advanceFromStr);
+      const advanceToDateObj = parseDateString(advanceToStr);
+      
+      if (advanceToDateObj < advanceFromDateObj) {
+        return NextResponse.json({ 
+          success: false,
+          error: 'End date cannot be before start date'
+        }, { status: 400 });
+      }
+      
+      // Calculate number of EMIs based on loan type
+      const numberOfEmis = calculateNumberOfEMIs(loan?.loanType || 'Daily', advanceFromStr, advanceToStr);
+      
+      if (numberOfEmis <= 0) {
+        return NextResponse.json({ 
+          success: false,
+          error: 'Invalid date range for advance payment'
+        }, { status: 400 });
+      }
+      
+      // For each installment in the range, create a payment
+      for (let i = 0; i < numberOfEmis; i++) {
+        let installmentPaymentDate;
+        
+        // Calculate payment date for this installment
+        if (loan?.loanType === 'Daily') {
+          installmentPaymentDate = addDays(advanceFromStr, i);
+        } else if (loan?.loanType === 'Weekly') {
+          installmentPaymentDate = addDays(advanceFromStr, i * 7);
+        } else if (loan?.loanType === 'Monthly') {
+          const date = new Date(advanceFromDateObj);
+          date.setMonth(date.getMonth() + i);
+          installmentPaymentDate = formatToYYYYMMDD(date);
+        } else {
+          installmentPaymentDate = addDays(advanceFromStr, i);
+        }
+        
+        // Calculate installment number
+        const currentInstallmentNumber = calculateInstallmentNumber(
+          loan?.emiStartDate || loan?.dateApplied || installmentPaymentDate,
+          loan?.loanType || 'Daily',
+          installmentPaymentDate
+        );
+        
+        // Calculate correct EMI amount for this installment
+        const correctEmiAmountForInstallment = calculateCorrectEmiAmountForInstallment(loan, currentInstallmentNumber);
+        
+        // Calculate expected due date
+        const expectedDueDateForInstallment = calculateExpectedDueDate(
+          loan?.emiStartDate || loan?.dateApplied || installmentPaymentDate,
+          loan?.loanType || 'Daily',
+          currentInstallmentNumber
+        );
+        
+        const paymentData = {
+          customerId: cleanedCustomerId,
+          customerName,
+          paymentDate: installmentPaymentDate,
+          amount: correctEmiAmountForInstallment,
+          status: 'Advance',
+          collectedBy,
+          paymentMethod,
+          transactionId: transactionId || null,
+          notes: notes || `Advance EMI payment for ${customerName} (${i+1}/${numberOfEmis})`,
+          isVerified: false,
+          paymentType: 'advance',
+          isAdvancePayment: true,
+          advanceFromDate: advanceFromStr,
+          advanceToDate: advanceToStr,
+          advanceEmiCount: numberOfEmis,
+          advanceTotalAmount: correctEmiAmountForInstallment * numberOfEmis,
+          originalEmiAmount: correctEmiAmountForInstallment,
+          installmentNumber: currentInstallmentNumber,
+          expectedDueDate: expectedDueDateForInstallment,
+          isChainComplete: true
+        };
+        
+        if (finalLoanId) {
+          paymentData.loanId = finalLoanId;
+        }
+        if (finalLoanNumber && finalLoanNumber !== 'N/A') {
+          paymentData.loanNumber = finalLoanNumber;
+        }
+        
+        // Create the payment
+        const payment = new EMIPayment(paymentData);
+        await payment.save();
+        payments.push(payment);
+        
+        console.log(`📅 Created advance payment ${i+1}/${numberOfEmis}:`, {
+          date: installmentPaymentDate,
+          amount: correctEmiAmountForInstallment,
+          installmentNumber: currentInstallmentNumber,
+          expectedDueDate: expectedDueDateForInstallment
+        });
+      }
+      
+      console.log(`✅ Created ${payments.length} advance payments for ${customerName}`);
     } else {
       // ✅ FIXED: Create single payment with chain info
       const paymentData = {
@@ -239,7 +430,8 @@ export async function POST(request) {
         isAdvancePayment: false,
         originalEmiAmount: originalEmiAmount || correctEmiAmount || parseFloat(amount),
         installmentNumber: currentInstallmentNumber,
-        expectedDueDate: expectedDueDate
+        expectedDueDate: expectedDueDate,
+        isChainComplete: true
       };
 
       if (finalLoanId) {
@@ -257,11 +449,11 @@ export async function POST(request) {
             expectedDueDate,
             currentInstallmentNumber
           );
+          paymentData.isChainComplete = false;
+          paymentData.installmentTotalAmount = originalEmiAmount || correctEmiAmount || parseFloat(amount);
         } else {
           paymentData.partialChainId = `temp_${Date.now()}`;
         }
-        paymentData.isChainComplete = false;
-        paymentData.installmentTotalAmount = originalEmiAmount || correctEmiAmount || parseFloat(amount);
       } else {
         paymentData.isChainComplete = true;
         paymentData.installmentTotalAmount = parseFloat(amount);
@@ -288,7 +480,7 @@ export async function POST(request) {
     // Update loan statistics
     if (loan && finalLoanId) {
       try {
-        await updateLoanStatistics(loan._id, status, paymentDateStr);
+        await updateLoanStatistics(loan._id, payments);
       } catch (loanUpdateError) {
         console.error('⚠️ Error updating loan statistics:', loanUpdateError);
       }
@@ -374,56 +566,134 @@ export async function GET(request) {
   }
 }
 
-// Helper function to update loan statistics
-async function updateLoanStatistics(loanId, paymentStatus, paymentDate) {
-  const allLoanPayments = await EMIPayment.find({
-    loanId: loanId,
-    status: { $in: ['Paid', 'Partial', 'Advance'] }
-  });
-  
-  const fullLoanPayments = await EMIPayment.find({
-    loanId: loanId,
-    status: { $in: ['Paid', 'Advance'] }
-  });
-  
-  const totalPaidAmount = allLoanPayments.reduce((sum, p) => sum + p.amount, 0);
-  const emiPaidCount = fullLoanPayments.length;
-  
-  const loan = await Loan.findById(loanId);
-  if (!loan) return;
+// ==============================================
+// HELPER FUNCTIONS
+// ==============================================
 
-  let updateData = {
-    totalPaidAmount: totalPaidAmount,
-    remainingAmount: Math.max(0, loan.amount - totalPaidAmount),
-    updatedAt: new Date()
-  };
-
-  if (paymentStatus === 'Partial') {
-    updateData.nextEmiDate = paymentDate;
-  } else {
-    const lastScheduledEmiDate = calculateLastScheduledEmiDate(
-      loan.emiStartDate || loan.dateApplied,
-      loan.loanType,
-      emiPaidCount
-    );
+/**
+ * Update loan statistics after payment
+ */
+async function updateLoanStatistics(loanId, payments) {
+  try {
+    const allLoanPayments = await EMIPayment.find({
+      loanId: loanId,
+      status: { $in: ['Paid', 'Partial', 'Advance'] }
+    });
     
-    const nextScheduledEmiDate = calculateNextScheduledEmiDate(
-      lastScheduledEmiDate,
-      loan.loanType,
-      loan.emiStartDate || loan.dateApplied,
-      emiPaidCount,
-      loan.totalEmiCount
-    );
+    const fullLoanPayments = await EMIPayment.find({
+      loanId: loanId,
+      status: { $in: ['Paid', 'Advance'] }
+    });
     
-    updateData.emiPaidCount = emiPaidCount;
-    updateData.lastEmiDate = lastScheduledEmiDate;
-    updateData.nextEmiDate = nextScheduledEmiDate;
-  }
+    const totalPaidAmount = allLoanPayments.reduce((sum, p) => sum + p.amount, 0);
+    const emiPaidCount = fullLoanPayments.length;
+    
+    const loan = await Loan.findById(loanId);
+    if (!loan) return;
 
-  if (emiPaidCount >= loan.totalEmiCount) {
-    updateData.status = 'completed';
-    updateData.nextEmiDate = null;
-  }
+    // Calculate new EMI paid count based on FULL payments only
+    let newEmiPaidCount = loan.emiPaidCount || 0;
+    
+    // For each payment, determine if it should increment the count
+    payments.forEach(payment => {
+      if (payment.status === 'Paid' || payment.status === 'Advance') {
+        newEmiPaidCount += 1;
+      }
+    });
 
-  await Loan.findByIdAndUpdate(loanId, updateData);
+    let updateData = {
+      totalPaidAmount: totalPaidAmount,
+      remainingAmount: Math.max(0, loan.amount - totalPaidAmount),
+      emiPaidCount: newEmiPaidCount,
+      updatedAt: new Date()
+    };
+
+    // Calculate last scheduled EMI date based on FULL payments count
+    if (newEmiPaidCount > 0) {
+      const lastScheduledEmiDate = calculateLastScheduledEmiDate(
+        loan.emiStartDate || loan.dateApplied,
+        loan.loanType,
+        newEmiPaidCount
+      );
+      
+      const nextScheduledEmiDate = calculateNextScheduledEmiDate(
+        lastScheduledEmiDate,
+        loan.loanType,
+        loan.emiStartDate || loan.dateApplied,
+        newEmiPaidCount,
+        loan.totalEmiCount
+      );
+      
+      updateData.lastEmiDate = lastScheduledEmiDate;
+      updateData.nextEmiDate = nextScheduledEmiDate;
+    } else {
+      // No payments yet, use EMI start date
+      updateData.lastEmiDate = null;
+      updateData.nextEmiDate = loan.emiStartDate || loan.dateApplied;
+    }
+
+    // Check if loan is completed
+    if (newEmiPaidCount >= loan.totalEmiCount) {
+      updateData.status = 'completed';
+      updateData.nextEmiDate = null;
+    } else if (updateData.nextEmiDate) {
+      const today = getCurrentDateString();
+      if (updateData.nextEmiDate < today) {
+        updateData.status = 'overdue';
+      }
+    }
+
+    await Loan.findByIdAndUpdate(loanId, updateData);
+
+    // Also update the loan's emiHistory with all payments
+    if (payments.length > 0) {
+      for (const payment of payments) {
+        const existingHistoryIndex = loan.emiHistory.findIndex(
+          h => h._id && h._id.toString() === payment._id.toString()
+        );
+
+        const paymentData = {
+          _id: payment._id,
+          paymentDate: payment.paymentDate,
+          amount: payment.amount,
+          status: payment.status,
+          collectedBy: payment.collectedBy,
+          notes: payment.notes || `Payment recorded on ${new Date().toISOString()}`,
+          loanId: payment.loanId,
+          loanNumber: payment.loanNumber,
+          createdAt: payment.createdAt,
+          paymentType: payment.paymentType,
+          advanceFromDate: payment.advanceFromDate,
+          advanceToDate: payment.advanceToDate,
+          advanceEmiCount: payment.advanceEmiCount,
+          advanceTotalAmount: payment.advanceTotalAmount,
+          originalEmiAmount: payment.originalEmiAmount,
+          partialChainId: payment.partialChainId,
+          isChainComplete: payment.isChainComplete,
+          installmentTotalAmount: payment.installmentTotalAmount,
+          installmentNumber: payment.installmentNumber,
+          expectedDueDate: payment.expectedDueDate
+        };
+
+        if (existingHistoryIndex >= 0) {
+          loan.emiHistory[existingHistoryIndex] = paymentData;
+        } else {
+          loan.emiHistory.push(paymentData);
+        }
+      }
+
+      await loan.save();
+    }
+
+    console.log('✅ Loan statistics updated successfully:', {
+      loanId,
+      emiPaidCount: newEmiPaidCount,
+      totalPaidAmount,
+      nextEmiDate: updateData.nextEmiDate
+    });
+
+  } catch (error) {
+    console.error('❌ Error updating loan statistics:', error);
+    throw error;
+  }
 }
