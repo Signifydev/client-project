@@ -632,11 +632,10 @@ async function updateLoanStatistics(loanId, payments) {
       updateData.nextEmiDate = loan.emiStartDate || loan.dateApplied;
     }
 
-    // Check if loan is completed
-    if (newEmiPaidCount >= loan.totalEmiCount) {
-      updateData.status = 'completed';
-      updateData.nextEmiDate = null;
-    } else if (updateData.nextEmiDate) {
+    // CRITICAL FIX: Don't mark loan as "completed" when all EMIs are paid
+    // Loan should remain "active" until formally closed or renewed
+    // Only check for overdue status
+    if (updateData.nextEmiDate) {
       const today = getCurrentDateString();
       if (updateData.nextEmiDate < today) {
         updateData.status = 'overdue';
@@ -689,7 +688,8 @@ async function updateLoanStatistics(loanId, payments) {
       loanId,
       emiPaidCount: newEmiPaidCount,
       totalPaidAmount,
-      nextEmiDate: updateData.nextEmiDate
+      nextEmiDate: updateData.nextEmiDate,
+      status: updateData.status || 'active'
     });
 
   } catch (error) {
