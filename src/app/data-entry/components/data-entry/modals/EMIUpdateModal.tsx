@@ -341,14 +341,75 @@ export default function EMIUpdateModal({
     }
   }, [advanceFromDate, advanceToDate, emiUpdate.paymentType, selectedLoan]);
 
+  // ✅ FIXED: Updated loadCustomerLoans function with better filtering
   const loadCustomerLoans = async (customer: Customer) => {
     setLoadingCustomer(true);
     try {
       const loans = getCustomerLoans(customer);
-      const activeLoans = loans.filter(loan => 
-        loan.status === 'active' && !loan.isRenewed
-      );
+      
+      console.log('🔍 Raw loans from customer:', {
+        totalLoans: loans.length,
+        loans: loans.map(l => ({
+          loanNumber: l.loanNumber,
+          status: l.status,
+          isRenewed: l.isRenewed,
+          emiPaidCount: l.emiPaidCount || 0,
+          totalEmiCount: l.totalEmiCount || 0
+        }))
+      });
+      
+      // ✅ FIXED: Include loans that are not completed, cancelled, or renewed
+      const activeLoans = loans.filter(loan => {
+        // Skip if loan doesn't have basic info
+        if (!loan.loanNumber || !loan.amount) {
+          return false;
+        }
+        
+        // Exclude completed loans
+        if (loan.status === 'completed') {
+          console.log(`Skipping loan ${loan.loanNumber}: status is 'completed'`);
+          return false;
+        }
+        
+        // Exclude cancelled loans
+        if (loan.status === 'cancelled') {
+          console.log(`Skipping loan ${loan.loanNumber}: status is 'cancelled'`);
+          return false;
+        }
+        
+        // Exclude renewed loans
+        if (loan.isRenewed === true) {
+          console.log(`Skipping loan ${loan.loanNumber}: isRenewed is true`);
+          return false;
+        }
+        
+        // Check if all EMIs are already paid
+        const emiPaid = loan.emiPaidCount || 0;
+        const totalEmi = loan.totalEmiCount || 0;
+        
+        if (emiPaid >= totalEmi && totalEmi > 0) {
+          console.log(`Skipping loan ${loan.loanNumber}: All EMIs paid (${emiPaid}/${totalEmi})`);
+          return false;
+        }
+        
+        // Include all other loans (active, overdue, null, undefined, etc.)
+        console.log(`Including loan ${loan.loanNumber}: status="${loan.status}", isRenewed=${loan.isRenewed}, EMIs=${emiPaid}/${totalEmi}`);
+        return true;
+      });
+      
       setCustomerLoans(activeLoans);
+      
+      console.log('✅ Filtered active loans:', {
+        activeLoansCount: activeLoans.length,
+        activeLoans: activeLoans.map(l => ({
+          loanNumber: l.loanNumber,
+          status: l.status,
+          isRenewed: l.isRenewed,
+          emiPaidCount: l.emiPaidCount || 0,
+          totalEmiCount: l.totalEmiCount || 0
+        }))
+      });
+      
     } catch (error) {
       console.error('Error loading customer loans:', error);
     } finally {
@@ -1265,14 +1326,23 @@ export default function EMIUpdateModal({
               </div>
             )}
 
-            {/* No Loans Message */}
+            {/* No Loans Message - Updated with better filtering */}
             {selectedCustomer && customerLoans.length === 0 && !loadingCustomer && (
               <div className="text-center py-10 bg-yellow-50 border-2 border-yellow-200 rounded-xl">
                 <div className="text-yellow-500 text-5xl mb-6">💰</div>
-                <p className="text-yellow-800 font-medium text-lg">No active loans found</p>
+                <p className="text-yellow-800 font-medium text-lg">No available loans found</p>
                 <p className="text-yellow-600 text-sm mt-2">
-                  This customer doesn't have any active loans for EMI payment
+                  This customer doesn't have any loans available for EMI payment.<br />
+                  All loans may be completed, renewed, or cancelled.
                 </p>
+                <div className="mt-4 text-sm text-gray-600">
+                  <p>Check if:</p>
+                  <ul className="list-disc list-inside text-left inline-block mt-2">
+                    <li>Loan status is "completed" or "cancelled"</li>
+                    <li>Loan has been renewed (isRenewed = true)</li>
+                    <li>All EMIs have already been paid</li>
+                  </ul>
+                </div>
               </div>
             )}
 
