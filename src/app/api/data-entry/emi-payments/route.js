@@ -1,699 +1,511 @@
 import { NextResponse } from 'next/server';
+import connectDB from '@/lib/db'; // ✅ Now this works with default export
 import EMIPayment from '@/lib/models/EMIPayment';
-import Customer from '@/lib/models/Customer';
 import Loan from '@/lib/models/Loan';
-import { connectDB } from '@/lib/db';
-import mongoose from 'mongoose';
+import SafeSession from '@/lib/safeSession';
 
-// Import shared utilities
-import {
-  getCurrentDateString,
-  isValidYYYYMMDD,
-  formatToYYYYMMDD,
-  formatToDDMMYYYY,
-  addDays,
-  cleanId,
-  validateAndCleanObjectId,
-  calculateInstallmentNumber,
-  calculateExpectedDueDate,
-  generatePartialChainId,
-  calculateLastScheduledEmiDate,
-  calculateNextScheduledEmiDate
-} from '@/src/app/data-entry/utils/emiPaymentUtils';
-
-// ==============================================
-// HELPER FUNCTIONS
-// ==============================================
-
-/**
- * Parse date string (YYYY-MM-DD) to Date object
- */
-function parseDateString(dateString) {
-  if (!dateString || typeof dateString !== 'string') return new Date();
-  
-  const [year, month, day] = dateString.split('-').map(Number);
-  if (isNaN(year) || isNaN(month) || isNaN(day)) {
-    return new Date();
-  }
-  
-  return new Date(year, month - 1, day);
+// ============================================================================
+// ✅ SIMPLE RATE LIMITING (Placeholder - can be enhanced later)
+// ============================================================================
+async function applyRateLimiting() {
+  // For now, just a stub. Can implement proper rate limiting later.
+  return Promise.resolve();
 }
 
-/**
- * Calculate number of EMIs in a date range based on loan type
- */
-function calculateNumberOfEMIs(loanType, startDate, endDate) {
-  if (!loanType || !startDate || !endDate) return 0;
-  
-  const start = parseDateString(startDate);
-  const end = parseDateString(endDate);
-  
-  if (end < start) return 0;
-  
-  switch(loanType) {
-    case 'Daily':
-      // Daily loans: count each day between dates (inclusive)
-      const timeDiff = end.getTime() - start.getTime();
-      const dayDiff = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
-      return dayDiff + 1; // +1 to include both start and end dates
-      
-    case 'Weekly':
-      // Weekly loans: count weeks
-      const weeksDiff = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 7));
-      return weeksDiff + 1;
-      
-    case 'Monthly':
-      // Monthly loans: count months
-      const monthsDiff = (end.getFullYear() - start.getFullYear()) * 12 + 
-                         (end.getMonth() - start.getMonth());
-      return Math.max(monthsDiff + 1, 1);
-      
-    default:
-      const defaultDiff = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-      return defaultDiff + 1;
-  }
-}
-
-/**
- * Calculate correct EMI amount for an installment (considering custom EMI)
- */
-function calculateCorrectEmiAmountForInstallment(loan, installmentNumber) {
-  if (!loan) return 0;
-  
-  let emiAmount = loan.emiAmount || 0;
-  
-  // Check for custom EMI in last installment
-  if (loan.emiType === 'custom' && loan.loanType !== 'Daily') {
-    if (installmentNumber === loan.totalEmiCount) {
-      emiAmount = loan.customEmiAmount || loan.emiAmount || 0;
-    }
-  }
-  
-  return emiAmount;
-}
-
-/**
- * Check for duplicate payments
- */
-const checkForDuplicatePayments = async (cleanedCustomerId, finalLoanId, finalLoanNumber, paymentType, paymentDate, advanceFromDate, advanceToDate) => {
-  const formattedPaymentDate = formatToYYYYMMDD(paymentDate);
-  
-  if (paymentType === 'single') {
-    const existingPayment = await EMIPayment.findOne({
-      $or: [
-        { loanId: finalLoanId },
-        { customerId: cleanedCustomerId, loanNumber: finalLoanNumber }
-      ],
-      paymentDate: formattedPaymentDate,
-      status: { $ne: 'cancelled' }
-    });
-
-    return existingPayment;
-  } else if (paymentType === 'advance') {
-    const advanceFromStr = formatToYYYYMMDD(advanceFromDate);
-    const advanceToStr = formatToYYYYMMDD(advanceToDate);
-    
-    const existingPayments = await EMIPayment.find({
-      $or: [
-        { loanId: finalLoanId },
-        { customerId: cleanedCustomerId, loanNumber: finalLoanNumber }
-      ],
-      paymentDate: {
-        $gte: advanceFromStr,
-        $lte: advanceToStr
-      },
-      status: { $ne: 'cancelled' }
-    });
-
-    if (existingPayments.length > 0) {
-      const conflictingDates = existingPayments.map(p => p.paymentDate);
-      
-      return {
-        isDuplicate: true,
-        conflictingDates: [...new Set(conflictingDates)],
-        existingPayments: existingPayments
-      };
-    }
-  }
-  
-  return null;
-};
-
-// ==============================================
-// API ROUTES
-// ==============================================
-
-// ✅ CREATE NEW PAYMENT
-export async function POST(request) {
-  try {
-    await connectDB();
-    
-    const data = await request.json();
-    
-    console.log('🟡 Creating new EMI payment:', JSON.stringify(data, null, 2));
-    
-    const {
-      customerId,
-      customerName,
-      loanId,
-      loanNumber,
-      paymentDate,
-      amount,
-      status = 'Paid',
-      collectedBy,
-      paymentMethod = 'Cash',
-      transactionId,
-      notes = '',
-      paymentType = 'single',
-      advanceFromDate,
-      advanceToDate,
-      advanceEmiCount,
-      advanceTotalAmount,
-      originalEmiAmount,
-      installmentNumber: providedInstallmentNumber
-    } = data;
-
-    // Basic validation
-    if (!customerId || !customerName || !amount || !paymentDate || !collectedBy) {
-      return NextResponse.json({ 
-        success: false,
-        error: 'Customer ID, customer name, amount, payment date, and collected by are required'
-      }, { status: 400 });
-    }
-
-    const paymentDateStr = formatToYYYYMMDD(paymentDate);
-    if (!paymentDateStr || !isValidYYYYMMDD(paymentDateStr)) {
-      return NextResponse.json({ 
-        success: false,
-        error: 'Invalid payment date format. Must be YYYY-MM-DD'
-      }, { status: 400 });
-    }
-
-    // Advance payment validation
-    if (paymentType === 'advance') {
-      if (!advanceFromDate || !advanceToDate) {
-        return NextResponse.json({ 
-          success: false,
-          error: 'From date and to date are required for advance payments'
-        }, { status: 400 });
-      }
-    }
-
-    // Validate customer
-    const customerIdValidation = validateAndCleanObjectId(customerId, 'Customer ID');
-    if (!customerIdValidation.isValid) {
-      return NextResponse.json({ 
-        success: false,
-        error: customerIdValidation.error
-      }, { status: 400 });
-    }
-
-    const cleanedCustomerId = customerIdValidation.cleanedId;
-    const customer = await Customer.findById(cleanedCustomerId);
-    if (!customer) {
-      return NextResponse.json({ 
-        success: false,
-        error: `Customer not found with ID: ${cleanedCustomerId}`
-      }, { status: 404 });
-    }
-
-    // Find loan
-    let loan = null;
-    let finalLoanId = null;
-    let finalLoanNumber = loanNumber || 'N/A';
-
-    if (loanId && !loanId.includes('fallback_')) {
-      const loanIdValidation = validateAndCleanObjectId(loanId, 'Loan ID');
-      if (loanIdValidation.isValid) {
-        loan = await Loan.findOne({ 
-          _id: loanIdValidation.cleanedId, 
-          customerId: cleanedCustomerId 
-        });
-        
-        if (loan) {
-          finalLoanId = loan._id;
-          finalLoanNumber = loan.loanNumber || finalLoanNumber;
-        }
-      }
-    }
-
-    if (!loan) {
-      loan = await Loan.findOne({ 
-        customerId: cleanedCustomerId,
-        status: 'active'
-      }).sort({ createdAt: -1 });
-
-      if (loan) {
-        finalLoanId = loan._id;
-        finalLoanNumber = loan.loanNumber || finalLoanNumber;
-      }
-    }
-
-    // Calculate EMI amount and installment
-    let correctEmiAmount = loan?.emiAmount || 0;
-    let currentInstallmentNumber = providedInstallmentNumber || 1;
-
-    if (loan && !providedInstallmentNumber) {
-      currentInstallmentNumber = calculateInstallmentNumber(
-        loan.emiStartDate || loan.dateApplied,
-        loan.loanType,
-        paymentDateStr
-      );
-    }
-
-    const expectedDueDate = calculateExpectedDueDate(
-      loan?.emiStartDate || loan?.dateApplied || paymentDateStr,
-      loan?.loanType || 'Daily',
-      currentInstallmentNumber
-    );
-
-    // Check for duplicate payments
-    const duplicateCheck = await checkForDuplicatePayments(
-      cleanedCustomerId, 
-      finalLoanId, 
-      finalLoanNumber, 
-      paymentType, 
-      paymentDate, 
-      advanceFromDate, 
-      advanceToDate
-    );
-
-    if (duplicateCheck) {
-      if (paymentType === 'single') {
-        return NextResponse.json({ 
-          success: false,
-          error: `EMI payment for date ${formatToDDMMYYYY(paymentDateStr)} already exists.`,
-          existingPayment: {
-            id: duplicateCheck._id,
-            amount: duplicateCheck.amount,
-            date: duplicateCheck.paymentDate,
-            status: duplicateCheck.status
-          }
-        }, { status: 409 });
-      } else if (paymentType === 'advance' && duplicateCheck.isDuplicate) {
-        return NextResponse.json({ 
-          success: false,
-          error: `Advance payment conflicts with existing payments on dates: ${duplicateCheck.conflictingDates.join(', ')}`,
-          conflictingDates: duplicateCheck.conflictingDates
-        }, { status: 409 });
-      }
-    }
-
-    // Create payment(s)
-    let payments = [];
-
-    if (paymentType === 'advance') {
-      // ✅ FIXED: Handle advance payments - Create individual payments for each installment
-      const advanceFromStr = formatToYYYYMMDD(advanceFromDate);
-      const advanceToStr = formatToYYYYMMDD(advanceToDate);
-      
-      if (!advanceFromStr || !advanceToStr) {
-        return NextResponse.json({ 
-          success: false,
-          error: 'Invalid advance date format'
-        }, { status: 400 });
-      }
-      
-      // Validate advance date range
-      const advanceFromDateObj = parseDateString(advanceFromStr);
-      const advanceToDateObj = parseDateString(advanceToStr);
-      
-      if (advanceToDateObj < advanceFromDateObj) {
-        return NextResponse.json({ 
-          success: false,
-          error: 'End date cannot be before start date'
-        }, { status: 400 });
-      }
-      
-      // Calculate number of EMIs based on loan type
-      const numberOfEmis = calculateNumberOfEMIs(loan?.loanType || 'Daily', advanceFromStr, advanceToStr);
-      
-      if (numberOfEmis <= 0) {
-        return NextResponse.json({ 
-          success: false,
-          error: 'Invalid date range for advance payment'
-        }, { status: 400 });
-      }
-      
-      // For each installment in the range, create a payment
-      for (let i = 0; i < numberOfEmis; i++) {
-        let installmentPaymentDate;
-        
-        // Calculate payment date for this installment
-        if (loan?.loanType === 'Daily') {
-          installmentPaymentDate = addDays(advanceFromStr, i);
-        } else if (loan?.loanType === 'Weekly') {
-          installmentPaymentDate = addDays(advanceFromStr, i * 7);
-        } else if (loan?.loanType === 'Monthly') {
-          const date = new Date(advanceFromDateObj);
-          date.setMonth(date.getMonth() + i);
-          installmentPaymentDate = formatToYYYYMMDD(date);
-        } else {
-          installmentPaymentDate = addDays(advanceFromStr, i);
-        }
-        
-        // Calculate installment number
-        const currentInstallmentNumber = calculateInstallmentNumber(
-          loan?.emiStartDate || loan?.dateApplied || installmentPaymentDate,
-          loan?.loanType || 'Daily',
-          installmentPaymentDate
-        );
-        
-        // Calculate correct EMI amount for this installment
-        const correctEmiAmountForInstallment = calculateCorrectEmiAmountForInstallment(loan, currentInstallmentNumber);
-        
-        // Calculate expected due date
-        const expectedDueDateForInstallment = calculateExpectedDueDate(
-          loan?.emiStartDate || loan?.dateApplied || installmentPaymentDate,
-          loan?.loanType || 'Daily',
-          currentInstallmentNumber
-        );
-        
-        const paymentData = {
-          customerId: cleanedCustomerId,
-          customerName,
-          paymentDate: installmentPaymentDate,
-          amount: correctEmiAmountForInstallment,
-          status: 'Advance',
-          collectedBy,
-          paymentMethod,
-          transactionId: transactionId || null,
-          notes: notes || `Advance EMI payment for ${customerName} (${i+1}/${numberOfEmis})`,
-          isVerified: false,
-          paymentType: 'advance',
-          isAdvancePayment: true,
-          advanceFromDate: advanceFromStr,
-          advanceToDate: advanceToStr,
-          advanceEmiCount: numberOfEmis,
-          advanceTotalAmount: correctEmiAmountForInstallment * numberOfEmis,
-          originalEmiAmount: correctEmiAmountForInstallment,
-          installmentNumber: currentInstallmentNumber,
-          expectedDueDate: expectedDueDateForInstallment,
-          isChainComplete: true
-        };
-        
-        if (finalLoanId) {
-          paymentData.loanId = finalLoanId;
-        }
-        if (finalLoanNumber && finalLoanNumber !== 'N/A') {
-          paymentData.loanNumber = finalLoanNumber;
-        }
-        
-        // Create the payment
-        const payment = new EMIPayment(paymentData);
-        await payment.save();
-        payments.push(payment);
-        
-        console.log(`📅 Created advance payment ${i+1}/${numberOfEmis}:`, {
-          date: installmentPaymentDate,
-          amount: correctEmiAmountForInstallment,
-          installmentNumber: currentInstallmentNumber,
-          expectedDueDate: expectedDueDateForInstallment
-        });
-      }
-      
-      console.log(`✅ Created ${payments.length} advance payments for ${customerName}`);
-    } else {
-      // ✅ FIXED: Create single payment with chain info
-      const paymentData = {
-        customerId: cleanedCustomerId,
-        customerName,
-        paymentDate: paymentDateStr,
-        amount: parseFloat(amount),
-        status: status,
-        collectedBy,
-        paymentMethod,
-        transactionId: transactionId || null,
-        notes: notes || `EMI payment for ${customerName}`,
-        isVerified: false,
-        paymentType: 'single',
-        isAdvancePayment: false,
-        originalEmiAmount: originalEmiAmount || correctEmiAmount || parseFloat(amount),
-        installmentNumber: currentInstallmentNumber,
-        expectedDueDate: expectedDueDate,
-        isChainComplete: true
-      };
-
-      if (finalLoanId) {
-        paymentData.loanId = finalLoanId;
-      }
-      if (finalLoanNumber && finalLoanNumber !== 'N/A') {
-        paymentData.loanNumber = finalLoanNumber;
-      }
-
-      // ✅ FIXED: Handle partial chain creation
-      if (status === 'Partial') {
-        if (finalLoanId) {
-          paymentData.partialChainId = generatePartialChainId(
-            finalLoanId,
-            expectedDueDate,
-            currentInstallmentNumber
-          );
-          paymentData.isChainComplete = false;
-          paymentData.installmentTotalAmount = originalEmiAmount || correctEmiAmount || parseFloat(amount);
-        } else {
-          paymentData.partialChainId = `temp_${Date.now()}`;
-        }
-      } else {
-        paymentData.isChainComplete = true;
-        paymentData.installmentTotalAmount = parseFloat(amount);
-        paymentData.installmentPaidAmount = parseFloat(amount);
-      }
-
-      const payment = new EMIPayment(paymentData);
-      await payment.save();
-      payments.push(payment);
-    }
-
-    // Update customer total
-    if (payments.length > 0) {
-      const lastPaymentDate = payments[0].paymentDate;
-      const totalPaymentAmount = payments.reduce((sum, p) => sum + p.amount, 0);
-      
-      await Customer.findByIdAndUpdate(cleanedCustomerId, {
-        lastPaymentDate: lastPaymentDate,
-        $inc: { totalPaid: totalPaymentAmount },
-        updatedAt: new Date()
-      });
-    }
-
-    // Update loan statistics
-    if (loan && finalLoanId) {
-      try {
-        await updateLoanStatistics(loan._id, payments);
-      } catch (loanUpdateError) {
-        console.error('⚠️ Error updating loan statistics:', loanUpdateError);
-      }
-    }
-
-    console.log('✅ EMI payment created successfully:', payments.length, 'payments created');
-
-    return NextResponse.json({ 
-      success: true,
-      message: paymentType === 'advance' 
-        ? `Advance EMI payment recorded successfully as ${payments.length} payments`
-        : `EMI payment of ₹${amount} recorded successfully for ${customerName}`,
-      data: {
-        paymentIds: payments.map(p => p._id),
-        partialChainId: payments[0]?.partialChainId || null,
-        isChainComplete: payments[0]?.isChainComplete || true,
-        originalEmiAmount: payments[0]?.originalEmiAmount || (originalEmiAmount || correctEmiAmount || parseFloat(amount)),
-        installmentNumber: currentInstallmentNumber
-      }
-    });
-    
-  } catch (error) {
-    console.error('❌ Error creating EMI payment:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: error.message
-    }, { status: 500 });
-  }
-}
-
-// ✅ LIST PAYMENTS
+// ============================================================================
+// ✅ 1. GET ALL PAYMENTS OR FILTERED
+// ============================================================================
 export async function GET(request) {
+  await applyRateLimiting();
+  
   try {
-    await connectDB();
-    
     const { searchParams } = new URL(request.url);
-    const customerId = searchParams.get('customerId');
     const loanId = searchParams.get('loanId');
+    const customerId = searchParams.get('customerId');
     const date = searchParams.get('date');
-    const limit = parseInt(searchParams.get('limit')) || 50;
-
+    const partialOnly = searchParams.get('partialOnly') === 'true';
+    const limit = parseInt(searchParams.get('limit')) || 100;
+    
+    await connectDB(); // ✅ Now using imported function
+    
     let query = {};
-
-    if (customerId) {
-      const cleanedCustomerId = cleanId(customerId);
-      if (mongoose.Types.ObjectId.isValid(cleanedCustomerId)) {
-        query.customerId = new mongoose.Types.ObjectId(cleanedCustomerId);
-      }
-    }
-
-    if (loanId) {
-      const cleanedLoanId = cleanId(loanId);
-      if (mongoose.Types.ObjectId.isValid(cleanedLoanId)) {
-        query.loanId = new mongoose.Types.ObjectId(cleanedLoanId);
-      }
-    }
-
+    
+    // Filter by loan
+    if (loanId) query.loanId = loanId;
+    
+    // Filter by customer
+    if (customerId) query.customerId = customerId;
+    
+    // Filter by date (exact date match)
     if (date) {
-      const dateStr = formatToYYYYMMDD(date);
-      if (dateStr) {
-        query.paymentDate = dateStr;
-      }
+      const startDate = new Date(date);
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date(date);
+      endDate.setHours(23, 59, 59, 999);
+      query.paymentDate = { $gte: startDate, $lte: endDate };
     }
-
+    
+    // Filter for partial payments only
+    if (partialOnly) {
+      query.isPartial = true;
+      query.status = 'Partial';
+    }
+    
+    // Fetch payments
     const payments = await EMIPayment.find(query)
-      .select('_id customerId customerName loanId loanNumber paymentDate amount status collectedBy notes paymentType partialChainId chainParentId installmentTotalAmount originalEmiAmount installmentNumber expectedDueDate')
-      .populate('customerId', 'name phone')
-      .populate('loanId', 'loanNumber loanType emiAmount')
       .sort({ paymentDate: -1, createdAt: -1 })
       .limit(limit);
-
-    return NextResponse.json({ 
+    
+    return NextResponse.json({
       success: true,
-      data: payments
+      data: payments,
+      count: payments.length
     });
     
   } catch (error) {
-    console.error('❌ Error fetching EMI payments:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: error.message 
-    }, { status: 500 });
+    console.error('Error fetching payments:', error);
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    );
   }
 }
 
-// ==============================================
-// HELPER FUNCTIONS
-// ==============================================
-
-/**
- * Update loan statistics after payment
- */
-async function updateLoanStatistics(loanId, payments) {
+// ============================================================================
+// ✅ 2. CREATE NEW PAYMENT (Single/Partial/Advance)
+// ============================================================================
+export async function POST(request) {
+  await applyRateLimiting();
+  
   try {
-    const allLoanPayments = await EMIPayment.find({
-      loanId: loanId,
-      status: { $in: ['Paid', 'Partial', 'Advance'] }
-    });
+    const body = await request.json();
     
-    const fullLoanPayments = await EMIPayment.find({
-      loanId: loanId,
-      status: { $in: ['Paid', 'Advance'] }
-    });
-    
-    const totalPaidAmount = allLoanPayments.reduce((sum, p) => sum + p.amount, 0);
-    const emiPaidCount = fullLoanPayments.length;
-    
-    const loan = await Loan.findById(loanId);
-    if (!loan) return;
-
-    // Calculate new EMI paid count based on FULL payments only
-    let newEmiPaidCount = loan.emiPaidCount || 0;
-    
-    // For each payment, determine if it should increment the count
-    payments.forEach(payment => {
-      if (payment.status === 'Paid' || payment.status === 'Advance') {
-        newEmiPaidCount += 1;
-      }
-    });
-
-    let updateData = {
-      totalPaidAmount: totalPaidAmount,
-      remainingAmount: Math.max(0, loan.amount - totalPaidAmount),
-      emiPaidCount: newEmiPaidCount,
-      updatedAt: new Date()
-    };
-
-    // Calculate last scheduled EMI date based on FULL payments count
-    if (newEmiPaidCount > 0) {
-      const lastScheduledEmiDate = calculateLastScheduledEmiDate(
-        loan.emiStartDate || loan.dateApplied,
-        loan.loanType,
-        newEmiPaidCount
+    // Validation
+    if (!body.loanId || !body.amount || !body.paymentDate) {
+      return NextResponse.json(
+        { success: false, error: 'Missing required fields' },
+        { status: 400 }
       );
-      
-      const nextScheduledEmiDate = calculateNextScheduledEmiDate(
-        lastScheduledEmiDate,
-        loan.loanType,
-        loan.emiStartDate || loan.dateApplied,
-        newEmiPaidCount,
-        loan.totalEmiCount
-      );
-      
-      updateData.lastEmiDate = lastScheduledEmiDate;
-      updateData.nextEmiDate = nextScheduledEmiDate;
-    } else {
-      // No payments yet, use EMI start date
-      updateData.lastEmiDate = null;
-      updateData.nextEmiDate = loan.emiStartDate || loan.dateApplied;
     }
-
-    // CRITICAL FIX: Don't mark loan as "completed" when all EMIs are paid
-    // Loan should remain "active" until formally closed or renewed
-    // Only check for overdue status
-    if (updateData.nextEmiDate) {
-      const today = getCurrentDateString();
-      if (updateData.nextEmiDate < today) {
-        updateData.status = 'overdue';
-      }
-    }
-
-    await Loan.findByIdAndUpdate(loanId, updateData);
-
-    // Also update the loan's emiHistory with all payments
-    if (payments.length > 0) {
-      for (const payment of payments) {
-        const existingHistoryIndex = loan.emiHistory.findIndex(
-          h => h._id && h._id.toString() === payment._id.toString()
-        );
-
-        const paymentData = {
-          _id: payment._id,
-          paymentDate: payment.paymentDate,
-          amount: payment.amount,
-          status: payment.status,
-          collectedBy: payment.collectedBy,
-          notes: payment.notes || `Payment recorded on ${new Date().toISOString()}`,
-          loanId: payment.loanId,
-          loanNumber: payment.loanNumber,
-          createdAt: payment.createdAt,
-          paymentType: payment.paymentType,
-          advanceFromDate: payment.advanceFromDate,
-          advanceToDate: payment.advanceToDate,
-          advanceEmiCount: payment.advanceEmiCount,
-          advanceTotalAmount: payment.advanceTotalAmount,
-          originalEmiAmount: payment.originalEmiAmount,
-          partialChainId: payment.partialChainId,
-          isChainComplete: payment.isChainComplete,
-          installmentTotalAmount: payment.installmentTotalAmount,
-          installmentNumber: payment.installmentNumber,
-          expectedDueDate: payment.expectedDueDate
-        };
-
-        if (existingHistoryIndex >= 0) {
-          loan.emiHistory[existingHistoryIndex] = paymentData;
+    
+    await connectDB();
+    
+    return await SafeSession.withTransaction(async (session) => {
+      const {
+        loanId,
+        customerId,
+        customerName,
+        loanNumber,
+        amount,
+        paymentDate,
+        status = 'Paid',
+        paymentType = 'single',
+        collectedBy,
+        notes,
+        isPartial = false,
+        fullEmiAmount,
+        partialRemainingAmount
+      } = body;
+      
+      // ✅ CHECK: If trying to create payment on same date for same loan
+      const existingPaymentOnDate = await EMIPayment.findOne({
+        loanId,
+        paymentDate: {
+          $gte: new Date(new Date(paymentDate).setHours(0, 0, 0, 0)),
+          $lte: new Date(new Date(paymentDate).setHours(23, 59, 59, 999))
+        },
+        status: { $in: ['Paid', 'Partial'] }
+      }).session(session);
+      
+      // 🚨 CRITICAL FIX: If partial exists and user is trying to pay remaining amount
+      if (existingPaymentOnDate && existingPaymentOnDate.isPartial) {
+        const remaining = existingPaymentOnDate.partialRemainingAmount || 
+                         (existingPaymentOnDate.fullEmiAmount - existingPaymentOnDate.amount);
+        
+        // If amount matches remaining, auto-complete
+        if (Math.abs(amount - remaining) < 1) {
+          // Complete the existing partial
+          const result = await completeExistingPartial(
+            existingPaymentOnDate._id,
+            amount,
+            paymentDate,
+            collectedBy,
+            notes || 'Auto-completed via payment creation',
+            session
+          );
+          
+          return result;
         } else {
-          loan.emiHistory.push(paymentData);
+          // Amount doesn't match remaining
+          return NextResponse.json({
+            success: false,
+            error: 'PARTIAL_EXISTS',
+            message: `Partial payment already exists (₹${existingPaymentOnDate.amount}). Please complete it instead.`,
+            existingPartial: {
+              id: existingPaymentOnDate._id,
+              amount: existingPaymentOnDate.amount,
+              fullEmiAmount: existingPaymentOnDate.fullEmiAmount,
+              remaining: remaining
+            }
+          }, { status: 409 });
         }
       }
-
-      await loan.save();
-    }
-
-    console.log('✅ Loan statistics updated successfully:', {
-      loanId,
-      emiPaidCount: newEmiPaidCount,
-      totalPaidAmount,
-      nextEmiDate: updateData.nextEmiDate,
-      status: updateData.status || 'active'
+      
+      // 🚨 Prevent duplicate full payments on same date
+      if (existingPaymentOnDate && !existingPaymentOnDate.isPartial && status === 'Paid') {
+        return NextResponse.json({
+          success: false,
+          error: 'DUPLICATE_PAYMENT',
+          message: `Payment already exists for this date (${existingPaymentOnDate.amount} - ${existingPaymentOnDate.status}). Please check existing payments.`
+        }, { status: 409 });
+      }
+      
+      // Create payment
+      const paymentData = {
+        loanId,
+        customerId,
+        customerName,
+        loanNumber,
+        amount: parseFloat(amount),
+        paymentDate: new Date(paymentDate),
+        status,
+        paymentType,
+        collectedBy: collectedBy || 'Operator',
+        notes,
+        isPartial: isPartial || status === 'Partial',
+        fullEmiAmount: fullEmiAmount || parseFloat(amount),
+        partialRemainingAmount: isPartial ? 
+          (partialRemainingAmount || (fullEmiAmount ? fullEmiAmount - amount : 0)) : 
+          0
+      };
+      
+      const payment = new EMIPayment(paymentData);
+      await payment.save({ session });
+      
+      // Update loan stats
+      const loanUpdate = {
+        $inc: { totalPaidAmount: parseFloat(amount) }
+      };
+      
+      // If this is a full payment (not partial), increment emiPaidCount
+      if (status === 'Paid' || status === 'Advance') {
+        loanUpdate.$inc.emiPaidCount = 1;
+      }
+      
+      await Loan.findByIdAndUpdate(loanId, loanUpdate, { session });
+      
+      return NextResponse.json({
+        success: true,
+        data: payment,
+        message: `Payment created successfully (${status})`
+      });
     });
-
+    
   } catch (error) {
-    console.error('❌ Error updating loan statistics:', error);
-    throw error;
+    console.error('Error creating payment:', error);
+    
+    // Handle specific errors
+    if (error.message.includes('PARTIAL_EXISTS') || error.message.includes('DUPLICATE_PAYMENT')) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 409 }
+      );
+    }
+    
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    );
   }
+}
+
+// ============================================================================
+// ✅ 3. HANDLE ALL PATCH REQUESTS (Single endpoint for all PATCH operations)
+// ============================================================================
+export async function PATCH(request) {
+  await applyRateLimiting();
+  
+  try {
+    const url = new URL(request.url);
+    const pathSegments = url.pathname.split('/');
+    const paymentId = pathSegments[pathSegments.length - 2]; // Second last segment
+    const isCompleteEndpoint = url.pathname.endsWith('/complete');
+    
+    const body = await request.json();
+    
+    if (!paymentId) {
+      return NextResponse.json(
+        { success: false, error: 'Payment ID required' },
+        { status: 400 }
+      );
+    }
+    
+    await connectDB();
+    
+    // 🚨 DECISION: If it's /complete endpoint, handle completion
+    if (isCompleteEndpoint) {
+      return await handleCompletePartial(paymentId, body);
+    }
+    
+    // Otherwise, handle regular PATCH update
+    return await handleUpdatePayment(paymentId, body);
+    
+  } catch (error) {
+    console.error('Error in PATCH request:', error);
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    );
+  }
+}
+
+// ============================================================================
+// ✅ HELPER FUNCTIONS
+// ============================================================================
+
+// Helper to handle regular payment updates
+async function handleUpdatePayment(paymentId, body) {
+  return await SafeSession.withTransaction(async (session) => {
+    // Find payment
+    const payment = await EMIPayment.findById(paymentId).session(session);
+    
+    if (!payment) {
+      return NextResponse.json(
+        { success: false, error: 'Payment not found' },
+        { status: 404 }
+      );
+    }
+    
+    const oldAmount = payment.amount;
+    const oldStatus = payment.status;
+    
+    // Update fields
+    if (body.amount !== undefined) {
+      payment.amount = parseFloat(body.amount);
+    }
+    
+    if (body.status !== undefined) {
+      payment.status = body.status;
+      
+      // If changing from Partial to Paid, mark as complete
+      if (oldStatus === 'Partial' && body.status === 'Paid') {
+        payment.isPartial = false;
+        payment.partialRemainingAmount = 0;
+      }
+    }
+    
+    if (body.paymentDate !== undefined) {
+      payment.paymentDate = new Date(body.paymentDate);
+    }
+    
+    if (body.collectedBy !== undefined) {
+      payment.collectedBy = body.collectedBy;
+    }
+    
+    if (body.notes !== undefined) {
+      payment.notes = body.notes;
+    }
+    
+    await payment.save({ session });
+    
+    // Update loan stats based on changes
+    if (body.amount !== undefined && oldAmount !== payment.amount) {
+      const amountDiff = payment.amount - oldAmount;
+      
+      await Loan.findByIdAndUpdate(
+        payment.loanId,
+        {
+          $inc: { totalPaidAmount: amountDiff }
+        },
+        { session }
+      );
+    }
+    
+    // If changing from Partial to Paid, increment emiPaidCount
+    if (oldStatus === 'Partial' && payment.status === 'Paid') {
+      await Loan.findByIdAndUpdate(
+        payment.loanId,
+        {
+          $inc: { emiPaidCount: 1 }
+        },
+        { session }
+      );
+    }
+    
+    return NextResponse.json({
+      success: true,
+      data: payment,
+      message: 'Payment updated successfully'
+    });
+  });
+}
+
+// Helper to handle partial completion
+async function handleCompletePartial(paymentId, body) {
+  if (!body.additionalAmount || body.additionalAmount <= 0) {
+    return NextResponse.json(
+      { success: false, error: 'Valid additional amount required' },
+      { status: 400 }
+    );
+  }
+  
+  return await SafeSession.withTransaction(async (session) => {
+    // Find the partial payment
+    const partialPayment = await EMIPayment.findById(paymentId).session(session);
+    
+    if (!partialPayment || !partialPayment.isPartial) {
+      return NextResponse.json(
+        { success: false, error: 'Partial payment not found' },
+        { status: 404 }
+      );
+    }
+    
+    const additionalAmount = parseFloat(body.additionalAmount);
+    const newTotal = partialPayment.amount + additionalAmount;
+    const fullEmiAmount = partialPayment.fullEmiAmount || newTotal;
+    
+    // Calculate remaining after this addition
+    const remainingAfter = Math.max(0, fullEmiAmount - newTotal);
+    
+    // Update partial payment
+    partialPayment.amount = newTotal;
+    partialPayment.partialRemainingAmount = remainingAfter;
+    
+    // Check if now fully paid
+    const isNowComplete = remainingAfter <= 0;
+    
+    if (isNowComplete) {
+      partialPayment.status = 'Paid';
+      partialPayment.isPartial = false;
+      partialPayment.partialRemainingAmount = 0;
+      
+      // Count as one EMI paid
+      await Loan.findByIdAndUpdate(
+        partialPayment.loanId,
+        {
+          $inc: {
+            totalPaidAmount: additionalAmount,
+            emiPaidCount: 1
+          }
+        },
+        { session }
+      );
+    } else {
+      // Still partial - just update total
+      await Loan.findByIdAndUpdate(
+        partialPayment.loanId,
+        {
+          $inc: { totalPaidAmount: additionalAmount }
+        },
+        { session }
+      );
+    }
+    
+    await partialPayment.save({ session });
+    
+    // Create completion record for audit trail
+    const completionRecord = new EMIPayment({
+      loanId: partialPayment.loanId,
+      customerId: partialPayment.customerId,
+      loanNumber: partialPayment.loanNumber,
+      customerName: partialPayment.customerName,
+      amount: additionalAmount,
+      paymentDate: new Date(body.paymentDate || new Date()),
+      collectedBy: body.collectedBy || partialPayment.collectedBy || 'Operator',
+      status: 'Paid',
+      paymentType: 'completion',
+      isPartialCompletion: true,
+      completedPartialId: partialPayment._id,
+      notes: body.notes || `Completion payment for partial on ${partialPayment.paymentDate}`
+    });
+    
+    await completionRecord.save({ session });
+    
+    return NextResponse.json({
+      success: true,
+      data: {
+        partialPayment,
+        completionRecord,
+        isComplete: isNowComplete,
+        newTotal: newTotal,
+        remainingAfter: remainingAfter,
+        loanUpdated: true
+      },
+      message: `Partial payment completed. ${isNowComplete ? 'EMI is now fully paid.' : 'EMI is still partial.'}`
+    });
+  });
+}
+
+// Helper to complete existing partial
+async function completeExistingPartial(partialId, amount, paymentDate, collectedBy, notes, session) {
+  const partialPayment = await EMIPayment.findById(partialId).session(session);
+  
+  if (!partialPayment) {
+    throw new Error('Partial payment not found');
+  }
+  
+  const newTotal = partialPayment.amount + amount;
+  const fullEmiAmount = partialPayment.fullEmiAmount || newTotal;
+  const remainingAfter = Math.max(0, fullEmiAmount - newTotal);
+  
+  // Update partial payment
+  partialPayment.amount = newTotal;
+  partialPayment.partialRemainingAmount = remainingAfter;
+  
+  const isNowComplete = remainingAfter <= 0;
+  
+  if (isNowComplete) {
+    partialPayment.status = 'Paid';
+    partialPayment.isPartial = false;
+    partialPayment.partialRemainingAmount = 0;
+    
+    await Loan.findByIdAndUpdate(
+      partialPayment.loanId,
+      {
+        $inc: {
+          totalPaidAmount: amount,
+          emiPaidCount: 1
+        }
+      },
+      { session }
+    );
+  } else {
+    await Loan.findByIdAndUpdate(
+      partialPayment.loanId,
+      {
+        $inc: { totalPaidAmount: amount }
+      },
+      { session }
+    );
+  }
+  
+  await partialPayment.save({ session });
+  
+  // Create completion record
+  const completionRecord = new EMIPayment({
+    loanId: partialPayment.loanId,
+    customerId: partialPayment.customerId,
+    loanNumber: partialPayment.loanNumber,
+    customerName: partialPayment.customerName,
+    amount: amount,
+    paymentDate: new Date(paymentDate),
+    collectedBy: collectedBy || 'Operator',
+    status: 'Paid',
+    paymentType: 'completion',
+    isPartialCompletion: true,
+    completedPartialId: partialPayment._id,
+    notes: notes || 'Auto-completed'
+  });
+  
+  await completionRecord.save({ session });
+  
+  return NextResponse.json({
+    success: true,
+    data: {
+      partialPayment,
+      completionRecord,
+      isComplete: isNowComplete,
+      newTotal: newTotal
+    }
+  });
 }

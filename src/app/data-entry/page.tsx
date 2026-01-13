@@ -74,7 +74,7 @@ export default function DataEntryDashboard() {
   const [editLoanData, setEditLoanData] = useState<EditLoanData | null>(null);
   const [renewLoanData, setRenewLoanData] = useState<RenewLoanData | null>(null);
   const [deleteLoanData, setDeleteLoanData] = useState<Loan | null>(null);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerDetails | null>(null);
   const [selectedCustomerForCalendar, setSelectedCustomerForCalendar] = useState<Customer | null>(null);
   const [selectedCustomerForTransactions, setSelectedCustomerForTransactions] = useState<CustomerDetails | null>(null);
   const [selectedLoanForPayment, setSelectedLoanForPayment] = useState<Loan | null>(null);
@@ -106,6 +106,8 @@ export default function DataEntryDashboard() {
         break;
       case 'updateEMI':
         setShowUpdateEMI(false);
+        setSelectedCustomer(null);
+        setSelectedLoanForPayment(null);
         break;
       case 'addLoan':
         setShowAddLoanModal(false);
@@ -269,7 +271,7 @@ export default function DataEntryDashboard() {
     closeAllModals();
   }, [closeAllModals]);
 
-  // Handler functions - memoized with useCallback
+  // ✅ FIXED: Handler for viewing customer details
   const handleViewCustomerDetails = useCallback(async (customer: Customer | CustomerDetails) => {
     console.log('👁️ Viewing customer details:', customer.name);
     
@@ -277,12 +279,25 @@ export default function DataEntryDashboard() {
     setCustomerDetails(null);
     setSelectedCustomer(null);
     
-    // Set the customer and open modal
-    setCustomerDetails(customer as CustomerDetails);
-    setShowCustomerDetails(true);
-    
-    // Force a small delay to ensure state is updated
-    await new Promise(resolve => setTimeout(resolve, 50));
+    try {
+      // Fetch full customer details
+      const response = await fetch(`/api/data-entry/customers/${customer._id}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        setCustomerDetails(data.data);
+        setShowCustomerDetails(true);
+      } else {
+        // Fallback to basic customer data
+        setCustomerDetails(customer as CustomerDetails);
+        setShowCustomerDetails(true);
+      }
+    } catch (error) {
+      console.error('Error fetching customer details:', error);
+      // Fallback to basic customer data
+      setCustomerDetails(customer as CustomerDetails);
+      setShowCustomerDetails(true);
+    }
   }, []);
 
   const handleEditCustomer = useCallback((customer: CustomerDetails) => {
@@ -336,7 +351,7 @@ export default function DataEntryDashboard() {
         emiType: loan.emiType || 'fixed',
         customEmiAmount: loan.customEmiAmount || null,
         emiStartDate: loan.emiStartDate || loan.dateApplied,
-        loanNumber: loan.loanNumber // ← ADD THIS LINE
+        loanNumber: loan.loanNumber
       }
     });
     
@@ -378,10 +393,32 @@ export default function DataEntryDashboard() {
     // Keep showCustomerDetails as true
   }, []);
 
-  const handleUpdateEMI = useCallback((customer: Customer, loan?: Loan) => {
+  // ✅ FIXED: Handle Update EMI - accepts Customer and converts to CustomerDetails
+  const handleUpdateEMI = useCallback((customer: Customer | CustomerDetails, loan?: Loan) => {
     console.log('💰 Updating EMI for customer:', customer.name);
     
-    setSelectedCustomer(customer);
+    // Convert Customer to CustomerDetails if needed
+    const customerForModal: CustomerDetails = {
+      ...customer,
+      customerNumber: customer.customerNumber || '',
+      phone: customer.phone || '',
+      area: customer.area || '',
+      businessName: customer.businessName || '',
+      address: customer.address || '',
+      loanAmount: customer.loanAmount || 0,
+      emiAmount: customer.emiAmount || 0,
+      loanType: customer.loanType || 'Daily',
+      category: customer.category || 'A',
+      officeCategory: customer.officeCategory || 'Office 1',
+      whatsappNumber: customer.whatsappNumber || '',
+      loans: 'loans' in customer ? (customer.loans || []) : [],
+      _id: customer._id,
+      name: customer.name,
+      createdAt: customer.createdAt || new Date().toISOString(),
+      updatedAt: customer.updatedAt || new Date().toISOString()
+    };
+    
+    setSelectedCustomer(customerForModal);
     setSelectedLoanForPayment(loan || null);
     
     // Open update EMI modal without closing customer details
@@ -395,6 +432,18 @@ export default function DataEntryDashboard() {
     
     // Open EMI calendar
     setShowEMICalendar(true);
+  }, []);
+
+  // ✅ FIXED: Handle Update EMI from Dashboard/Collection sections
+  const handleShowUpdateEMI = useCallback(() => {
+    console.log('💰 Showing update EMI modal from button');
+    
+    // For generic EMI update (no specific customer selected)
+    setSelectedCustomer(null);
+    setSelectedLoanForPayment(null);
+    
+    // Open update EMI modal
+    setShowUpdateEMI(true);
   }, []);
 
   // NEW: Handle View EMI Transactions
@@ -507,11 +556,6 @@ export default function DataEntryDashboard() {
     }
   }, []);
 
-  const handleShowUpdateEMI = useCallback(() => {
-    console.log('💰 Showing update EMI modal');
-    setShowUpdateEMI(true);
-  }, []);
-
   const handleNotificationToggle = useCallback(() => {
     console.log('🔔 Toggling notifications');
     setShowNotifications(prev => !prev);
@@ -523,30 +567,22 @@ export default function DataEntryDashboard() {
     setShowAddCustomer(true);
   }, []);
 
-  const handleModalSuccess = useCallback((keepCustomerDetailsOpen = false) => {
+  // ✅ FIXED: Handle modal success
+  const handleModalSuccess = useCallback((callback?: () => void) => {
     console.log('✅ Modal action successful, refreshing data...');
     
     // 🚨 CRITICAL FIX: Clear all customer cache to force fresh data
     clearAllCustomerCache();
     
     // Refresh data
-    handleRefresh(); // This should already exist
+    handleRefresh();
     
-    // Only close all modals if we're not keeping customer details open
-    if (!keepCustomerDetailsOpen) {
-      closeAllModals();
-    } else {
-      // Only close specific modals, keep customer details open
-      setShowAddCustomer(false);
-      setShowUpdateEMI(false);
-      setShowAddLoanModal(false);
-      setShowEditCustomer(false);
-      setShowEditLoan(false);
-      setShowRenewLoan(false);
-      setShowEMICalendar(false);
-      setShowDeleteConfirmation(false);
-      setShowEMITransactions(false);
-      // Don't close customer details
+    // Close all modals
+    closeAllModals();
+    
+    // If a callback was provided (for EMIUpdateModal), execute it
+    if (callback) {
+      callback();
     }
     
     // If customer details modal was open, refresh that specific customer
@@ -648,7 +684,30 @@ export default function DataEntryDashboard() {
     }
   }, [deleteLoanData, currentOperator, handleRefresh, customerDetails]);
 
-  // Render current tab with Suspense - FIXED requests section props
+  // ✅ FIXED: Get loans for selected customer
+  const getCustomerLoans = useCallback(() => {
+    if (!selectedCustomer) return [];
+    
+    // Return loans from selectedCustomer if available
+    if (selectedCustomer.loans && Array.isArray(selectedCustomer.loans)) {
+      return selectedCustomer.loans;
+    }
+    
+    // If no loans in selectedCustomer, check if we have a specific loan
+    if (selectedLoanForPayment) {
+      return [selectedLoanForPayment];
+    }
+    
+    return [];
+  }, [selectedCustomer, selectedLoanForPayment]);
+
+  // ✅ FIXED: Separate function for CollectionSection
+  const handleShowUpdateEMIForCollection = useCallback(() => {
+    console.log('💰 Showing update EMI modal from Collection section');
+    handleShowUpdateEMI();
+  }, [handleShowUpdateEMI]);
+
+  // Render current tab with Suspense
   const renderCurrentTab = useCallback(() => {
     console.log('🎨 Rendering tab:', activeTab);
     
@@ -676,8 +735,6 @@ export default function DataEntryDashboard() {
               refreshKey={refreshKey}
               onAddNewCustomer={handleShowAddCustomerFromCustomers}
               onViewEMICalendar={handleViewEMICalendar}
-              // Note: onViewEMITransactions is not passed to CustomersSection 
-              // as it may not have this prop in its type definition
             />
           </Suspense>
         );
@@ -690,8 +747,6 @@ export default function DataEntryDashboard() {
               onShowUpdateEMI={handleUpdateEMI}
               onShowEMICalendar={handleViewEMICalendar}
               refreshKey={refreshKey}
-              // Note: onViewEMITransactions is not passed to EMISection 
-              // as it may not have this prop in its type definition
             />
           </Suspense>
         );
@@ -702,9 +757,7 @@ export default function DataEntryDashboard() {
               refreshKey={refreshKey}
               currentUserOffice={currentUserOffice}
               currentOperator={currentOperator}
-              onShowUpdateEMI={handleShowUpdateEMI}
-              // Note: onViewEMITransactions is not passed to CollectionSection 
-              // as it may not have this prop in its type definition
+              onShowUpdateEMI={handleShowUpdateEMIForCollection}
             />
           </Suspense>
         );
@@ -742,7 +795,8 @@ export default function DataEntryDashboard() {
     handleAddLoan,
     handleViewEMICalendar,
     handleShowAddCustomerFromCustomers,
-    handleRefresh
+    handleRefresh,
+    handleShowUpdateEMIForCollection
   ]);
 
   // Function to render tab-specific header
@@ -891,7 +945,6 @@ export default function DataEntryDashboard() {
               onRenewLoan={handleRenewLoan}
               onDeleteLoan={handleDeleteLoan}
               onViewEMICalendar={handleViewEMICalendar}
-              // Note: onViewEMITransactions is not passed as it may not exist in the type
               onAddLoan={() => {
                 if (customerDetails) {
                   handleAddLoan(customerDetails);
@@ -945,7 +998,7 @@ export default function DataEntryDashboard() {
               customerDetails={customerDetails}
               onSuccess={handleModalSuccess}
               currentOperator={currentOperator}
-              existingLoans={customerExistingLoans} // Pass existing loans as separate prop
+              existingLoans={customerExistingLoans}
             />
           </Suspense>
         </div>
@@ -981,18 +1034,16 @@ export default function DataEntryDashboard() {
         </div>
       )}
 
-      {/* Update EMI Modal */}
+      {/* ✅ FIXED: Update EMI Modal */}
       {showUpdateEMI && (
         <div className="z-[160]">
           <Suspense fallback={<ModalLoader />}>
             <EMIUpdateModal
               isOpen={showUpdateEMI}
               onClose={() => closeModal('updateEMI')}
-              selectedCustomer={selectedCustomer}
-              selectedLoan={selectedLoanForPayment}
-              currentOperator={currentOperator}
-              onSuccess={handleModalSuccess}
-              customers={[]}
+              customer={selectedCustomer}
+              loans={getCustomerLoans()}
+              onPaymentSuccess={() => handleModalSuccess()}
             />
           </Suspense>
         </div>
@@ -1012,7 +1063,7 @@ export default function DataEntryDashboard() {
         </div>
       )}
 
-      {/* NEW: EMI Transactions Modal */}
+      {/* EMI Transactions Modal */}
       {showEMITransactions && selectedCustomerForTransactions && (
         <div className="z-[180]">
           <Suspense fallback={<ModalLoader />}>
