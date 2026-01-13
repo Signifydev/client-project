@@ -7,8 +7,8 @@ import { formatToDDMMYYYY } from '@/src/app/data-entry/utils/dateCalculations';
 interface EMIUpdateModalProps {
   isOpen: boolean;
   onClose: () => void;
-  customer: CustomerDetails | null; // ✅ Changed from selectedCustomer
-  loans: Loan[]; // ✅ Changed from selectedLoan
+  customer: CustomerDetails | null;
+  loans: Loan[];
   onPaymentSuccess?: () => void;
 }
 
@@ -53,14 +53,34 @@ export default function EMIUpdateModal({
 
   // Initialize form
   useEffect(() => {
-    if (isOpen && loans.length > 0) {
+    if (isOpen) {
       const today = new Date().toISOString().split('T')[0];
       setPaymentDate(today);
       setAdvanceStartDate(today);
       setAdvanceEndDate(today);
       
-      if (!selectedLoan && loans.length > 0) {
-        setSelectedLoan(loans[0]);
+      // ✅ FIXED: Check if loans array has items before setting selectedLoan
+      if (loans && loans.length > 0) {
+        // Filter for active loans (not completed/renewed) - use case-insensitive check
+        const activeLoans = loans.filter(loan => {
+          const status = (loan.status || '').toLowerCase();
+          const isActive = status === 'active' && 
+                          loan.isRenewed !== true && 
+                          loan.isCompleted !== true &&
+                          (!loan.emiPaidCount || !loan.totalEmiCount || loan.emiPaidCount < loan.totalEmiCount);
+          return isActive;
+        });
+        
+        if (activeLoans.length > 0) {
+          setSelectedLoan(activeLoans[0]);
+        } else if (loans.length > 0) {
+          // If no "active" loans, use the first loan anyway
+          setSelectedLoan(loans[0]);
+          setMessage({
+            type: 'warning',
+            text: 'Note: This loan may be marked as completed or renewed, but you can still record payments.'
+          });
+        }
       }
     }
   }, [isOpen, loans]);
@@ -70,7 +90,25 @@ export default function EMIUpdateModal({
 
   // Reset form
   const resetForm = () => {
-    setSelectedLoan(loans.length > 0 ? loans[0] : null);
+    if (loans && loans.length > 0) {
+      const activeLoans = loans.filter(loan => 
+        !loan.isCompleted && 
+        !loan.isRenewed && 
+        loan.loanStatus !== 'Completed' && 
+        loan.loanStatus !== 'Renewed'
+      );
+      
+      if (activeLoans.length > 0) {
+        setSelectedLoan(activeLoans[0]);
+      } else if (loans.length > 0) {
+        setSelectedLoan(loans[0]);
+      } else {
+        setSelectedLoan(null);
+      }
+    } else {
+      setSelectedLoan(null);
+    }
+    
     setPaymentType('single');
     setAmount('');
     setPaymentDate(new Date().toISOString().split('T')[0]);
@@ -376,6 +414,52 @@ export default function EMIUpdateModal({
   // ✅ FIXED: Don't render if modal is not open or customer is null
   if (!isOpen || !customer) return null;
 
+  // ✅ FIXED: Check for available loans
+  const availableLoans = loans || [];
+  const hasLoans = availableLoans.length > 0;
+  
+  if (!hasLoans) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-semibold text-gray-900">
+              Record EMI Payment
+            </h3>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-500 text-2xl"
+            >
+              ×
+            </button>
+          </div>
+          
+          <div className="text-center py-8">
+            <div className="text-yellow-500 text-5xl mb-4">⚠️</div>
+            <h4 className="text-lg font-medium text-gray-900 mb-2">
+              No Loans Available
+            </h4>
+            <p className="text-gray-600 mb-4">
+              No active loans found for {customer.name}. All loans may be completed or renewed.
+            </p>
+            <p className="text-sm text-gray-500">
+              Please add a new loan or check customer details.
+            </p>
+            
+            <div className="mt-6">
+              <button
+                onClick={onClose}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       {/* Main Payment Modal */}
@@ -409,16 +493,18 @@ export default function EMIUpdateModal({
               <select
                 value={selectedLoan?._id || ''}
                 onChange={(e) => {
-                  const loan = loans.find(l => l._id === e.target.value);
+                  const loan = availableLoans.find(l => l._id === e.target.value);
                   setSelectedLoan(loan || null);
                 }}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 required
               >
                 <option value="">Select a loan</option>
-                {loans.map((loan) => (
+                {availableLoans.map((loan) => (
                   <option key={loan._id} value={loan._id}>
-                    {loan.loanNumber} - ₹{loan.emiAmount} {loan.loanType} ({loan.totalEmiCount} EMIs)
+                    {loan.loanNumber} - ₹{loan.emiAmount} {loan.loanType} 
+                    {loan.isCompleted && ' (Completed)'}
+                    {loan.isRenewed && ' (Renewed)'}
                   </option>
                 ))}
               </select>
@@ -445,6 +531,14 @@ export default function EMIUpdateModal({
                     <p className="font-bold text-blue-900">₹{selectedLoan.totalPaidAmount || 0}</p>
                   </div>
                 </div>
+                {(selectedLoan.isCompleted || selectedLoan.isRenewed) && (
+                  <div className="mt-3 p-2 bg-yellow-100 border border-yellow-300 rounded">
+                    <p className="text-sm text-yellow-800">
+                      ⚠️ Note: This loan is marked as {selectedLoan.isCompleted ? 'completed' : 'renewed'}, 
+                      but you can still record payments.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 

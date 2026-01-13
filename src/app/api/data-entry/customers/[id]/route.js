@@ -114,10 +114,21 @@ function safeFormatDate(dateInput) {
 function isLoanCompleted(loan) {
   if (!loan) return false;
   
-  // Check multiple completion indicators
-  if (loan.status === 'completed') return true;
-  if (loan.emiPaidCount >= loan.totalEmiCount) return true;
-  if (loan.totalPaidAmount >= (loan.totalLoanAmount || loan.amount)) return true;
+  // Check status first - accept both 'completed' and 'Completed'
+  if (loan.status && loan.status.toLowerCase() === 'completed') return true;
+  
+  // Check if all EMIs are paid
+  if (loan.emiPaidCount && loan.totalEmiCount && loan.emiPaidCount >= loan.totalEmiCount) {
+    return true;
+  }
+  
+  // Check if total paid >= loan amount (principal)
+  if (loan.totalPaidAmount && loan.amount && loan.totalPaidAmount >= loan.amount) {
+    return true;
+  }
+  
+  // Check if marked as completed
+  if (loan.isCompleted === true) return true;
   
   return false;
 }

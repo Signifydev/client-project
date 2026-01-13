@@ -215,6 +215,38 @@ export interface Loan {
   // ✅ NEW: Fields for proper payment tracking
   lastPaymentStatus?: 'Paid' | 'Partial' | 'Advance'; // Status of last payment
   lastPaymentAmount?: number; // Amount of last payment
+  
+  // ✅ FIXED: Add missing isCompleted field
+  isCompleted?: boolean;
+  
+  // ✅ FIXED: Add loanStatus field (if different from status)
+  loanStatus?: string;
+  
+  // Add other fields from your database
+  interestRate?: number;
+  startDate?: string;
+  endDate?: string;
+  emiPaid?: number;
+  totalPaid?: number;
+  tenure?: number;
+  tenureType?: string;
+  dailyEMI?: number;
+  totalEMI?: number;
+  emiPending?: number;
+  updatedAt?: string;
+  __v?: number;
+  
+  // Display fields
+  dateAppliedDisplay?: string;
+  emiStartDateDisplay?: string;
+  lastEmiDateDisplay?: string;
+  nextEmiDateDisplay?: string;
+  createdAtDisplay?: string;
+  updatedAtDisplay?: string;
+  dateAppliedInput?: string;
+  emiStartDateInput?: string;
+  lastEmiDateInput?: string;
+  nextEmiDateInput?: string;
 }
 
 // =============================================

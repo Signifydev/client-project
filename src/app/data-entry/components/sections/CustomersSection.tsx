@@ -33,15 +33,33 @@ type SortOrder = 'asc' | 'desc' | 'none';
 const isActiveLoan = (loan: Loan): boolean => {
   if (!loan) return false;
   
-  // Check if loan is completed
-  const isCompleted = loan.status === 'completed' || 
+  // Debug logging
+  console.log('🔍 Loan check:', {
+    loanNumber: loan.loanNumber,
+    status: loan.status,
+    isCompleted: loan.isCompleted,
+    isRenewed: loan.isRenewed,
+    emiPaidCount: loan.emiPaidCount,
+    totalEmiCount: loan.totalEmiCount
+  });
+  
+  // Check status - accept both 'active' and 'Active' (case-insensitive)
+  const status = (loan.status || '').toLowerCase();
+  const isActiveStatus = status === 'active';
+  
+  if (!isActiveStatus) return false;
+  
+  // Check if loan is marked as renewed
+  if (loan.isRenewed === true) return false;
+  
+  // Check if completed - handle both ways
+  const isCompleted = loan.isCompleted === true || 
                      (loan.emiPaidCount && loan.totalEmiCount && loan.emiPaidCount >= loan.totalEmiCount);
   
-  // Check if loan is renewed
-  const isRenewed = loan.isRenewed || loan.status === 'renewed';
+  if (isCompleted) return false;
   
-  // Loan is active if it's not completed and not renewed
-  return loan.status === 'active' && !isCompleted && !isRenewed;
+  // Default: active
+  return true;
 };
 
 // ✅ NEW: Helper function to get active loans for a customer
@@ -444,57 +462,73 @@ export default function CustomersSection({
 
   // ✅ UPDATED: Handle EMI button click - shows loan selection when multiple active loans exist
   const handleUpdateEMIClick = async (customer: Customer) => {
-    try {
-      const customerId = customer._id || customer.id;
-      if (!customerId) {
-        alert('Customer ID not found');
-        return;
-      }
+  try {
+    const customerId = customer._id || customer.id;
+    if (!customerId) {
+      alert('Customer ID not found');
+      return;
+    }
 
-      console.log('🔍 Fetching customer details for EMI update:', customer.name);
+    console.log('🔍 Fetching customer details for EMI update:', customer.name);
+    
+    const details = await fetchCustomerDetails(customerId);
+    if (details) {
+      console.log('✅ Customer with loans fetched:', details.name);
+      console.log('📊 All loans found:', details.loans?.length || 0);
       
-      const details = await fetchCustomerDetails(customerId);
-      if (details) {
-        console.log('✅ Customer with loans fetched:', details.name);
-        console.log('📊 Loans found:', details.loans?.length || 0);
-        
-        // ✅ FIXED: Use the new helper function to get active loans
-        const activeLoans = getActiveLoans(details);
-        
-        console.log('🔍 Active loans check:', {
-          totalLoans: details.loans?.length || 0,
-          activeLoansCount: activeLoans.length,
-          activeLoans: activeLoans.map(loan => ({
+      // ✅ FIXED: Debug each loan
+      if (details.loans && details.loans.length > 0) {
+        details.loans.forEach((loan, index) => {
+          console.log(`Loan ${index + 1}:`, {
             loanNumber: loan.loanNumber,
             status: loan.status,
+            isCompleted: loan.isCompleted,
+            isRenewed: loan.isRenewed,
             emiPaidCount: loan.emiPaidCount,
             totalEmiCount: loan.totalEmiCount,
-            isRenewed: loan.isRenewed
-          }))
+            isActiveLoan: isActiveLoan(loan)
+          });
         });
-        
-        if (activeLoans.length === 0) {
-          alert('No active loans found for this customer. All loans are either completed or renewed.');
-          return;
-        }
-        
-        if (activeLoans.length === 1) {
-          // If only one active loan, directly proceed to EMI payment
-          onUpdateEMI(details, activeLoans[0]);
-        } else {
-          // If multiple active loans, show selection modal
-          setSelectedCustomerForEMI(details);
-          setShowLoanSelection(true);
-        }
-      } else {
-        console.error('❌ Failed to fetch customer details');
-        alert('Failed to fetch customer loan details');
       }
-    } catch (error: any) {
-      console.error('❌ Error fetching customer details:', error);
-      alert('Failed to fetch customer details: ' + error.message);
+      
+      // ✅ FIXED: Use the new helper function to get active loans
+      const activeLoans = getActiveLoans(details);
+      
+      console.log('🔍 Active loans result:', {
+        totalLoans: details.loans?.length || 0,
+        activeLoansCount: activeLoans.length,
+        activeLoans: activeLoans.map(loan => ({
+          loanNumber: loan.loanNumber,
+          status: loan.status,
+          emiPaidCount: loan.emiPaidCount,
+          totalEmiCount: loan.totalEmiCount,
+          isRenewed: loan.isRenewed,
+          isCompleted: loan.isCompleted
+        }))
+      });
+      
+      if (activeLoans.length === 0) {
+        alert('No active loans found for this customer. All loans are either completed or renewed.');
+        return;
+      }
+      
+      if (activeLoans.length === 1) {
+        // If only one active loan, directly proceed to EMI payment
+        onUpdateEMI(details, activeLoans[0]);
+      } else {
+        // If multiple active loans, show selection modal
+        setSelectedCustomerForEMI(details);
+        setShowLoanSelection(true);
+      }
+    } else {
+      console.error('❌ Failed to fetch customer details');
+      alert('Failed to fetch customer loan details');
     }
-  };
+  } catch (error: any) {
+    console.error('❌ Error fetching customer details:', error);
+    alert('Failed to fetch customer details: ' + error.message);
+  }
+};
 
   // NEW: Handle EMI Calendar button click
   const handleViewEMICalendarClick = async (customer: Customer) => {
