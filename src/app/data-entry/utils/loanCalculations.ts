@@ -1,6 +1,6 @@
 import { Customer, CustomerDetails, Loan, EMIHistory } from '@/src/app/data-entry/types/dataEntry';
 
-// NEW: Calculate next scheduled EMI date based on last scheduled EMI date
+// ✅ FIXED: Calculate next scheduled EMI date based on last scheduled EMI date
 export const calculateNextScheduledEmiDate = (
   lastScheduledEmiDate: string,
   loanType: string,
@@ -28,31 +28,31 @@ export const calculateNextScheduledEmiDate = (
   return date.toISOString().split('T')[0];
 };
 
-// NEW: Calculate last scheduled EMI date based on EMI start and count paid
+// ✅ FIXED: Calculate last scheduled EMI date based on EMI start and FULL payments count
 export const calculateLastScheduledEmiDate = (
   emiStartDate: string,
   loanType: string,
-  emiPaidCount: number
+  fullEmisPaid: number // Changed from emiPaidCount to fullEmisPaid for clarity
 ): string => {
-  if (!emiStartDate || emiPaidCount <= 0) return emiStartDate;
+  if (!emiStartDate || fullEmisPaid <= 0) return emiStartDate;
   
   const startDate = new Date(emiStartDate);
   startDate.setHours(0, 0, 0, 0);
   
-  const lastScheduledDate = new Date(startDate); // Fixed: let → const
+  const lastScheduledDate = new Date(startDate);
   
   switch(loanType) {
     case 'Daily':
-      lastScheduledDate.setDate(startDate.getDate() + (emiPaidCount - 1));
+      lastScheduledDate.setDate(startDate.getDate() + (fullEmisPaid - 1));
       break;
     case 'Weekly':
-      lastScheduledDate.setDate(startDate.getDate() + ((emiPaidCount - 1) * 7));
+      lastScheduledDate.setDate(startDate.getDate() + ((fullEmisPaid - 1) * 7));
       break;
     case 'Monthly':
-      lastScheduledDate.setMonth(startDate.getMonth() + (emiPaidCount - 1));
+      lastScheduledDate.setMonth(startDate.getMonth() + (fullEmisPaid - 1));
       break;
     default:
-      lastScheduledDate.setDate(startDate.getDate() + (emiPaidCount - 1));
+      lastScheduledDate.setDate(startDate.getDate() + (fullEmisPaid - 1));
   }
   
   return lastScheduledDate.toISOString().split('T')[0];
@@ -67,12 +67,22 @@ export const calculateEMICompletion = (loan: Loan): {
   totalLoanAmount: number;
 } => {
   const totalEmiCount = loan.totalEmiCount || loan.loanDays || 30;
-  const emiPaidCount = loan.emiPaidCount || 0;
-  const totalPaidAmount = loan.totalPaidAmount || 0;
+  const emiPaidCount = loan.emiPaidCount || 0; // This should only count FULL payments
+  const totalPaidAmount = loan.totalPaidAmount || 0; // This includes ALL payments (full + partial)
   
-  const totalLoanAmount = loan.emiAmount * totalEmiCount;
+  // ✅ FIXED: Calculate total loan amount correctly with null check
+  let totalLoanAmount = 0;
+  if (loan.emiType === 'custom' && loan.loanType !== 'Daily') {
+    const regularPeriods = totalEmiCount - 1;
+    const lastPeriod = 1;
+    const customEmiAmount = loan.customEmiAmount || 0; // Handle undefined case
+    totalLoanAmount = (loan.emiAmount * regularPeriods) + (customEmiAmount * lastPeriod);
+  } else {
+    totalLoanAmount = loan.emiAmount * totalEmiCount;
+  }
   
-  const completionPercentage = (emiPaidCount / totalEmiCount) * 100;
+  // ✅ FIXED: Use emiPaidCount (FULL payments) for completion percentage
+  const completionPercentage = totalEmiCount > 0 ? (emiPaidCount / totalEmiCount) * 100 : 0;
   const isCompleted = emiPaidCount >= totalEmiCount;
   const remainingEmis = Math.max(totalEmiCount - emiPaidCount, 0);
   const remainingAmount = Math.max(totalLoanAmount - totalPaidAmount, 0);
@@ -132,7 +142,7 @@ export const calculatePaymentBehavior = (loan: Loan): {
   };
 };
 
-// NEW: Calculate due date for a specific payment based on EMI schedule
+// Calculate due date for a specific payment based on EMI schedule
 const calculateDueDateForPayment = (loan: Loan, payment: EMIHistory): Date => {
   if (!loan.emiStartDate) return new Date(payment.paymentDate);
   
@@ -143,7 +153,7 @@ const calculateDueDateForPayment = (loan: Loan, payment: EMIHistory): Date => {
   const paymentDate = new Date(payment.paymentDate);
   const paymentDay = Math.floor((paymentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
   
-  const dueDate = new Date(startDate); // Fixed: let → const
+  const dueDate = new Date(startDate);
   
   // Create a mutable copy since setDate/setMonth mutates the date
   const mutableDueDate = new Date(dueDate);
@@ -168,9 +178,16 @@ const calculateDueDateForPayment = (loan: Loan, payment: EMIHistory): Date => {
 };
 
 export const calculateTotalLoanAmount = (loan: Loan): number => {
-  return loan.emiAmount * loan.totalEmiCount;
+  if (loan.emiType === 'custom' && loan.loanType !== 'Daily') {
+    const regularPeriods = (loan.totalEmiCount || loan.loanDays || 30) - 1;
+    const lastPeriod = 1;
+    const customEmiAmount = loan.customEmiAmount || 0; // Handle undefined case
+    return (loan.emiAmount * regularPeriods) + (customEmiAmount * lastPeriod);
+  }
+  return loan.emiAmount * (loan.totalEmiCount || loan.loanDays || 30);
 };
 
+// ✅ FIXED: getAllCustomerLoans function with improved logic and TypeScript fixes
 export const getAllCustomerLoans = (customer: Customer, customerDetails: CustomerDetails | null): Loan[] => {
   const loans: Loan[] = [];
 
@@ -179,19 +196,20 @@ export const getAllCustomerLoans = (customer: Customer, customerDetails: Custome
       if (loan._id && loan._id.length === 24 && /^[0-9a-fA-F]{24}$/.test(loan._id.replace(/_default$/, ''))) {
         const cleanLoanId = loan._id.replace(/_default$/, '');
         
-        // ✅ FIXED: Check for ANY payments (including partial)
-        const hasAnyPayments = (loan.emiPaidCount > 0) || 
-                               (loan.totalPaidAmount > 0) ||
+        // ✅ FIXED: Check for FULL payments only (emiPaidCount)
+        const hasFullPayments = (loan.emiPaidCount || 0) > 0;
+        const hasAnyPayments = hasFullPayments || 
+                               (loan.totalPaidAmount || 0) > 0 ||
                                (loan.emiHistory && loan.emiHistory.length > 0);
         
-        let nextEmiDate;
+        let nextEmiDate: string;
         
-        if (hasAnyPayments) {
+        if (hasFullPayments) {
           // ✅ FIXED: Calculate next EMI date based on FULL payments count only
           const lastScheduledEmiDate = calculateLastScheduledEmiDate(
             loan.emiStartDate || loan.dateApplied,
             loan.loanType,
-            loan.emiPaidCount || 0  // This should already be correct after API fix
+            loan.emiPaidCount || 0
           );
           
           nextEmiDate = calculateNextScheduledEmiDate(
@@ -200,13 +218,27 @@ export const getAllCustomerLoans = (customer: Customer, customerDetails: Custome
             loan.emiStartDate || loan.dateApplied
           );
         } else {
-          // NO EMIs paid - use EMI start date as next EMI date
+          // NO FULL EMIs paid - use EMI start date as next EMI date
           nextEmiDate = loan.emiStartDate || loan.dateApplied;
         }
         
-        let loanStatus = loan.status || 'active';
-        if (loan.isRenewed || loan.status === 'renewed') {
-          loanStatus = 'renewed';
+        // Use type assertion to handle string literal types
+        const loanStatus = loan.status as string;
+        let finalStatus = loanStatus || 'active';
+        
+        if (loan.isRenewed || loanStatus === 'renewed') {
+          finalStatus = 'renewed';
+        }
+        
+        // ✅ FIXED: Check if loan is actually completed (only based on FULL payments)
+        const isCompleted = loan.isCompleted === true || 
+                           loanStatus === 'completed' ||
+                           (loan.emiPaidCount && loan.totalEmiCount && loan.emiPaidCount >= loan.totalEmiCount);
+        
+        if (isCompleted) {
+          finalStatus = 'completed';
+          // For completed loans, nextEmiDate should be empty string, not null
+          nextEmiDate = '';
         }
         
         const enhancedLoan: Loan = {
@@ -215,7 +247,7 @@ export const getAllCustomerLoans = (customer: Customer, customerDetails: Custome
           loanNumber: loan.loanNumber || `L${index + 1}`,
           totalEmiCount: loan.totalEmiCount || loan.loanDays || 30,
           emiPaidCount: loan.emiPaidCount || 0,
-          // IMPORTANT: Store last scheduled EMI date, not last payment date
+          // IMPORTANT: Store last scheduled EMI date based on FULL payments
           lastEmiDate: calculateLastScheduledEmiDate(
             loan.emiStartDate || loan.dateApplied,
             loan.loanType,
@@ -225,12 +257,14 @@ export const getAllCustomerLoans = (customer: Customer, customerDetails: Custome
           totalPaidAmount: loan.totalPaidAmount || 0,
           remainingAmount: loan.remainingAmount || loan.amount,
           emiHistory: loan.emiHistory || [],
-          status: loanStatus,
+          status: finalStatus as any, // Type assertion for string literal type
           emiStartDate: loan.emiStartDate || loan.dateApplied,
           isRenewed: loan.isRenewed || false,
           renewedLoanNumber: loan.renewedLoanNumber || '',
           renewedDate: loan.renewedDate || '',
-          originalLoanNumber: loan.originalLoanNumber || ''
+          originalLoanNumber: loan.originalLoanNumber || '',
+          // Add completion flag for easy checking (ensure it's boolean, not 0)
+          isCompleted: !!isCompleted // Convert to boolean
         };
         
         loans.push(enhancedLoan);
@@ -243,7 +277,7 @@ export const getAllCustomerLoans = (customer: Customer, customerDetails: Custome
     
     const fallbackLoan: Loan = {
       _id: `fallback_${cleanCustomerId}`,
-      customerId: cleanCustomerId,
+      customerId: cleanCustomerId || '',
       customerName: customer.name,
       customerNumber: customer.customerNumber || `CN${cleanCustomerId}`,
       loanNumber: 'L1',
@@ -260,13 +294,14 @@ export const getAllCustomerLoans = (customer: Customer, customerDetails: Custome
       totalPaidAmount: 0,
       remainingAmount: customer.loanAmount || 0,
       emiHistory: [],
-      status: customer.status || 'active',
+      status: 'active',
       isFallback: true,
       isRenewed: false,
       renewedLoanNumber: '',
       renewedDate: '',
-      originalLoanNumber: ''
-    };
+      originalLoanNumber: '',
+      isCompleted: false
+    } as Loan;
     loans.push(fallbackLoan);
   }
   
@@ -289,7 +324,7 @@ export const getAllCustomerLoans = (customer: Customer, customerDetails: Custome
 export const getActiveLoans = (loans: Loan[]): Loan[] => {
   return loans.filter(loan => {
     const isRenewed = loan.isRenewed || loan.status === 'renewed';
-    const isCompleted = loan.status === 'completed';
+    const isCompleted = loan.isCompleted || loan.status === 'completed';
     return !isRenewed && !isCompleted && loan.status === 'active';
   });
 };
@@ -306,7 +341,7 @@ export const validateLoanBusinessRules = (loanType: string, emiType: string, cus
   return { isValid: true };
 };
 
-// Helper function to calculate days between two dates (for payment lateness calculation)
+// Helper function to calculate days between two dates
 export const calculateDaysLate = (dueDate: Date, paymentDate: Date): number => {
   // Remove time portion for accurate day calculation
   const due = new Date(dueDate);
@@ -314,8 +349,8 @@ export const calculateDaysLate = (dueDate: Date, paymentDate: Date): number => {
   const payment = new Date(paymentDate);
   payment.setHours(0, 0, 0, 0);
   
-  const dueDateFixed = due; // Fixed: let → const
-  const paymentDateFixed = payment; // Fixed: let → const
+  const dueDateFixed = due;
+  const paymentDateFixed = payment;
   
   const diffTime = paymentDateFixed.getTime() - dueDateFixed.getTime();
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));

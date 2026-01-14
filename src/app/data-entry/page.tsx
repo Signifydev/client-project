@@ -414,8 +414,8 @@ export default function DataEntryDashboard() {
       loans: 'loans' in customer ? (customer.loans || []) : [],
       _id: customer._id,
       name: customer.name,
-      createdAt: customer.createdAt || new Date().toISOString(),
-      updatedAt: customer.updatedAt || new Date().toISOString()
+      createdAt: (customer as any).createdAt || new Date().toISOString(), // ✅ FIXED: Use type assertion
+      updatedAt: (customer as any).updatedAt || new Date().toISOString() // ✅ FIXED: Use type assertion
     };
     
     setSelectedCustomer(customerForModal);

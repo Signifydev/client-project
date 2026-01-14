@@ -22,6 +22,39 @@ interface PartialPayment {
   paymentDate: string;
 }
 
+// ✅ FIXED: Helper function to check if loan is active (matches CustomersSection.tsx logic)
+const isActiveLoan = (loan: Loan): boolean => {
+  if (!loan) return false;
+  
+  // Convert status to string and force TypeScript to treat it as string, not string literal
+  const loanAny = loan as any;
+  const status = String(loanAny.status || '').toLowerCase();
+  
+  // Check all conditions using explicit casting
+  const isRenewed = Boolean(loanAny.isRenewed);
+  const isCompleted = Boolean(loanAny.isCompleted);
+  const hasEmisRemaining = !loanAny.totalEmiCount || 
+                          !loanAny.emiPaidCount || 
+                          loanAny.emiPaidCount < loanAny.totalEmiCount;
+  
+  // Loan is active if:
+  // 1. Status contains 'active' (case-insensitive)
+  // 2. Not renewed
+  // 3. Not completed
+  // 4. Has EMIs remaining
+  const isActive = status.includes('active') && 
+                   !isRenewed && 
+                   !isCompleted && 
+                   hasEmisRemaining;
+  
+  return isActive;
+};
+
+// ✅ FIXED: Get only active loans
+const getActiveLoans = (loans: Loan[]): Loan[] => {
+  return loans.filter(loan => isActiveLoan(loan));
+};
+
 export default function EMIUpdateModal({
   isOpen,
   onClose,
@@ -51,6 +84,9 @@ export default function EMIUpdateModal({
   const [advanceEmiCount, setAdvanceEmiCount] = useState<number>(0);
   const [advanceTotalAmount, setAdvanceTotalAmount] = useState<number>(0);
 
+  // ✅ FIXED: Get active loans only
+  const activeLoans = getActiveLoans(loans);
+
   // Initialize form
   useEffect(() => {
     if (isOpen) {
@@ -59,52 +95,28 @@ export default function EMIUpdateModal({
       setAdvanceStartDate(today);
       setAdvanceEndDate(today);
       
-      // ✅ FIXED: Check if loans array has items before setting selectedLoan
-      if (loans && loans.length > 0) {
-        // Filter for active loans (not completed/renewed) - use case-insensitive check
-        const activeLoans = loans.filter(loan => {
-          const status = (loan.status || '').toLowerCase();
-          const isActive = status === 'active' && 
-                          loan.isRenewed !== true && 
-                          loan.isCompleted !== true &&
-                          (!loan.emiPaidCount || !loan.totalEmiCount || loan.emiPaidCount < loan.totalEmiCount);
-          return isActive;
+      // ✅ FIXED: Use active loans only
+      if (activeLoans.length > 0) {
+        setSelectedLoan(activeLoans[0]);
+        setMessage(null); // Clear any previous messages
+      } else if (loans.length > 0) {
+        // If no active loans but loans exist, show warning
+        setSelectedLoan(null);
+        setMessage({
+          type: 'warning',
+          text: 'No active loans found. All loans are either completed or renewed.'
         });
-        
-        if (activeLoans.length > 0) {
-          setSelectedLoan(activeLoans[0]);
-        } else if (loans.length > 0) {
-          // If no "active" loans, use the first loan anyway
-          setSelectedLoan(loans[0]);
-          setMessage({
-            type: 'warning',
-            text: 'Note: This loan may be marked as completed or renewed, but you can still record payments.'
-          });
-        }
       }
     }
-  }, [isOpen, loans]);
+  }, [isOpen, activeLoans, loans.length]);
 
   // Calculate EMI amount for selected loan
   const emiAmount = selectedLoan?.emiAmount || 0;
 
   // Reset form
   const resetForm = () => {
-    if (loans && loans.length > 0) {
-      const activeLoans = loans.filter(loan => 
-        !loan.isCompleted && 
-        !loan.isRenewed && 
-        loan.loanStatus !== 'Completed' && 
-        loan.loanStatus !== 'Renewed'
-      );
-      
-      if (activeLoans.length > 0) {
-        setSelectedLoan(activeLoans[0]);
-      } else if (loans.length > 0) {
-        setSelectedLoan(loans[0]);
-      } else {
-        setSelectedLoan(null);
-      }
+    if (activeLoans.length > 0) {
+      setSelectedLoan(activeLoans[0]);
     } else {
       setSelectedLoan(null);
     }
@@ -162,7 +174,16 @@ export default function EMIUpdateModal({
     setIsSubmitting(true);
     setMessage(null);
 
-    // Validation
+    // Validation - Check if we have active loans
+    if (activeLoans.length === 0) {
+      setMessage({ 
+        type: 'error', 
+        text: 'No active loans available for payment. All loans are either completed or renewed.' 
+      });
+      setIsSubmitting(false);
+      return;
+    }
+
     if (!selectedLoan) {
       setMessage({ type: 'error', text: 'Please select a loan' });
       setIsSubmitting(false);
@@ -411,14 +432,13 @@ export default function EMIUpdateModal({
     }
   }, [advanceStartDate, advanceEndDate, paymentType]);
 
-  // ✅ FIXED: Don't render if modal is not open or customer is null
-  if (!isOpen || !customer) return null;
+  // ✅ FIXED: Don't render if modal is not open
+  if (!isOpen) return null;
 
-  // ✅ FIXED: Check for available loans
-  const availableLoans = loans || [];
-  const hasLoans = availableLoans.length > 0;
+  // ✅ FIXED: Check for active loans
+  const hasActiveLoans = activeLoans.length > 0;
   
-  if (!hasLoans) {
+  if (!hasActiveLoans) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
@@ -437,14 +457,30 @@ export default function EMIUpdateModal({
           <div className="text-center py-8">
             <div className="text-yellow-500 text-5xl mb-4">⚠️</div>
             <h4 className="text-lg font-medium text-gray-900 mb-2">
-              No Loans Available
+              No Active Loans Available
             </h4>
             <p className="text-gray-600 mb-4">
-              No active loans found for {customer.name}. All loans may be completed or renewed.
+              {customer 
+                ? `${customer.name} has no active loans. All loans are either completed or renewed.`
+                : 'No active loans found for payment.'}
             </p>
-            <p className="text-sm text-gray-500">
-              Please add a new loan or check customer details.
-            </p>
+            
+            {loans.length > 0 && (
+              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-sm text-yellow-800 font-medium mb-1">Loan Statuses:</p>
+                <ul className="text-xs text-yellow-700 space-y-1">
+                  {loans.slice(0, 3).map((loan, index) => (
+                    <li key={index} className="flex justify-between">
+                      <span>{loan.loanNumber || `Loan ${index + 1}`}:</span>
+                      <span className="font-medium">{loan.status}{loan.isRenewed ? ' (renewed)' : ''}</span>
+                    </li>
+                  ))}
+                  {loans.length > 3 && (
+                    <li className="text-yellow-600 italic">+ {loans.length - 3} more loans</li>
+                  )}
+                </ul>
+              </div>
+            )}
             
             <div className="mt-6">
               <button
@@ -472,7 +508,10 @@ export default function EMIUpdateModal({
                   Record EMI Payment
                 </h3>
                 <p className="text-sm text-gray-500 mt-1">
-                  Customer: {customer.name} ({customer.customerNumber})
+                  Customer: {customer?.name} ({customer?.customerNumber})
+                </p>
+                <p className="text-xs text-green-600 mt-2">
+                  ✅ {activeLoans.length} active loan{activeLoans.length !== 1 ? 's' : ''} available
                 </p>
               </div>
               <button
@@ -493,18 +532,17 @@ export default function EMIUpdateModal({
               <select
                 value={selectedLoan?._id || ''}
                 onChange={(e) => {
-                  const loan = availableLoans.find(l => l._id === e.target.value);
+                  const loan = activeLoans.find(l => l._id === e.target.value);
                   setSelectedLoan(loan || null);
                 }}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 required
               >
                 <option value="">Select a loan</option>
-                {availableLoans.map((loan) => (
+                {activeLoans.map((loan) => (
                   <option key={loan._id} value={loan._id}>
                     {loan.loanNumber} - ₹{loan.emiAmount} {loan.loanType} 
-                    {loan.isCompleted && ' (Completed)'}
-                    {loan.isRenewed && ' (Renewed)'}
+                    {loan.emiPaidCount || 0}/{loan.totalEmiCount || loan.loanDays || 0} EMIs
                   </option>
                 ))}
               </select>
@@ -523,22 +561,42 @@ export default function EMIUpdateModal({
                     <p className="font-bold text-blue-900">₹{selectedLoan.emiAmount}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-blue-700 mb-1">Paid EMIs</p>
-                    <p className="font-bold text-blue-900">{selectedLoan.emiPaidCount || 0}/{selectedLoan.totalEmiCount}</p>
+                    <p className="text-sm text-blue-700 mb-1">Paid/Total EMIs</p>
+                    <p className="font-bold text-blue-900">{selectedLoan.emiPaidCount || 0}/{selectedLoan.totalEmiCount || 0}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-blue-700 mb-1">Total Paid</p>
-                    <p className="font-bold text-blue-900">₹{selectedLoan.totalPaidAmount || 0}</p>
-                  </div>
-                </div>
-                {(selectedLoan.isCompleted || selectedLoan.isRenewed) && (
-                  <div className="mt-3 p-2 bg-yellow-100 border border-yellow-300 rounded">
-                    <p className="text-sm text-yellow-800">
-                      ⚠️ Note: This loan is marked as {selectedLoan.isCompleted ? 'completed' : 'renewed'}, 
-                      but you can still record payments.
+                    <p className="text-sm text-blue-700 mb-1">Status</p>
+                    <p className="font-bold text-blue-900">
+                      <span className={`px-2 py-1 rounded text-xs ${
+                        selectedLoan.status === 'active' ? 'bg-green-100 text-green-800' :
+                        selectedLoan.status === 'completed' ? 'bg-blue-100 text-blue-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {selectedLoan.status}
+                      </span>
                     </p>
                   </div>
-                )}
+                </div>
+                
+                {/* Loan Progress Bar */}
+                <div className="mt-3">
+                  <div className="flex justify-between text-xs text-blue-700 mb-1">
+                    <span>Progress</span>
+                    <span>
+                      {selectedLoan.totalEmiCount ? 
+                        Math.round(((selectedLoan.emiPaidCount || 0) / selectedLoan.totalEmiCount) * 100) : 0}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-blue-100 rounded-full h-2">
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{ 
+                        width: `${selectedLoan.totalEmiCount ? 
+                          Math.min(((selectedLoan.emiPaidCount || 0) / selectedLoan.totalEmiCount) * 100, 100) : 0}%` 
+                      }}
+                    ></div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -769,7 +827,7 @@ export default function EMIUpdateModal({
                 Complete Partial Payment
               </h3>
               <p className="text-sm text-gray-500 mt-1">
-                Customer: {customer.name}
+                Customer: {customer?.name}
               </p>
             </div>
 

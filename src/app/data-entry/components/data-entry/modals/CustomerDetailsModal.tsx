@@ -164,15 +164,25 @@ const getEMIAmountDisplay = (loan: Loan): string => {
 };
 
 // ============================================================================
-// NEW: Function to check if last payment was partial (TYPE-SAFE)
+// FIXED: Enhanced function to check payment status with better partial payment detection
 // ============================================================================
-const getLastPaymentStatus = (loan: Loan): { 
+const getPaymentStatusInfo = (loan: Loan): { 
   wasPartial: boolean; 
   lastPayment: EMIHistory | null;
   remainingAmount: number;
+  isPaymentDue: boolean;
+  hasFullPayments: boolean;
+  lastPaymentDate: string | null;
 } => {
   if (!loan.emiHistory || !Array.isArray(loan.emiHistory) || loan.emiHistory.length === 0) {
-    return { wasPartial: false, lastPayment: null, remainingAmount: 0 };
+    return { 
+      wasPartial: false, 
+      lastPayment: null, 
+      remainingAmount: 0,
+      isPaymentDue: true, // Payment is due if no payments at all
+      hasFullPayments: false,
+      lastPaymentDate: null
+    };
   }
   
   // Get the most recent payment (assuming emiHistory is sorted by date)
@@ -181,16 +191,14 @@ const getLastPaymentStatus = (loan: Loan): {
   );
   
   const lastPayment = sortedHistory[0];
+  const lastPaymentDate = lastPayment.paymentDate;
   
   // Check if last payment was partial
-  const wasPartial = lastPayment.status === 'Partial';
+  const wasPartial = lastPayment.status === 'Partial' || lastPayment.status === 'partial';
   
   // Calculate remaining amount if it was partial
   let remainingAmount = 0;
   if (wasPartial) {
-    // ✅ TYPE-SAFE: Access originalEmiAmount with proper typing
-    // Note: If you get TypeScript errors here, update your EMIHistory interface
-    // in dataEntry.ts to include originalEmiAmount?: number
     if (lastPayment.originalEmiAmount) {
       remainingAmount = Math.max(0, lastPayment.originalEmiAmount - lastPayment.amount);
     } else if (loan.emiAmount) {
@@ -199,7 +207,44 @@ const getLastPaymentStatus = (loan: Loan): {
     }
   }
   
-  return { wasPartial, lastPayment, remainingAmount };
+  // Check if there are any full payments (emiPaidCount > 0)
+  const hasFullPayments = (loan.emiPaidCount && loan.emiPaidCount > 0) || false;
+  
+  // Determine if payment is due:
+  // 1. If no payments at all (loan.emiPaidCount === 0)
+  // 2. OR if last payment was partial
+  const isPaymentDue = loan.emiPaidCount === 0 || wasPartial;
+  
+  return { 
+    wasPartial, 
+    lastPayment, 
+    remainingAmount,
+    isPaymentDue,
+    hasFullPayments,
+    lastPaymentDate
+  };
+};
+
+// ============================================================================
+// FIXED: Helper function to format loan completion status
+// ============================================================================
+const getLoanCompletionStatus = (loan: Loan) => {
+  const paymentStatus = getPaymentStatusInfo(loan);
+  const completion = calculateEMICompletion(loan);
+  
+  // Check if loan is completed based on BACKEND logic (full payments only)
+  const isCompletedBackend = loan.emiPaidCount >= (loan.totalEmiCount || loan.loanDays || 0);
+  
+  // Check if loan is active (not completed and not renewed)
+  const isActive = loan.status === 'active' && !isCompletedBackend && !loan.isRenewed;
+  
+  return {
+    isActive,
+    isCompletedBackend,
+    isCompletedFrontend: completion.completionPercentage >= 100,
+    paymentStatus,
+    completion
+  };
 };
 
 // ============================================================================
@@ -320,7 +365,14 @@ export default function CustomerDetailsModal({
       
       console.log('✅ Customer details loaded:', {
         customerName: details?.name,
-        loansCount: loans.length
+        loansCount: loans.length,
+        loans: loans.map(loan => ({
+          loanNumber: loan.loanNumber,
+          status: loan.status,
+          emiPaidCount: loan.emiPaidCount,
+          totalEmiCount: loan.totalEmiCount,
+          isRenewed: loan.isRenewed
+        }))
       });
       
     } catch (error: any) {
@@ -540,7 +592,9 @@ export default function CustomerDetailsModal({
                     {loans.length > 0 ? (
                       <div className="space-y-6">
                         {loans.map((loan: Loan, index: number) => {
-                          const completion = calculateEMICompletion(loan);
+                          const completionStatus = getLoanCompletionStatus(loan);
+                          const completion = completionStatus.completion;
+                          const paymentInfo = completionStatus.paymentStatus;
                           const paymentBehaviorResult = calculatePaymentBehavior(loan);
                           const paymentBehavior = typeof paymentBehaviorResult === 'string' 
                             ? paymentBehaviorResult 
@@ -561,48 +615,28 @@ export default function CustomerDetailsModal({
                           
                           // Format dates
                           const formattedNextEmiDate = formatLoanDate(loan.nextEmiDate);
-                          
-                          // ✅ FIXED: Check if FULL payments have actually been made
-                          const hasFullPayments = (loan.emiPaidCount && loan.emiPaidCount > 0);
-                          const formattedLastPaymentDate = hasFullPayments && loan.lastEmiDate ? formatLoanDate(loan.lastEmiDate) : 'N/A';
-                          
-                          // ✅ NEW: Check if last payment was partial
-                          const lastPaymentInfo = getLastPaymentStatus(loan);
-                          const lastPaymentWasPartial = lastPaymentInfo.wasPartial;
-                          
-                          // ✅ FIXED: Determine correct payment status
-                          // Payment is due if: no payments at all OR last payment was partial
-                          const isPaymentDue = loan.emiPaidCount === 0 || lastPaymentWasPartial;
-                          
-                          // Debug log to verify the fix
-                          console.log('🔍 Payment Status Check:', {
-                            loanNumber: loan.loanNumber,
-                            emiPaidCount: loan.emiPaidCount,
-                            totalPaidAmount: loan.totalPaidAmount,
-                            lastEmiDate: loan.lastEmiDate,
-                            hasFullPayments,
-                            lastPaymentWasPartial,
-                            isPaymentDue,
-                            lastPaymentStatus: lastPaymentInfo.lastPayment?.status,
-                            remainingAmount: lastPaymentInfo.remainingAmount,
-                            nextEmiDate: formattedNextEmiDate
-                          });
-                          
+                          const formattedLastPaymentDate = paymentInfo.lastPaymentDate ? formatLoanDate(paymentInfo.lastPaymentDate) : 'N/A';
                           const formattedEmiStartDate = formatLoanDate(loan.emiStartDate);
                           const formattedDateApplied = formatLoanDate(loan.dateApplied);
                           
-                          // Debug log for custom EMI loans
-                          if (loan.emiType === 'custom') {
-                            console.log('🔍 Custom EMI Loan Calculation:', {
-                              loanNumber: loan.loanNumber,
-                              emiAmount: loan.emiAmount,
-                              customEmiAmount: loan.customEmiAmount,
-                              loanDays: loan.loanDays,
-                              totalEmiCount: loan.totalEmiCount,
-                              calculatedTotal: totalLoanAmount,
-                              emiAmountDisplay: emiAmountDisplay
-                            });
-                          }
+                          // ✅ FIXED: Loan status display logic - matches backend completion logic
+                          const shouldShowCompleted = completionStatus.isCompletedBackend || completionStatus.isCompletedFrontend;
+                          
+                          // Debug log to verify the fix
+                          console.log('🔍 Loan Status Analysis:', {
+                            loanNumber: loan.loanNumber,
+                            emiPaidCount: loan.emiPaidCount,
+                            totalEmiCount: loan.totalEmiCount,
+                            backendCompleted: completionStatus.isCompletedBackend,
+                            frontendCompleted: completionStatus.isCompletedFrontend,
+                            shouldShowCompleted,
+                            paymentInfo: {
+                              wasPartial: paymentInfo.wasPartial,
+                              remainingAmount: paymentInfo.remainingAmount,
+                              isPaymentDue: paymentInfo.isPaymentDue,
+                              hasFullPayments: paymentInfo.hasFullPayments
+                            }
+                          });
                           
                           return (
                             <div 
@@ -617,13 +651,13 @@ export default function CustomerDetailsModal({
                                   </h5>
                                   <div className="flex flex-wrap items-center gap-2">
                                     <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-semibold ${
-                                      loan.status === 'active' ? 'bg-green-100 text-green-800' :
-                                      loan.status === 'completed' ? 'bg-blue-100 text-blue-800' :
-                                      loan.status === 'defaulted' ? 'bg-red-100 text-red-800' :
-                                      loan.status === 'renewed' ? 'bg-red-100 text-red-800' :
-                                      'bg-gray-100 text-gray-800'
+                                      shouldShowCompleted ? 'bg-blue-100 text-blue-800 border border-blue-300' :
+                                      loan.status === 'active' ? 'bg-green-100 text-green-800 border border-green-300' :
+                                      loan.status === 'defaulted' ? 'bg-red-100 text-red-800 border border-red-300' :
+                                      loan.status === 'renewed' ? 'bg-red-100 text-red-800 border border-red-300' :
+                                      'bg-gray-100 text-gray-800 border border-gray-300'
                                     }`}>
-                                      {loan.status}
+                                      {shouldShowCompleted ? 'Completed' : loan.status}
                                     </span>
                                     {isRenewed && (
                                       <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-300">
@@ -631,9 +665,9 @@ export default function CustomerDetailsModal({
                                       </span>
                                     )}
                                     <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-semibold ${
-                                      loan.loanType === 'Daily' ? 'bg-blue-100 text-blue-800' :
-                                      loan.loanType === 'Weekly' ? 'bg-green-100 text-green-800' :
-                                      'bg-purple-100 text-purple-800'
+                                      loan.loanType === 'Daily' ? 'bg-blue-100 text-blue-800 border border-blue-300' :
+                                      loan.loanType === 'Weekly' ? 'bg-green-100 text-green-800 border border-green-300' :
+                                      'bg-purple-100 text-purple-800 border border-purple-300'
                                     }`}>
                                       {loan.loanType}
                                     </span>
@@ -659,15 +693,15 @@ export default function CustomerDetailsModal({
                                     <p className="text-xs font-medium text-gray-500 mb-1">Last Payment</p>
                                     <p className="font-semibold text-gray-900 text-sm">
                                       {formattedLastPaymentDate}
-                                      {lastPaymentWasPartial && (
-                                        <span className="ml-2 text-xs text-yellow-600 bg-yellow-100 px-2 py-1 rounded-full">
+                                      {paymentInfo.wasPartial && (
+                                        <span className="ml-2 text-xs text-yellow-600 bg-yellow-100 px-2 py-1 rounded-full border border-yellow-300">
                                           ⚠️ Partial
                                         </span>
                                       )}
                                     </p>
-                                    {lastPaymentWasPartial && lastPaymentInfo.remainingAmount > 0 && (
+                                    {paymentInfo.wasPartial && paymentInfo.remainingAmount > 0 && (
                                       <p className="text-xs text-yellow-600 mt-1">
-                                        ₹{lastPaymentInfo.remainingAmount.toLocaleString()} pending
+                                        ₹{paymentInfo.remainingAmount.toLocaleString()} pending
                                       </p>
                                     )}
                                   </div>
@@ -675,20 +709,20 @@ export default function CustomerDetailsModal({
                                     <p className="text-xs font-medium text-gray-500 mb-1">Next EMI Date</p>
                                     <p className="font-semibold text-gray-900 text-sm">
                                       {formattedNextEmiDate || 'N/A'}
-                                      {isPaymentDue && lastPaymentWasPartial && (
-                                        <span className="ml-2 text-xs text-yellow-600 bg-yellow-100 px-2 py-1 rounded-full">
-                                          ⚠️ Payment Due
+                                      {paymentInfo.isPaymentDue && (
+                                        <span className="ml-2 text-xs text-yellow-600 bg-yellow-100 px-2 py-1 rounded-full border border-yellow-300">
+                                          {paymentInfo.wasPartial ? '⚠️ Payment Due' : '⏰ Payment Pending'}
                                         </span>
                                       )}
                                     </p>
-                                    {lastPaymentWasPartial && (
+                                    {paymentInfo.wasPartial && (
                                       <p className="text-xs text-yellow-600 mt-1">
                                         EMI not completed. Date remains {formattedNextEmiDate}
                                       </p>
                                     )}
-                                    {!lastPaymentWasPartial && isPaymentDue && loan.emiPaidCount === 0 && (
+                                    {paymentInfo.isPaymentDue && !paymentInfo.wasPartial && (
                                       <p className="text-xs text-yellow-600 mt-1">
-                                        No payments made yet
+                                        No payment made yet for current EMI
                                       </p>
                                     )}
                                   </div>
@@ -705,9 +739,14 @@ export default function CustomerDetailsModal({
                                     </p>
                                   </div>
                                   <div className="text-right">
-                                    <p className="text-xs font-medium text-gray-600 mb-1">EMI Remaining</p>
+                                    <p className="text-xs font-medium text-gray-600 mb-1">
+                                      {paymentInfo.hasFullPayments ? 'Full Payments' : 'EMI Remaining'}
+                                    </p>
                                     <p className="font-semibold text-base text-gray-900">
-                                      {remainingEmis} of {totalEmis}
+                                      {paymentInfo.hasFullPayments ? 
+                                        `${paidEmis} of ${totalEmis}` : 
+                                        `${remainingEmis} of ${totalEmis}`
+                                      }
                                     </p>
                                   </div>
                                 </div>
@@ -721,7 +760,6 @@ export default function CustomerDetailsModal({
                                   <div className="text-gray-600">
                                     <span>Paid: </span>
                                     <span className="font-semibold">
-                                      {/* FIXED: Use totalPaid from completion object */}
                                       ₹{(completion.totalPaid || 0).toLocaleString()}
                                     </span>
                                   </div>
@@ -771,7 +809,7 @@ export default function CustomerDetailsModal({
 
                               {/* Action Buttons */}
                               <div className="flex space-x-2 border-t border-gray-200 pt-4">
-                                {onEditLoan && !isRenewed && (
+                                {onEditLoan && !isRenewed && !shouldShowCompleted && (
                                   <button
                                     onClick={() => onEditLoan(loan)}
                                     className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 text-xs font-medium transition-colors flex-1"
@@ -779,7 +817,7 @@ export default function CustomerDetailsModal({
                                     Edit
                                   </button>
                                 )}
-                                {loan.status === 'active' && !isRenewed && onRenewLoan && (
+                                {loan.status === 'active' && !isRenewed && !shouldShowCompleted && onRenewLoan && (
                                   <button
                                     onClick={() => onRenewLoan(loan)}
                                     className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-xs font-medium transition-colors flex-1"

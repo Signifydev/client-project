@@ -29,49 +29,71 @@ const LoadingSpinner = () => (
 // Sort order type
 type SortOrder = 'asc' | 'desc' | 'none';
 
-// ✅ NEW: Helper function to check if loan is active (not completed or renewed)
+// ✅ FIXED: Helper function to check if loan is active (with explicit type assertions)
 const isActiveLoan = (loan: Loan): boolean => {
   if (!loan) return false;
   
-  // Debug logging
-  console.log('🔍 Loan check:', {
+  // Convert status to string and force TypeScript to treat it as string, not string literal
+  const statusStr = String(loan.status || '');
+  const statusLower = statusStr.toLowerCase() as string; // Force type assertion
+  
+  // Get boolean values
+  const isRenewedFlag = Boolean(loan.isRenewed);
+  const isCompletedFlag = Boolean(loan.isCompleted);
+  
+  // Calculate if loan has remaining EMIs
+  const hasEmisRemaining = !loan.totalEmiCount || 
+                          !loan.emiPaidCount || 
+                          loan.emiPaidCount < loan.totalEmiCount;
+  
+  // Loan is active if ALL conditions are true:
+  // Use explicit string comparisons that TypeScript won't complain about
+  const isActiveStatus = statusLower === 'active';
+  const isNotRenewed = !isRenewedFlag && statusLower !== 'renewed';
+  const isNotCompleted = !isCompletedFlag && statusLower !== 'completed';
+  
+  const isActive = isActiveStatus && 
+                   isNotRenewed && 
+                   isNotCompleted && 
+                   hasEmisRemaining;
+  
+  console.log('🔍 Loan activity check:', {
     loanNumber: loan.loanNumber,
-    status: loan.status,
-    isCompleted: loan.isCompleted,
-    isRenewed: loan.isRenewed,
+    status: statusStr,
+    statusLower,
+    isRenewedFlag,
+    isCompletedFlag,
     emiPaidCount: loan.emiPaidCount,
-    totalEmiCount: loan.totalEmiCount
+    totalEmiCount: loan.totalEmiCount,
+    hasEmisRemaining,
+    isActiveStatus,
+    isNotRenewed,
+    isNotCompleted,
+    isActive
   });
   
-  // Check status - accept both 'active' and 'Active' (case-insensitive)
-  const status = (loan.status || '').toLowerCase();
-  const isActiveStatus = status === 'active';
-  
-  if (!isActiveStatus) return false;
-  
-  // Check if loan is marked as renewed
-  if (loan.isRenewed === true) return false;
-  
-  // Check if completed - handle both ways
-  const isCompleted = loan.isCompleted === true || 
-                     (loan.emiPaidCount && loan.totalEmiCount && loan.emiPaidCount >= loan.totalEmiCount);
-  
-  if (isCompleted) return false;
-  
-  // Default: active
-  return true;
+  return isActive;
 };
 
-// ✅ NEW: Helper function to get active loans for a customer
+// ✅ FIXED: Helper function to get active loans for a customer
 const getActiveLoans = (customer: CustomerDetails): Loan[] => {
   if (!customer || !customer.loans || !Array.isArray(customer.loans)) {
     return [];
   }
   
-  return customer.loans.filter(loan => isActiveLoan(loan));
+  const activeLoans = customer.loans.filter(loan => isActiveLoan(loan));
+  
+  console.log('📊 Active loans found:', {
+    customerName: customer.name,
+    totalLoans: customer.loans.length,
+    activeLoansCount: activeLoans.length,
+    activeLoanNumbers: activeLoans.map(l => l.loanNumber)
+  });
+  
+  return activeLoans;
 };
 
-// ✅ NEW: Helper function to check if a specific date payment exists
+// Helper function to check if a specific date payment exists
 const hasPaymentOnDate = (loan: Loan, dateString: string): boolean => {
   if (!loan || !loan.emiHistory || !Array.isArray(loan.emiHistory)) {
     return false;
@@ -82,7 +104,7 @@ const hasPaymentOnDate = (loan: Loan, dateString: string): boolean => {
   );
 };
 
-// Loan Selection Modal Component - FIXED DIMENSIONS WITH ADVANCE PAYMENT SUPPORT
+// Loan Selection Modal Component
 const LoanSelectionModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
@@ -248,7 +270,9 @@ const LoanSelectionModal: React.FC<{
               {customer.loans && customer.loans.length > 0 && (
                 <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg inline-block">
                   <p className="text-sm text-yellow-800">
-                    📊 Found {customer.loans.length} loan(s), but all are either completed or renewed.
+                    📊 Found {customer.loans.length} loan(s). Statuses: {customer.loans.map((l, i) => 
+                      `${l.loanNumber || 'L'+(i+1)}: ${l.status}${l.isRenewed ? ' (renewed)' : ''}`
+                    ).join(', ')}
                   </p>
                 </div>
               )}
@@ -320,7 +344,7 @@ export default function CustomersSection({
   });
   const [sortOrder, setSortOrder] = useState<SortOrder>('none');
   
-  // NEW STATE FOR LOAN SELECTION MODAL
+  // State for loan selection modal
   const [showLoanSelection, setShowLoanSelection] = useState(false);
   const [selectedCustomerForEMI, setSelectedCustomerForEMI] = useState<CustomerDetails | null>(null);
 
@@ -333,15 +357,14 @@ export default function CustomersSection({
     fetchCustomerDetails 
   } = useCustomers(currentUserOffice, refreshKey);
 
-  // FIX: Force fetch when component mounts or when switching to this tab
+  // Force fetch when component mounts or when switching to this tab
   useEffect(() => {
     console.log('🔄 CustomersSection - Component mounted or refreshKey changed:', refreshKey);
     
-    // Always fetch when component mounts or refreshKey changes
     const timer = setTimeout(() => {
       console.log('🚀 Auto-fetching customers...');
       refetch();
-    }, 100); // Small delay to ensure component is ready
+    }, 100);
     
     return () => clearTimeout(timer);
   }, [refreshKey, refetch]);
@@ -375,7 +398,7 @@ export default function CustomersSection({
     }
   };
 
-  // Sort and filter customers with FIXED numeric sorting
+  // Sort and filter customers with numeric sorting
   const sortedAndFilteredCustomers = useMemo(() => {
     const filtered = customers.filter(customer => {
       const matchesSearch = searchQuery === '' || 
@@ -405,7 +428,7 @@ export default function CustomersSection({
         const customerNumberA = a.customerNumber || '';
         const customerNumberB = b.customerNumber || '';
         
-        // Extract numeric part from customer numbers (e.g., "CN001" -> 1, "CN010" -> 10)
+        // Extract numeric part from customer numbers
         const extractNumber = (cn: string): number => {
           if (!cn) return 0;
           const numbers = cn.match(/\d+/g);
@@ -460,77 +483,72 @@ export default function CustomersSection({
     }
   };
 
-  // ✅ UPDATED: Handle EMI button click - shows loan selection when multiple active loans exist
+  // ✅ FIXED: Handle EMI button click - shows loan selection when multiple active loans exist
   const handleUpdateEMIClick = async (customer: Customer) => {
-  try {
-    const customerId = customer._id || customer.id;
-    if (!customerId) {
-      alert('Customer ID not found');
-      return;
-    }
-
-    console.log('🔍 Fetching customer details for EMI update:', customer.name);
-    
-    const details = await fetchCustomerDetails(customerId);
-    if (details) {
-      console.log('✅ Customer with loans fetched:', details.name);
-      console.log('📊 All loans found:', details.loans?.length || 0);
-      
-      // ✅ FIXED: Debug each loan
-      if (details.loans && details.loans.length > 0) {
-        details.loans.forEach((loan, index) => {
-          console.log(`Loan ${index + 1}:`, {
-            loanNumber: loan.loanNumber,
-            status: loan.status,
-            isCompleted: loan.isCompleted,
-            isRenewed: loan.isRenewed,
-            emiPaidCount: loan.emiPaidCount,
-            totalEmiCount: loan.totalEmiCount,
-            isActiveLoan: isActiveLoan(loan)
-          });
-        });
-      }
-      
-      // ✅ FIXED: Use the new helper function to get active loans
-      const activeLoans = getActiveLoans(details);
-      
-      console.log('🔍 Active loans result:', {
-        totalLoans: details.loans?.length || 0,
-        activeLoansCount: activeLoans.length,
-        activeLoans: activeLoans.map(loan => ({
-          loanNumber: loan.loanNumber,
-          status: loan.status,
-          emiPaidCount: loan.emiPaidCount,
-          totalEmiCount: loan.totalEmiCount,
-          isRenewed: loan.isRenewed,
-          isCompleted: loan.isCompleted
-        }))
-      });
-      
-      if (activeLoans.length === 0) {
-        alert('No active loans found for this customer. All loans are either completed or renewed.');
+    try {
+      const customerId = customer._id || customer.id;
+      if (!customerId) {
+        alert('Customer ID not found');
         return;
       }
-      
-      if (activeLoans.length === 1) {
-        // If only one active loan, directly proceed to EMI payment
-        onUpdateEMI(details, activeLoans[0]);
-      } else {
-        // If multiple active loans, show selection modal
-        setSelectedCustomerForEMI(details);
-        setShowLoanSelection(true);
-      }
-    } else {
-      console.error('❌ Failed to fetch customer details');
-      alert('Failed to fetch customer loan details');
-    }
-  } catch (error: any) {
-    console.error('❌ Error fetching customer details:', error);
-    alert('Failed to fetch customer details: ' + error.message);
-  }
-};
 
-  // NEW: Handle EMI Calendar button click
+      console.log('🔍 Fetching customer details for EMI update:', customer.name);
+      
+      const details = await fetchCustomerDetails(customerId);
+      if (details) {
+        console.log('✅ Customer with loans fetched:', details.name);
+        console.log('📊 All loans found:', details.loans?.length || 0);
+        
+        // ✅ FIXED: Use the updated helper function to get active loans
+        const activeLoans = getActiveLoans(details);
+        
+        console.log('🔍 Active loans result:', {
+          totalLoans: details.loans?.length || 0,
+          activeLoansCount: activeLoans.length,
+          activeLoans: activeLoans.map(loan => ({
+            loanNumber: loan.loanNumber,
+            status: loan.status,
+            emiPaidCount: loan.emiPaidCount,
+            totalEmiCount: loan.totalEmiCount,
+            isRenewed: loan.isRenewed,
+            isCompleted: loan.isCompleted
+          }))
+        });
+        
+        if (activeLoans.length === 0) {
+          // ✅ IMPROVED: Show better error message with details
+          let errorMessage = 'No active loans found for this customer.';
+          
+          if (details.loans && details.loans.length > 0) {
+            const statuses = details.loans.map((loan: Loan) => 
+              `${loan.loanNumber}: ${loan.status}${loan.isRenewed ? ' (renewed)' : ''}`
+            ).join(', ');
+            errorMessage += `\n\nExisting loans: ${statuses}`;
+          }
+          
+          alert(errorMessage);
+          return;
+        }
+        
+        if (activeLoans.length === 1) {
+          // If only one active loan, directly proceed to EMI payment
+          onUpdateEMI(details, activeLoans[0]);
+        } else {
+          // If multiple active loans, show selection modal
+          setSelectedCustomerForEMI(details);
+          setShowLoanSelection(true);
+        }
+      } else {
+        console.error('❌ Failed to fetch customer details');
+        alert('Failed to fetch customer loan details');
+      }
+    } catch (error: any) {
+      console.error('❌ Error fetching customer details:', error);
+      alert('Failed to fetch customer details: ' + error.message);
+    }
+  };
+
+  // Handle EMI Calendar button click
   const handleViewEMICalendarClick = async (customer: Customer) => {
     try {
       const customerId = customer._id || customer.id;
@@ -548,7 +566,6 @@ export default function CustomersSection({
         if (onViewEMICalendar) {
           onViewEMICalendar(details);
         } else {
-          // Fallback to customer details
           console.warn('onViewEMICalendar prop not provided, showing customer details instead');
           onViewCustomerDetails(details);
         }
@@ -561,7 +578,7 @@ export default function CustomersSection({
     }
   };
 
-  // NEW: Handle loan selection from modal
+  // Handle loan selection from modal
   const handleLoanSelect = (loan: Loan) => {
     if (selectedCustomerForEMI) {
       onUpdateEMI(selectedCustomerForEMI, loan);
@@ -797,21 +814,21 @@ export default function CustomersSection({
                       key={customer._id || customer.id} 
                       className="hover:bg-gray-50 transition-colors duration-150"
                     >
-                      {/* Customer Number Column - SIMPLIFIED */}
+                      {/* Customer Number Column */}
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">
                           {customer.customerNumber || 'CN0000'}
                         </div>
                       </td>
                       
-                      {/* Name Column - SIMPLIFIED (Only Name) */}
+                      {/* Name Column */}
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">
                           {customer.name || 'N/A'}
                         </div>
                       </td>
                       
-                      {/* Business Column - SIMPLIFIED (Business Name + Area) */}
+                      {/* Business Column */}
                       <td className="px-4 py-3">
                         <div className="text-sm font-medium text-gray-900">
                           {customer.businessName || 'N/A'}
@@ -821,17 +838,17 @@ export default function CustomersSection({
                         </div>
                       </td>
                       
-                      {/* Office Column - SIMPLIFIED (Only Office Category) */}
+                      {/* Office Column */}
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">
                           {customer.officeCategory || 'Not Assigned'}
                         </div>
                       </td>
                       
-                      {/* Actions Column - HORIZONTAL BUTTONS, NO ICONS */}
+                      {/* Actions Column */}
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex items-center space-x-2">
-                          {/* Update EMI Button - NOW ALLOWS ADVANCE PAYMENTS */}
+                          {/* Update EMI Button */}
                           <button
                             onClick={() => handleUpdateEMIClick(customer)}
                             className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors duration-200"
@@ -847,7 +864,7 @@ export default function CustomersSection({
                             View Details
                           </button>
                           
-                          {/* EMI Calendar Button - FIXED: Now calls correct handler */}
+                          {/* EMI Calendar Button */}
                           <button
                             onClick={() => handleViewEMICalendarClick(customer)}
                             className="px-3 py-1.5 bg-purple-600 text-white text-xs font-medium rounded hover:bg-purple-700 transition-colors duration-200"
