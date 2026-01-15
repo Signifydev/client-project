@@ -114,6 +114,14 @@ function safeFormatDate(dateInput) {
 function isLoanCompleted(loan) {
   if (!loan) return false;
   
+  console.log('🔍 Loan completion check in API:', {
+    loanNumber: loan.loanNumber,
+    status: loan.status,
+    emiPaidCount: loan.emiPaidCount,
+    totalEmiCount: loan.totalEmiCount,
+    loanDays: loan.loanDays,
+    calculation: `${loan.emiPaidCount} >= ${loan.totalEmiCount} = ${loan.emiPaidCount >= loan.totalEmiCount}`
+  });
   // Check status first - accept both 'completed' and 'Completed'
   if (loan.status && loan.status.toLowerCase() === 'completed') return true;
   
