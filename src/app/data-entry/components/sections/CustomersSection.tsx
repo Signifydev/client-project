@@ -32,16 +32,17 @@ type SortOrder = 'asc' | 'desc' | 'none';
 // ✅ DEBUG FUNCTION: Log loan details to understand why they're being filtered
 const debugLoanDetails = (loan: Loan) => {
   console.log('🔍 DEBUG Loan Details:', {
-    loanNumber: loan.loanNumber,
-    status: loan.status,
-    isRenewed: loan.isRenewed,
+    loanNumber: loan.loanNumber || 'Unnamed',
+    status: loan.status || 'unknown',
+    isRenewed: loan.isRenewed || false,
     emiPaidCount: loan.emiPaidCount || 0,
     totalEmiCount: loan.totalEmiCount || loan.loanDays || 0,
-    isCompletedBackend: loan.emiPaidCount >= (loan.totalEmiCount || loan.loanDays || 0),
-    hasHistory: loan.emiHistory?.length > 0,
-    historyCount: loan.emiHistory?.length || 0,
+    loanDays: loan.loanDays || 0,
+    isCompletedBackend: (loan.emiPaidCount || 0) >= (loan.totalEmiCount || loan.loanDays || 0),
+    hasHistory: loan.emiHistory && loan.emiHistory.length > 0,
+    historyCount: loan.emiHistory ? loan.emiHistory.length : 0,
     // Check last payment if exists
-    lastPayment: loan.emiHistory?.[0] ? {
+    lastPayment: loan.emiHistory && loan.emiHistory[0] ? {
       date: loan.emiHistory[0].paymentDate,
       amount: loan.emiHistory[0].amount,
       status: loan.emiHistory[0].status
@@ -52,20 +53,22 @@ const debugLoanDetails = (loan: Loan) => {
 
 // ✅ FIXED: Function to check if a loan is active (ENHANCED DEBUG VERSION)
 const isActiveLoan = (loan: Loan): boolean => {
-  console.log('🔄 Checking if loan is active:', loan.loanNumber);
+  console.log('🔄 Checking if loan is active:', loan.loanNumber || 'Unnamed Loan');
   
   // Debug the loan first
   debugLoanDetails(loan);
   
   // Step 1: Check basic loan status
-  if (loan.status !== 'active') {
-    console.log('❌ Loan not active - status:', loan.status);
+  const loanStatus = loan.status || 'unknown';
+  if (loanStatus !== 'active') {
+    console.log('❌ Loan not active - status:', loanStatus);
     return false;
   }
   
   // Step 2: Check if renewed
-  if (loan.isRenewed) {
-    console.log('❌ Loan not active - isRenewed:', loan.isRenewed);
+  const isRenewed = loan.isRenewed || false;
+  if (isRenewed) {
+    console.log('❌ Loan not active - isRenewed:', isRenewed);
     return false;
   }
   
@@ -77,7 +80,7 @@ const isActiveLoan = (loan: Loan): boolean => {
   const isCompleted = emiPaidCount >= totalEmiCount;
   
   console.log('📊 Completion Check:', {
-    loanNumber: loan.loanNumber,
+    loanNumber: loan.loanNumber || 'Unnamed',
     emiPaidCount,
     totalEmiCount,
     isCompleted,
@@ -88,7 +91,7 @@ const isActiveLoan = (loan: Loan): boolean => {
   const isActive = !isCompleted;
   
   console.log('✅ Final Active Status:', {
-    loanNumber: loan.loanNumber,
+    loanNumber: loan.loanNumber || 'Unnamed',
     isActive,
     reason: isCompleted ? 'Loan is completed (emiPaidCount >= totalEmiCount)' : 'Loan has remaining EMIs'
   });
@@ -96,16 +99,20 @@ const isActiveLoan = (loan: Loan): boolean => {
   return isActive;
 };
 
-// ✅ FIXED: Helper function to get active loans for a customer (WITH BETTER DEBUGGING)
+// ✅ FIXED: Helper function to get active loans for a customer (WITH BETTER DEBUGGING AND TYPE SAFETY)
 const getActiveLoans = (customer: CustomerDetails): Loan[] => {
+  // Check if customer exists
   if (!customer) {
-    console.log('⚠️ No customer provided');
+    console.log('⚠️ No customer provided to getActiveLoans');
     return [];
   }
   
+  // Safely access customer.loans with proper null/undefined checks
   const customerLoans = customer.loans;
+  
+  // Check if loans array exists and is valid
   if (!customerLoans || !Array.isArray(customerLoans)) {
-    console.log('⚠️ No loans array found for customer:', customer.name);
+    console.log('⚠️ No valid loans array found for customer:', customer.name);
     return [];
   }
   
@@ -116,35 +123,38 @@ const getActiveLoans = (customer: CustomerDetails): Loan[] => {
   const inactiveLoans: Loan[] = [];
   
   // Process each loan with detailed logging
-  customerLoans.forEach((loan, index) => {
+  customerLoans.forEach((loan: Loan, index: number) => {
     console.log(`\n--- Processing Loan ${index + 1} of ${customerLoans.length} ---`);
     const isActive = isActiveLoan(loan);
     
     if (isActive) {
       activeLoans.push(loan);
-      console.log(`✅ Loan ${loan.loanNumber} is ACTIVE`);
+      console.log(`✅ Loan ${loan.loanNumber || 'Unnamed'} is ACTIVE`);
     } else {
       inactiveLoans.push(loan);
-      console.log(`❌ Loan ${loan.loanNumber} is INACTIVE`);
+      console.log(`❌ Loan ${loan.loanNumber || 'Unnamed'} is INACTIVE`);
     }
   });
   
-  console.log('\n📊 FINAL ACTIVE LOANS SUMMARY:', {
+  // Build summary safely
+  const summary = {
     customerName: customer.name,
     totalLoans: customerLoans.length,
     activeLoansCount: activeLoans.length,
     inactiveLoansCount: inactiveLoans.length,
-    activeLoanNumbers: activeLoans.map(l => l.loanNumber),
-    inactiveLoanNumbers: inactiveLoans.map(l => l.loanNumber),
+    activeLoanNumbers: activeLoans.map(l => l.loanNumber || 'Unnamed'),
+    inactiveLoanNumbers: inactiveLoans.map(l => l.loanNumber || 'Unnamed'),
     inactiveLoanDetails: inactiveLoans.map(l => ({
-      loanNumber: l.loanNumber,
-      status: l.status,
-      isRenewed: l.isRenewed,
-      emiPaidCount: l.emiPaidCount,
-      totalEmiCount: l.totalEmiCount || l.loanDays,
+      loanNumber: l.loanNumber || 'Unnamed',
+      status: l.status || 'unknown',
+      isRenewed: l.isRenewed || false,
+      emiPaidCount: l.emiPaidCount || 0,
+      totalEmiCount: l.totalEmiCount || l.loanDays || 0,
       isCompleted: (l.emiPaidCount || 0) >= (l.totalEmiCount || l.loanDays || 0)
     }))
-  });
+  };
+  
+  console.log('\n📊 FINAL ACTIVE LOANS SUMMARY:', summary);
   
   return activeLoans;
 };
@@ -172,7 +182,7 @@ const LoanSelectionModal: React.FC<{
   const getPaymentStatus = (loan: Loan) => {
     const today = new Date().toISOString().split('T')[0];
     const todayPayment = (loan.emiHistory || []).find(payment => 
-      payment.paymentDate.split('T')[0] === today
+      payment.paymentDate && payment.paymentDate.split('T')[0] === today
     );
     
     return todayPayment ? 'Paid' : 'Unpaid';
@@ -247,7 +257,7 @@ const LoanSelectionModal: React.FC<{
                                 loan.loanType === 'Weekly' ? 'bg-green-100 text-green-800' :
                                 'bg-gray-100 text-gray-800'
                               }`}>
-                                {loan.loanType}
+                                {loan.loanType || 'Unknown'}
                               </span>
                               {isPaidToday && (
                                 <span className="px-2.5 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
@@ -259,11 +269,11 @@ const LoanSelectionModal: React.FC<{
                             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-3">
                               <div>
                                 <p className="text-xs text-gray-500">EMI Amount</p>
-                                <p className="font-medium text-gray-900">₹{loan.emiAmount?.toLocaleString() || 0}</p>
+                                <p className="font-medium text-gray-900">₹{(loan.emiAmount || 0)?.toLocaleString()}</p>
                               </div>
                               <div>
                                 <p className="text-xs text-gray-500">Loan Amount</p>
-                                <p className="font-medium text-gray-900">₹{loan.amount?.toLocaleString() || 0}</p>
+                                <p className="font-medium text-gray-900">₹{(loan.amount || 0)?.toLocaleString()}</p>
                               </div>
                               <div>
                                 <p className="text-xs text-gray-500">Next EMI Date</p>
@@ -326,8 +336,8 @@ const LoanSelectionModal: React.FC<{
               {customer.loans && customer.loans.length > 0 && (
                 <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg inline-block">
                   <p className="text-sm text-yellow-800">
-                    📊 Found {customer.loans.length} loan(s). Statuses: {customer.loans.map((l, i) => 
-                      `${l.loanNumber || 'L'+(i+1)}: ${l.status}${l.isRenewed ? ' (renewed)' : ''} (${l.emiPaidCount || 0}/${l.totalEmiCount || l.loanDays || 0})`
+                    📊 Found {customer.loans.length} loan(s). Statuses: {customer.loans.map((l: Loan, i: number) => 
+                      `${l.loanNumber || 'L'+(i+1)}: ${l.status || 'unknown'}${l.isRenewed ? ' (renewed)' : ''} (${l.emiPaidCount || 0}/${l.totalEmiCount || l.loanDays || 0})`
                     ).join(', ')}
                   </p>
                 </div>
@@ -554,14 +564,17 @@ export default function CustomersSection({
       const details = await fetchCustomerDetails(customerId);
       if (details) {
         console.log('✅ Customer details fetched successfully:', details.name);
-        console.log('📦 Total loans in customer data:', details.loans?.length || 0);
+        
+        // Safely access customer loans
+        const customerLoans = details.loans;
+        console.log('📦 Total loans in customer data:', customerLoans?.length || 0);
         
         // ✅ Use the ENHANCED helper function with detailed logging
         const activeLoans = getActiveLoans(details);
         
         console.log('📊 FINAL RESULT:', {
           customerName: details.name,
-          totalLoans: details.loans?.length || 0,
+          totalLoans: customerLoans?.length || 0,
           activeLoansFound: activeLoans.length,
           hasActiveLoans: activeLoans.length > 0
         });
@@ -570,15 +583,15 @@ export default function CustomersSection({
           // ✅ IMPROVED: Show detailed error message
           let errorMessage = `❌ No active loans found for ${details.name}.`;
           
-          if (details.loans && details.loans.length > 0) {
+          if (customerLoans && customerLoans.length > 0) {
             errorMessage += `\n\n📋 Loan Details:\n`;
-            details.loans.forEach((loan: Loan, index: number) => {
+            customerLoans.forEach((loan: Loan, index: number) => {
               const emiPaidCount = loan.emiPaidCount || 0;
               const totalEmiCount = loan.totalEmiCount || loan.loanDays || 0;
               const isCompleted = emiPaidCount >= totalEmiCount;
               
               errorMessage += `\n${index + 1}. ${loan.loanNumber || 'Unnamed Loan'}: `;
-              errorMessage += `Status: ${loan.status}`;
+              errorMessage += `Status: ${loan.status || 'unknown'}`;
               errorMessage += loan.isRenewed ? ' (Renewed)' : '';
               errorMessage += ` | Paid: ${emiPaidCount}/${totalEmiCount}`;
               errorMessage += isCompleted ? ' (COMPLETED)' : '';
