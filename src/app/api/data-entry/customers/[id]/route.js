@@ -8,6 +8,9 @@ import { connectDB } from '@/lib/db';
 // FIXED DATE UTILITY FUNCTIONS - HANDLES BOTH STRINGS AND DATE OBJECTS
 // ==============================================
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 /**
  * Validate if a string is in YYYY-MM-DD format
  */
@@ -189,7 +192,7 @@ export async function GET(request, { params }) {
     console.log('✅ Customer found:', customer.name);
 
     // Fetch all loans for this customer
-    const loans = await Loan.find({ customerId: id }).sort({ createdAt: 1 });
+    const loans = await Loan.find({ customerId: id }).sort({ createdAt: 1 }).lean();
     console.log(`📊 Found ${loans.length} loans for customer ${customer.name}`);
 
     // Sort loans by loan number (L1, L2, L3, etc.)
@@ -281,7 +284,7 @@ export async function GET(request, { params }) {
         
         console.log('📅 Loan Date Debug (FIXED):', {
           loanNumber: loan.loanNumber,
-          isCompleted: isCompleted,
+          isCompleted: emiPaidCount >= totalEmiCount,
           emiPaidCount: loan.emiPaidCount,
           totalEmiCount: loan.totalEmiCount,
           status: loan.status,
