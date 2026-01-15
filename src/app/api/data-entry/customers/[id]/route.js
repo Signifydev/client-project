@@ -311,8 +311,18 @@ export async function GET(request, { params }) {
           };
         }
         
-        // ✅ FIXED: Determine final status - if completed, ensure status is 'completed'
-        const finalStatus = isCompleted ? 'completed' : (loan.status || 'active');
+        let finalStatus = loan.status || 'active';
+const emiPaidCount = loan.emiPaidCount || 0;
+const totalEmiCount = loan.totalEmiCount || loan.loanDays || 30;
+
+// Only mark as completed if ALL EMIs are paid
+if (emiPaidCount >= totalEmiCount) {
+  finalStatus = 'completed';
+} else {
+  // Keep original status (overdue, active, etc.)
+  finalStatus = loan.status || 'active';
+}
+
         
         return {
           _id: loan._id,
