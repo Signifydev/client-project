@@ -51,17 +51,21 @@ const debugLoanDetails = (loan: Loan) => {
   return loan;
 };
 
-// ✅ FIXED: Function to check if a loan is active (ENHANCED DEBUG VERSION)
+// ✅ FIXED: Function to check if a loan is active (REVISED - INCLUDES OVERDUE LOANS)
 const isActiveLoan = (loan: Loan): boolean => {
   console.log('🔄 Checking if loan is active:', loan.loanNumber || 'Unnamed Loan');
   
   // Debug the loan first
   debugLoanDetails(loan);
   
-  // Step 1: Check basic loan status
-  const loanStatus = loan.status || 'unknown';
-  if (loanStatus !== 'active') {
-    console.log('❌ Loan not active - status:', loanStatus);
+  // Step 1: Check basic loan status (case-insensitive, includes overdue)
+  const loanStatus = (loan.status || 'unknown').toLowerCase();
+  
+  // Define which statuses are considered active (can receive EMI payments)
+  const activeStatuses = ['active', 'overdue', 'pending', 'defaulted'];
+  
+  if (!activeStatuses.includes(loanStatus)) {
+    console.log('❌ Loan not active - status:', loan.status, 'normalized to:', loanStatus);
     return false;
   }
   
@@ -72,11 +76,9 @@ const isActiveLoan = (loan: Loan): boolean => {
     return false;
   }
   
-  // Step 3: ✅ CRITICAL FIX: Check completion based on FULL payments only
+  // Step 3: Check completion based on FULL payments only
   const emiPaidCount = loan.emiPaidCount || 0;
   const totalEmiCount = loan.totalEmiCount || loan.loanDays || 0;
-  
-  // Loan is completed if paid count >= total count
   const isCompleted = emiPaidCount >= totalEmiCount;
   
   console.log('📊 Completion Check:', {
@@ -93,6 +95,7 @@ const isActiveLoan = (loan: Loan): boolean => {
   console.log('✅ Final Active Status:', {
     loanNumber: loan.loanNumber || 'Unnamed',
     isActive,
+    status: loanStatus,
     reason: isCompleted ? 'Loan is completed (emiPaidCount >= totalEmiCount)' : 'Loan has remaining EMIs'
   });
   
