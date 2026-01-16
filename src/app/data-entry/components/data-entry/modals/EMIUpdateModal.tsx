@@ -22,15 +22,19 @@ interface PartialPayment {
   paymentDate: string;
 }
 
-// ✅ SIMPLE: Get loans that can accept payments (BLOCK ONLY completed/renewed)
+// ✅ FIXED: Get loans that can accept payments (ONLY block completed/renewed)
 const getActiveLoans = (loans: Loan[]): Loan[] => {
   return loans.filter(loan => {
-    // Check if loan is completed
+    // Check if loan is completed (based on FULL payments only)
     const isCompleted = loan.status === 'completed' || 
                        (loan.totalEmiCount > 0 && (loan.emiPaidCount || 0) >= loan.totalEmiCount);
     
-    // ONLY BLOCK: completed loans and renewed loans
-    return !isCompleted && !loan.isRenewed;
+    // Check if loan is renewed
+    const isRenewed = loan.isRenewed || loan.status === 'renewed';
+    
+    // ✅ FIXED: ALLOW all non-completed, non-renewed loans
+    // This includes ALL active loans regardless of payment timing
+    return !isCompleted && !isRenewed;
   });
 };
 
@@ -63,7 +67,7 @@ export default function EMIUpdateModal({
   const [advanceEmiCount, setAdvanceEmiCount] = useState<number>(0);
   const [advanceTotalAmount, setAdvanceTotalAmount] = useState<number>(0);
 
-  // ✅ SIMPLE: Get active loans (only block completed/renewed)
+  // ✅ FIXED: Use the updated getActiveLoans function
   const activeLoans = getActiveLoans(loans);
 
   // Initialize form
@@ -161,7 +165,7 @@ export default function EMIUpdateModal({
       return;
     }
 
-    // ✅ SIMPLE: Check if selected loan is completed or renewed
+    // ✅ FIXED: Check if selected loan is completed or renewed
     if (selectedLoan) {
       const isCompleted = selectedLoan.status === 'completed' || 
                          (selectedLoan.totalEmiCount > 0 && (selectedLoan.emiPaidCount || 0) >= selectedLoan.totalEmiCount);
@@ -570,7 +574,6 @@ export default function EMIUpdateModal({
                       <span className={`px-2 py-1 rounded text-xs ${
                         selectedLoan.status === 'completed' ? 'bg-gray-100 text-gray-800' :
                         selectedLoan.status === 'active' ? 'bg-green-100 text-green-800' :
-                        selectedLoan.status === 'overdue' ? 'bg-red-100 text-red-800' :
                         'bg-blue-100 text-blue-800'
                       }`}>
                         {selectedLoan.status || 'active'}
