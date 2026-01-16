@@ -323,7 +323,7 @@ export async function GET(request, { params }) {
         if (emiPaidCount >= totalEmiCount) {
           finalStatus = 'completed';
         } else {
-          // Keep original status (overdue, active, etc.)
+          
           finalStatus = loan.status || 'active';
         }
         

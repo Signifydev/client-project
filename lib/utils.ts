@@ -26,14 +26,8 @@ export function formatDate(date: Date): string {
 }
 
 // Calculate EMI status
-export function calculateEMIStatus(dueDate: Date): 'pending' | 'overdue' {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  
-  const due = new Date(dueDate);
-  due.setHours(0, 0, 0, 0);
-  
-  return due < today ? 'overdue' : 'pending';
+export function calculateEMIStatus(dueDate: Date): 'pending' {
+  return 'pending'; // We no longer use overdue status
 }
 
 // Generate random ID for testing
