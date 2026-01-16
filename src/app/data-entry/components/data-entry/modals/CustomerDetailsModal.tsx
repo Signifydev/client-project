@@ -235,8 +235,11 @@ const getLoanCompletionStatus = (loan: Loan) => {
   // Check if loan is completed based on BACKEND logic (full payments only)
   const isCompletedBackend = loan.emiPaidCount >= (loan.totalEmiCount || loan.loanDays || 0);
   
-  // Check if loan is active (not completed and not renewed)
-  const isActive = loan.status === 'active' && !isCompletedBackend && !loan.isRenewed;
+  // ✅ FIXED: Check if loan is active (not completed and not renewed)
+  // Now includes "overdue" loans as active since we're removing overdue status
+  const isActive = (loan.status === 'active' || loan.status === 'overdue') && 
+                  !isCompletedBackend && 
+                  !loan.isRenewed;
   
   return {
     isActive,
@@ -450,7 +453,7 @@ export default function CustomerDetailsModal({
                 <div className="flex space-x-3">
                   <button
                     onClick={handleRefreshData}
-                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium transition-colors flex items-center"
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium transition-colors"
                     title="Refresh customer data"
                   >
                     <span className="mr-2">🔄</span> Refresh
@@ -650,14 +653,16 @@ export default function CustomerDetailsModal({
                                     {loan.loanNumber || `Loan ${index + 1}`}
                                   </h5>
                                   <div className="flex flex-wrap items-center gap-2">
+                                    {/* ✅ FIXED: Status badge - treats "overdue" as "active" */}
                                     <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-semibold ${
                                       shouldShowCompleted ? 'bg-blue-100 text-blue-800 border border-blue-300' :
-                                      loan.status === 'active' ? 'bg-green-100 text-green-800 border border-green-300' :
+                                      (loan.status === 'active' || loan.status === 'overdue') ? 'bg-green-100 text-green-800 border border-green-300' : // ✅ FIXED
                                       loan.status === 'defaulted' ? 'bg-red-100 text-red-800 border border-red-300' :
                                       loan.status === 'renewed' ? 'bg-red-100 text-red-800 border border-red-300' :
                                       'bg-gray-100 text-gray-800 border border-gray-300'
                                     }`}>
-                                      {shouldShowCompleted ? 'Completed' : loan.status}
+                                      {/* ✅ FIXED: Show "Active" instead of "Overdue" */}
+                                      {shouldShowCompleted ? 'Completed' : (loan.status === 'overdue' ? 'Active' : loan.status)}
                                     </span>
                                     {isRenewed && (
                                       <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-300">
