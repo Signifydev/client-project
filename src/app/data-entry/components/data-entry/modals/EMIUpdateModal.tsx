@@ -22,37 +22,68 @@ interface PartialPayment {
   paymentDate: string;
 }
 
-// ✅ FIXED: Helper function to check if loan is active (matches CustomersSection.tsx logic)
+// ✅ FIXED: Proper active loan detection
 const isActiveLoan = (loan: Loan): boolean => {
   if (!loan) return false;
   
-  // Convert status to string and force TypeScript to treat it as string, not string literal
-  const loanAny = loan as any;
-  const status = String(loanAny.status || '').toLowerCase();
+  // NEVER allow these statuses
+  const blockedStatuses = ['completed', 'closed', 'defaulted', 'renewed'];
+  const status = String(loan.status || '').toLowerCase();
   
-  // Check all conditions using explicit casting
-  const isRenewed = Boolean(loanAny.isRenewed);
-  const isCompleted = Boolean(loanAny.isCompleted);
-  const hasEmisRemaining = !loanAny.totalEmiCount || 
-                          !loanAny.emiPaidCount || 
-                          loanAny.emiPaidCount < loanAny.totalEmiCount;
+  if (blockedStatuses.includes(status) || loan.isRenewed) {
+    return false;
+  }
   
-  // Loan is active if:
-  // 1. Status contains 'active' (case-insensitive)
-  // 2. Not renewed
-  // 3. Not completed
-  // 4. Has EMIs remaining
-  const isActive = status.includes('active') && 
-                   !isRenewed && 
-                   !isCompleted && 
-                   hasEmisRemaining;
+  // Allow these statuses
+  const allowedStatuses = ['active', 'overdue', 'pending'];
   
-  return isActive;
+  // Check if loan is completed by EMI count
+  const allEmisPaid = loan.totalEmiCount > 0 && 
+                     (loan.emiPaidCount || 0) >= loan.totalEmiCount;
+  
+  // Active if: status is allowed AND not all EMIs paid
+  return allowedStatuses.includes(status) && !allEmisPaid;
 };
 
-// ✅ FIXED: Get only active loans
+// ✅ NEW: Check if loan is completed
+const isCompletedLoan = (loan: Loan): boolean => {
+  if (!loan) return false;
+  
+  // Completed status
+  if (loan.status === 'completed' || loan.status === 'closed') return true;
+  
+  // All EMIs paid
+  if (loan.totalEmiCount > 0 && (loan.emiPaidCount || 0) >= loan.totalEmiCount) return true;
+  
+  return false;
+};
+
+// ✅ FIXED: Get only active, non-completed loans
 const getActiveLoans = (loans: Loan[]): Loan[] => {
-  return loans.filter(loan => isActiveLoan(loan));
+  return loans.filter(loan => {
+    const blockedStatuses = ['completed', 'closed', 'defaulted', 'renewed'];
+    const status = String(loan.status || '').toLowerCase();
+    
+    // Block if status is blocked OR loan is renewed
+    if (blockedStatuses.includes(status) || loan.isRenewed) {
+      return false;
+    }
+    
+    // Block if all EMIs are paid
+    if (loan.totalEmiCount > 0 && (loan.emiPaidCount || 0) >= loan.totalEmiCount) {
+      return false;
+    }
+    
+    return true; // All other loans are active
+  });
+};
+
+// ✅ NEW: Check loan status for display
+const getLoanDisplayStatus = (loan: Loan): string => {
+  if (isCompletedLoan(loan)) {
+    return 'completed';
+  }
+  return loan.status || 'active';
 };
 
 export default function EMIUpdateModal({
@@ -84,7 +115,7 @@ export default function EMIUpdateModal({
   const [advanceEmiCount, setAdvanceEmiCount] = useState<number>(0);
   const [advanceTotalAmount, setAdvanceTotalAmount] = useState<number>(0);
 
-  // ✅ FIXED: Get active loans only
+  // ✅ FIXED: Get active, non-completed loans only
   const activeLoans = getActiveLoans(loans);
 
   // Initialize form
@@ -112,6 +143,22 @@ export default function EMIUpdateModal({
 
   // Calculate EMI amount for selected loan
   const emiAmount = selectedLoan?.emiAmount || 0;
+
+  // Check if selected loan is completed
+  useEffect(() => {
+    if (selectedLoan && isCompletedLoan(selectedLoan)) {
+      setMessage({
+        type: 'warning',
+        text: 'This loan is already completed. Cannot accept more payments.'
+      });
+      
+      // Try to auto-select another active loan
+      const otherActiveLoans = activeLoans.filter(l => !isCompletedLoan(l));
+      if (otherActiveLoans.length > 0) {
+        setSelectedLoan(otherActiveLoans[0]);
+      }
+    }
+  }, [selectedLoan, activeLoans]);
 
   // Reset form
   const resetForm = () => {
@@ -184,6 +231,16 @@ export default function EMIUpdateModal({
       return;
     }
 
+    // Check if selected loan is completed
+    if (selectedLoan && isCompletedLoan(selectedLoan)) {
+      setMessage({ 
+        type: 'error', 
+        text: 'Selected loan is already completed. Cannot accept more payments.' 
+      });
+      setIsSubmitting(false);
+      return;
+    }
+
     if (!selectedLoan) {
       setMessage({ type: 'error', text: 'Please select a loan' });
       setIsSubmitting(false);
@@ -240,6 +297,9 @@ export default function EMIUpdateModal({
       return;
     }
 
+    // ✅ FIXED: According to Option B - Partial payments don't increment emiPaidCount
+    const isPartialPayment = paymentType === 'partial' || paymentAmount < emiAmount;
+
     // Prepare payment data
     const paymentData: any = {
       loanId: selectedLoan._id,
@@ -250,7 +310,9 @@ export default function EMIUpdateModal({
       paymentDate: paymentDate,
       collectedBy: collectedBy || 'Operator',
       notes: notes,
-      paymentType: paymentType
+      paymentType: paymentType,
+      isPartialPayment: isPartialPayment, // ✅ Added flag for backend
+      doesNotIncrementCount: isPartialPayment // ✅ According to Option B
     };
 
     // Set status based on payment type
@@ -472,7 +534,10 @@ export default function EMIUpdateModal({
                   {loans.slice(0, 3).map((loan, index) => (
                     <li key={index} className="flex justify-between">
                       <span>{loan.loanNumber || `Loan ${index + 1}`}:</span>
-                      <span className="font-medium">{loan.status}{loan.isRenewed ? ' (renewed)' : ''}</span>
+                      <span className="font-medium">
+                        {getLoanDisplayStatus(loan)}
+                        {loan.isRenewed ? ' (renewed)' : ''}
+                      </span>
                     </li>
                   ))}
                   {loans.length > 3 && (
@@ -568,11 +633,12 @@ export default function EMIUpdateModal({
                     <p className="text-sm text-blue-700 mb-1">Status</p>
                     <p className="font-bold text-blue-900">
                       <span className={`px-2 py-1 rounded text-xs ${
+                        isCompletedLoan(selectedLoan) ? 'bg-gray-100 text-gray-800' :
                         selectedLoan.status === 'active' ? 'bg-green-100 text-green-800' :
                         selectedLoan.status === 'completed' ? 'bg-blue-100 text-blue-800' :
                         'bg-gray-100 text-gray-800'
                       }`}>
-                        {selectedLoan.status}
+                        {getLoanDisplayStatus(selectedLoan)}
                       </span>
                     </p>
                   </div>

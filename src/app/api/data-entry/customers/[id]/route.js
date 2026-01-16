@@ -281,12 +281,15 @@ export async function GET(request, { params }) {
         const emiStartDateInput = emiStartDateStr;
         const lastEmiDateInput = lastEmiDateStr;
         const nextEmiDateInput = nextEmiDateStr;
+
+        const emiPaidCount = loan.emiPaidCount || 0;
+        const totalEmiCount = loan.totalEmiCount || loan.loanDays || 0;
         
         console.log('📅 Loan Date Debug (FIXED):', {
           loanNumber: loan.loanNumber,
           isCompleted: emiPaidCount >= totalEmiCount,
-          emiPaidCount: loan.emiPaidCount,
-          totalEmiCount: loan.totalEmiCount,
+          emiPaidCount: emiPaidCount,
+          totalEmiCount: totalEmiCount,
           status: loan.status,
           correctNextEmiDate: correctNextEmiDate,
           originalNextEmiDate: loan.nextEmiDate,
@@ -306,8 +309,8 @@ export async function GET(request, { params }) {
           finalScheduleDetails = {
             emiType: loan.emiType || 'fixed',
             customEmiAmount: loan.customEmiAmount || null,
-            totalInstallments: loan.totalEmiCount || loan.loanDays || 30,
-            customInstallmentNumber: loan.totalEmiCount || loan.loanDays || 30, // Last installment
+            totalInstallments: totalEmiCount, // ← Now uses the defined variable
+            customInstallmentNumber: totalEmiCount, // ← Now uses the defined variable
             standardAmount: loan.emiAmount || 0,
             customAmount: loan.customEmiAmount || null,
             schedule: [] // Empty for now, can be generated on frontend
@@ -315,17 +318,14 @@ export async function GET(request, { params }) {
         }
         
         let finalStatus = loan.status || 'active';
-const emiPaidCount = loan.emiPaidCount || 0;
-const totalEmiCount = loan.totalEmiCount || loan.loanDays || 30;
-
-// Only mark as completed if ALL EMIs are paid
-if (emiPaidCount >= totalEmiCount) {
-  finalStatus = 'completed';
-} else {
-  // Keep original status (overdue, active, etc.)
-  finalStatus = loan.status || 'active';
-}
-
+        
+        // Only mark as completed if ALL EMIs are paid
+        if (emiPaidCount >= totalEmiCount) {
+          finalStatus = 'completed';
+        } else {
+          // Keep original status (overdue, active, etc.)
+          finalStatus = loan.status || 'active';
+        }
         
         return {
           _id: loan._id,
