@@ -25,15 +25,19 @@ interface PartialPayment {
 // ✅ UPDATED: Get valid loans (allow overdue, block only completed/renewed)
 const getValidLoans = (loans: Loan[]): Loan[] => {
   return loans.filter((loan: Loan) => {
-    const status = (loan.status || '').toLowerCase();
+    const status = (loan.status || '').toString().trim().toLowerCase();
+
     const emiPaid = loan.emiPaidCount || 0;
     const totalEmi = loan.totalEmiCount || loan.loanDays || 0;
 
     const isCompleted = emiPaid >= totalEmi;
     const isRenewed = loan.isRenewed === true;
 
-    // ✅ Allow overdue loans
-    const allowedStatus = ['active', 'pending', 'overdue'];
+    // ✅ FORCE allow overdue
+    if (status.includes('over')) return true;
+
+    // Normal allowed statuses
+    const allowedStatus = ['active', 'pending'];
 
     return (
       allowedStatus.includes(status) &&
@@ -182,7 +186,7 @@ export default function EMIUpdateModal({
       // ✅ Allow overdue loans
       const allowedStatus = ['active', 'pending', 'overdue'];
 
-      if (isCompleted || isRenewed || !allowedStatus.includes(status)) {
+      if (isCompleted || isRenewed) {
         setMessage({ 
           type: 'error', 
           text: 'This loan is either completed or renewed. Cannot accept more payments.' 
