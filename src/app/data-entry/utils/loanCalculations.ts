@@ -323,11 +323,25 @@ export const getAllCustomerLoans = (customer: Customer, customerDetails: Custome
 
 export const getActiveLoans = (loans: Loan[]): Loan[] => {
   return loans.filter(loan => {
-    const isRenewed = loan.isRenewed || loan.status === 'renewed';
-    const isCompleted = loan.isCompleted || loan.status === 'completed';
-    return !isRenewed && !isCompleted && loan.status === 'active';
+    const status = (loan.status || '').toLowerCase();
+
+    const emiPaid = loan.emiPaidCount || 0;
+    const totalEmi = loan.totalEmiCount || loan.loanDays || 0;
+
+    const isCompleted = emiPaid >= totalEmi || loan.isCompleted === true;
+    const isRenewed = loan.isRenewed === true || status === 'renewed';
+
+    // Allowed statuses for EMI
+    const allowedStatus = ['active', 'pending', 'overdue'];
+
+    return (
+      allowedStatus.includes(status) &&
+      !isCompleted &&
+      !isRenewed
+    );
   });
 };
+
 
 export const validateLoanBusinessRules = (loanType: string, emiType: string, customEmiAmount?: string): { isValid: boolean; error?: string } => {
   if (loanType === 'Daily' && emiType !== 'fixed') {
