@@ -62,7 +62,7 @@ const isActiveLoan = (loan: Loan): boolean => {
   const loanStatus = (loan.status || 'unknown').toLowerCase();
   
   // Define which statuses are considered active (can receive EMI payments)
-  const activeStatuses = ['active', 'overdue', 'pending', 'defaulted'];
+  const activeStatuses = ['active', 'pending', 'overdue'];
   
   if (!activeStatuses.includes(loanStatus)) {
     console.log('❌ Loan not active - status:', loan.status, 'normalized to:', loanStatus);

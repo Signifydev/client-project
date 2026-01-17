@@ -237,7 +237,7 @@ const getLoanCompletionStatus = (loan: Loan) => {
   
   // ✅ FIXED: Check if loan is active (not completed and not renewed)
   // Now includes "overdue" loans as active since we're removing overdue status
-  const isActive = (loan.status === 'active' || loan.status === 'overdue') && 
+  const isActive = (loan.status === 'active') && 
                   !isCompletedBackend && 
                   !loan.isRenewed;
   
