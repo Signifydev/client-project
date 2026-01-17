@@ -22,19 +22,24 @@ interface PartialPayment {
   paymentDate: string;
 }
 
-// ✅ FIXED: Get loans that can accept payments (ONLY block completed/renewed)
-const getActiveLoans = (loans: Loan[]): Loan[] => {
-  return loans.filter(loan => {
-    // Check if loan is completed (based on FULL payments only)
-    const isCompleted = loan.status === 'completed' || 
-                       (loan.totalEmiCount > 0 && (loan.emiPaidCount || 0) >= loan.totalEmiCount);
-    
-    // Check if loan is renewed
-    const isRenewed = loan.isRenewed || loan.status === 'renewed';
-    
-    // ✅ FIXED: ALLOW all non-completed, non-renewed loans
-    // This includes ALL active loans regardless of payment timing
-    return !isCompleted && !isRenewed;
+// ✅ UPDATED: Get valid loans (allow overdue, block only completed/renewed)
+const getValidLoans = (loans: Loan[]): Loan[] => {
+  return loans.filter((loan: Loan) => {
+    const status = (loan.status || '').toLowerCase();
+    const emiPaid = loan.emiPaidCount || 0;
+    const totalEmi = loan.totalEmiCount || loan.loanDays || 0;
+
+    const isCompleted = emiPaid >= totalEmi;
+    const isRenewed = loan.isRenewed === true;
+
+    // ✅ Allow overdue loans
+    const allowedStatus = ['active', 'pending', 'overdue'];
+
+    return (
+      allowedStatus.includes(status) &&
+      !isCompleted &&
+      !isRenewed
+    );
   });
 };
 
@@ -67,8 +72,8 @@ export default function EMIUpdateModal({
   const [advanceEmiCount, setAdvanceEmiCount] = useState<number>(0);
   const [advanceTotalAmount, setAdvanceTotalAmount] = useState<number>(0);
 
-  // ✅ FIXED: Use the updated getActiveLoans function
-  const activeLoans = getActiveLoans(loans);
+  // ✅ UPDATED: Use the new validation function
+  const validLoans = getValidLoans(loans);
 
   // Initialize form
   useEffect(() => {
@@ -78,26 +83,26 @@ export default function EMIUpdateModal({
       setAdvanceStartDate(today);
       setAdvanceEndDate(today);
       
-      if (activeLoans.length > 0) {
-        setSelectedLoan(activeLoans[0]);
+      if (validLoans.length > 0) {
+        setSelectedLoan(validLoans[0]);
         setMessage(null);
       } else if (loans.length > 0) {
         setSelectedLoan(null);
         setMessage({
           type: 'warning',
-          text: 'No active loans found. All loans are either completed or renewed.'
+          text: 'No valid loans found. All loans are either completed or renewed.'
         });
       }
     }
-  }, [isOpen, activeLoans, loans.length]);
+  }, [isOpen, validLoans, loans.length]);
 
   // Calculate EMI amount for selected loan
   const emiAmount = selectedLoan?.emiAmount || 0;
 
   // Reset form
   const resetForm = () => {
-    if (activeLoans.length > 0) {
-      setSelectedLoan(activeLoans[0]);
+    if (validLoans.length > 0) {
+      setSelectedLoan(validLoans[0]);
     } else {
       setSelectedLoan(null);
     }
@@ -155,22 +160,29 @@ export default function EMIUpdateModal({
     setIsSubmitting(true);
     setMessage(null);
 
-    // Validation - Check if we have active loans
-    if (activeLoans.length === 0) {
+    // ✅ UPDATED: Check if we have valid loans
+    if (validLoans.length === 0) {
       setMessage({ 
         type: 'error', 
-        text: 'No active loans available for payment. All loans are either completed or renewed.' 
+        text: 'No valid loans available for payment. All loans are either completed or renewed.' 
       });
       setIsSubmitting(false);
       return;
     }
 
-    // ✅ FIXED: Check if selected loan is completed or renewed
+    // ✅ UPDATED: Check if selected loan is valid (not completed/renewed)
     if (selectedLoan) {
-      const isCompleted = selectedLoan.status === 'completed' || 
-                         (selectedLoan.totalEmiCount > 0 && (selectedLoan.emiPaidCount || 0) >= selectedLoan.totalEmiCount);
+      const status = (selectedLoan.status || '').toLowerCase();
+      const emiPaid = selectedLoan.emiPaidCount || 0;
+      const totalEmi = selectedLoan.totalEmiCount || selectedLoan.loanDays || 0;
+
+      const isCompleted = emiPaid >= totalEmi;
+      const isRenewed = selectedLoan.isRenewed === true;
       
-      if (isCompleted || selectedLoan.isRenewed) {
+      // ✅ Allow overdue loans
+      const allowedStatus = ['active', 'pending', 'overdue'];
+
+      if (isCompleted || isRenewed || !allowedStatus.includes(status)) {
         setMessage({ 
           type: 'error', 
           text: 'This loan is either completed or renewed. Cannot accept more payments.' 
@@ -436,10 +448,10 @@ export default function EMIUpdateModal({
   // Don't render if modal is not open
   if (!isOpen) return null;
 
-  // Check for active loans
-  const hasActiveLoans = activeLoans.length > 0;
+  // Check for valid loans
+  const hasValidLoans = validLoans.length > 0;
   
-  if (!hasActiveLoans) {
+  if (!hasValidLoans) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
@@ -458,27 +470,37 @@ export default function EMIUpdateModal({
           <div className="text-center py-8">
             <div className="text-yellow-500 text-5xl mb-4">⚠️</div>
             <h4 className="text-lg font-medium text-gray-900 mb-2">
-              No Active Loans Available
+              No Valid Loans Available
             </h4>
             <p className="text-gray-600 mb-4">
               {customer 
-                ? `${customer.name} has no active loans. All loans are either completed or renewed.`
-                : 'No active loans found for payment.'}
+                ? `${customer.name} has no valid loans. All loans are either completed or renewed.`
+                : 'No valid loans found for payment.'}
             </p>
             
             {loans.length > 0 && (
               <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <p className="text-sm text-yellow-800 font-medium mb-1">Loan Statuses:</p>
                 <ul className="text-xs text-yellow-700 space-y-1">
-                  {loans.slice(0, 3).map((loan, index) => (
-                    <li key={index} className="flex justify-between">
-                      <span>{loan.loanNumber || `Loan ${index + 1}`}:</span>
-                      <span className="font-medium">
-                        {loan.status || 'active'}
-                        {loan.isRenewed ? ' (renewed)' : ''}
-                      </span>
-                    </li>
-                  ))}
+                  {loans.slice(0, 3).map((loan, index) => {
+                    const status = (loan.status || '').toLowerCase();
+                    const emiPaid = loan.emiPaidCount || 0;
+                    const totalEmi = loan.totalEmiCount || loan.loanDays || 0;
+                    const isCompleted = emiPaid >= totalEmi;
+                    
+                    return (
+                      <li key={index} className="flex justify-between">
+                        <span>{loan.loanNumber || `Loan ${index + 1}`}:</span>
+                        <span className={`font-medium ${
+                          status === 'overdue' ? 'text-red-600' : ''
+                        }`}>
+                          {status}
+                          {loan.isRenewed ? ' (renewed)' : ''}
+                          {isCompleted ? ' (completed)' : ''}
+                        </span>
+                      </li>
+                    );
+                  })}
                   {loans.length > 3 && (
                     <li className="text-yellow-600 italic">+ {loans.length - 3} more loans</li>
                   )}
@@ -515,7 +537,8 @@ export default function EMIUpdateModal({
                   Customer: {customer?.name} ({customer?.customerNumber})
                 </p>
                 <p className="text-xs text-green-600 mt-2">
-                  ✅ {activeLoans.length} active loan{activeLoans.length !== 1 ? 's' : ''} available
+                  ✅ {validLoans.length} valid loan{validLoans.length !== 1 ? 's' : ''} available
+                  (including overdue loans)
                 </p>
               </div>
               <button
@@ -536,47 +559,110 @@ export default function EMIUpdateModal({
               <select
                 value={selectedLoan?._id || ''}
                 onChange={(e) => {
-                  const loan = activeLoans.find(l => l._id === e.target.value);
+                  const loan = validLoans.find(l => l._id === e.target.value);
                   setSelectedLoan(loan || null);
                 }}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 required
               >
                 <option value="">Select a loan</option>
-                {activeLoans.map((loan) => (
-                  <option key={loan._id} value={loan._id}>
-                    {loan.loanNumber} - ₹{loan.emiAmount} {loan.loanType} 
-                    {loan.emiPaidCount || 0}/{loan.totalEmiCount || loan.loanDays || 0} EMIs
-                  </option>
-                ))}
+                {validLoans.map((loan) => {
+                  const isOverdue = (loan.status || '').toLowerCase() === 'overdue';
+                  return (
+                    <option key={loan._id} value={loan._id}>
+                      {loan.loanNumber} - ₹{loan.emiAmount} {loan.loanType} 
+                      {loan.emiPaidCount || 0}/{loan.totalEmiCount || loan.loanDays || 0} EMIs
+                      {isOverdue ? ' ⚠️ Overdue' : ''}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
             {/* Loan Information */}
             {selectedLoan && (
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className={`p-4 border rounded-lg ${
+                (selectedLoan.status || '').toLowerCase() === 'overdue' 
+                  ? 'bg-red-50 border-red-200'
+                  : 'bg-blue-50 border-blue-200'
+              }`}>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-sm text-blue-700 mb-1">Loan Number</p>
-                    <p className="font-bold text-blue-900">{selectedLoan.loanNumber}</p>
+                    <p className="text-sm mb-1">
+                      <span className={
+                        (selectedLoan.status || '').toLowerCase() === 'overdue' 
+                          ? 'text-red-700' 
+                          : 'text-blue-700'
+                      }>
+                        Loan Number
+                      </span>
+                    </p>
+                    <p className={`font-bold ${
+                      (selectedLoan.status || '').toLowerCase() === 'overdue' 
+                        ? 'text-red-900' 
+                        : 'text-blue-900'
+                    }`}>
+                      {selectedLoan.loanNumber}
+                    </p>
                   </div>
                   <div>
-                    <p className="text-sm text-blue-700 mb-1">EMI Amount</p>
-                    <p className="font-bold text-blue-900">₹{selectedLoan.emiAmount}</p>
+                    <p className="text-sm mb-1">
+                      <span className={
+                        (selectedLoan.status || '').toLowerCase() === 'overdue' 
+                          ? 'text-red-700' 
+                          : 'text-blue-700'
+                      }>
+                        EMI Amount
+                      </span>
+                    </p>
+                    <p className={`font-bold ${
+                      (selectedLoan.status || '').toLowerCase() === 'overdue' 
+                        ? 'text-red-900' 
+                        : 'text-blue-900'
+                    }`}>
+                      ₹{selectedLoan.emiAmount}
+                    </p>
                   </div>
                   <div>
-                    <p className="text-sm text-blue-700 mb-1">Paid/Total EMIs</p>
-                    <p className="font-bold text-blue-900">{selectedLoan.emiPaidCount || 0}/{selectedLoan.totalEmiCount || 0}</p>
+                    <p className="text-sm mb-1">
+                      <span className={
+                        (selectedLoan.status || '').toLowerCase() === 'overdue' 
+                          ? 'text-red-700' 
+                          : 'text-blue-700'
+                      }>
+                        Paid/Total EMIs
+                      </span>
+                    </p>
+                    <p className={`font-bold ${
+                      (selectedLoan.status || '').toLowerCase() === 'overdue' 
+                        ? 'text-red-900' 
+                        : 'text-blue-900'
+                    }`}>
+                      {selectedLoan.emiPaidCount || 0}/{selectedLoan.totalEmiCount || 0}
+                    </p>
                   </div>
                   <div>
-                    <p className="text-sm text-blue-700 mb-1">Status</p>
-                    <p className="font-bold text-blue-900">
+                    <p className="text-sm mb-1">
+                      <span className={
+                        (selectedLoan.status || '').toLowerCase() === 'overdue' 
+                          ? 'text-red-700' 
+                          : 'text-blue-700'
+                      }>
+                        Status
+                      </span>
+                    </p>
+                    <p className="font-bold">
                       <span className={`px-2 py-1 rounded text-xs ${
-                        selectedLoan.status === 'completed' ? 'bg-gray-100 text-gray-800' :
-                        selectedLoan.status === 'active' ? 'bg-green-100 text-green-800' :
-                        'bg-blue-100 text-blue-800'
+                        (selectedLoan.status || '').toLowerCase() === 'overdue' 
+                          ? 'bg-red-100 text-red-800 border border-red-200' :
+                        (selectedLoan.status || '').toLowerCase() === 'completed' 
+                          ? 'bg-gray-100 text-gray-800' :
+                        (selectedLoan.status || '').toLowerCase() === 'active' 
+                          ? 'bg-green-100 text-green-800' :
+                          'bg-blue-100 text-blue-800'
                       }`}>
                         {selectedLoan.status || 'active'}
+                        {(selectedLoan.status || '').toLowerCase() === 'overdue' ? ' ⚠️' : ''}
                       </span>
                     </p>
                   </div>
@@ -584,16 +670,34 @@ export default function EMIUpdateModal({
                 
                 {/* Loan Progress Bar */}
                 <div className="mt-3">
-                  <div className="flex justify-between text-xs text-blue-700 mb-1">
-                    <span>Progress</span>
-                    <span>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className={
+                      (selectedLoan.status || '').toLowerCase() === 'overdue' 
+                        ? 'text-red-700' 
+                        : 'text-blue-700'
+                    }>
+                      Progress
+                    </span>
+                    <span className={
+                      (selectedLoan.status || '').toLowerCase() === 'overdue' 
+                        ? 'text-red-900' 
+                        : 'text-blue-900'
+                    }>
                       {selectedLoan.totalEmiCount ? 
                         Math.round(((selectedLoan.emiPaidCount || 0) / selectedLoan.totalEmiCount) * 100) : 0}%
                     </span>
                   </div>
-                  <div className="w-full bg-blue-100 rounded-full h-2">
+                  <div className={`w-full h-2 rounded-full ${
+                    (selectedLoan.status || '').toLowerCase() === 'overdue' 
+                      ? 'bg-red-100' 
+                      : 'bg-blue-100'
+                  }`}>
                     <div 
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      className={`h-2 rounded-full transition-all duration-300 ${
+                        (selectedLoan.status || '').toLowerCase() === 'overdue' 
+                          ? 'bg-red-600' 
+                          : 'bg-blue-600'
+                      }`}
                       style={{ 
                         width: `${selectedLoan.totalEmiCount ? 
                           Math.min(((selectedLoan.emiPaidCount || 0) / selectedLoan.totalEmiCount) * 100, 100) : 0}%` 

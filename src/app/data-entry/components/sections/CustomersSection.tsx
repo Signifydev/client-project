@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Customer, CustomerDetails, Filters, CustomersSectionProps, Loan, EMIHistory } from '@/src/app/data-entry/types/dataEntry';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Customer, CustomerDetails, Filters, CustomersSectionProps, Loan } from '@/src/app/data-entry/types/dataEntry';
 import { useCustomers } from '@/src/app/data-entry/hooks/useCustomers';
 import { getStatusColor } from '@/src/app/data-entry/utils/constants';
 import { loanTypes, customerStatusOptions, officeCategories } from '@/src/app/data-entry/utils/constants';
@@ -28,139 +28,6 @@ const LoadingSpinner = () => (
 
 // Sort order type
 type SortOrder = 'asc' | 'desc' | 'none';
-
-// ✅ DEBUG FUNCTION: Log loan details to understand why they're being filtered
-const debugLoanDetails = (loan: Loan) => {
-  console.log('🔍 DEBUG Loan Details:', {
-    loanNumber: loan.loanNumber || 'Unnamed',
-    status: loan.status || 'unknown',
-    isRenewed: loan.isRenewed || false,
-    emiPaidCount: loan.emiPaidCount || 0,
-    totalEmiCount: loan.totalEmiCount || loan.loanDays || 0,
-    loanDays: loan.loanDays || 0,
-    isCompletedBackend: (loan.emiPaidCount || 0) >= (loan.totalEmiCount || loan.loanDays || 0),
-    hasHistory: loan.emiHistory && loan.emiHistory.length > 0,
-    historyCount: loan.emiHistory ? loan.emiHistory.length : 0,
-    // Check last payment if exists
-    lastPayment: loan.emiHistory && loan.emiHistory[0] ? {
-      date: loan.emiHistory[0].paymentDate,
-      amount: loan.emiHistory[0].amount,
-      status: loan.emiHistory[0].status
-    } : null
-  });
-  return loan;
-};
-
-// ✅ FIXED: Function to check if a loan is active (REVISED - INCLUDES OVERDUE LOANS)
-const isActiveLoan = (loan: Loan): boolean => {
-  console.log('🔄 Checking if loan is active:', loan.loanNumber || 'Unnamed Loan');
-  
-  // Debug the loan first
-  debugLoanDetails(loan);
-  
-  // Step 1: Check basic loan status (case-insensitive, includes overdue)
-  const loanStatus = (loan.status || 'unknown').toLowerCase();
-  
-  // Define which statuses are considered active (can receive EMI payments)
-  const activeStatuses = ['active', 'pending', 'overdue'];
-  
-  if (!activeStatuses.includes(loanStatus)) {
-    console.log('❌ Loan not active - status:', loan.status, 'normalized to:', loanStatus);
-    return false;
-  }
-  
-  // Step 2: Check if renewed
-  const isRenewed = loan.isRenewed || false;
-  if (isRenewed) {
-    console.log('❌ Loan not active - isRenewed:', isRenewed);
-    return false;
-  }
-  
-  // Step 3: Check completion based on FULL payments only
-  const emiPaidCount = loan.emiPaidCount || 0;
-  const totalEmiCount = loan.totalEmiCount || loan.loanDays || 0;
-  const isCompleted = emiPaidCount >= totalEmiCount;
-  
-  console.log('📊 Completion Check:', {
-    loanNumber: loan.loanNumber || 'Unnamed',
-    emiPaidCount,
-    totalEmiCount,
-    isCompleted,
-    remaining: totalEmiCount - emiPaidCount
-  });
-  
-  // Loan is active if NOT completed
-  const isActive = !isCompleted;
-  
-  console.log('✅ Final Active Status:', {
-    loanNumber: loan.loanNumber || 'Unnamed',
-    isActive,
-    status: loanStatus,
-    reason: isCompleted ? 'Loan is completed (emiPaidCount >= totalEmiCount)' : 'Loan has remaining EMIs'
-  });
-  
-  return isActive;
-};
-
-// ✅ FIXED: Helper function to get active loans for a customer (WITH BETTER DEBUGGING AND TYPE SAFETY)
-const getActiveLoans = (customer: CustomerDetails): Loan[] => {
-  // Check if customer exists
-  if (!customer) {
-    console.log('⚠️ No customer provided to getActiveLoans');
-    return [];
-  }
-  
-  // Safely access customer.loans with proper null/undefined checks
-  const customerLoans = customer.loans;
-  
-  // Check if loans array exists and is valid
-  if (!customerLoans || !Array.isArray(customerLoans)) {
-    console.log('⚠️ No valid loans array found for customer:', customer.name);
-    return [];
-  }
-  
-  console.log('📋 Processing loans for customer:', customer.name);
-  console.log('📦 Total loans found:', customerLoans.length);
-  
-  const activeLoans: Loan[] = [];
-  const inactiveLoans: Loan[] = [];
-  
-  // Process each loan with detailed logging
-  customerLoans.forEach((loan: Loan, index: number) => {
-    console.log(`\n--- Processing Loan ${index + 1} of ${customerLoans.length} ---`);
-    const isActive = isActiveLoan(loan);
-    
-    if (isActive) {
-      activeLoans.push(loan);
-      console.log(`✅ Loan ${loan.loanNumber || 'Unnamed'} is ACTIVE`);
-    } else {
-      inactiveLoans.push(loan);
-      console.log(`❌ Loan ${loan.loanNumber || 'Unnamed'} is INACTIVE`);
-    }
-  });
-  
-  // Build summary safely
-  const summary = {
-    customerName: customer.name,
-    totalLoans: customerLoans.length,
-    activeLoansCount: activeLoans.length,
-    inactiveLoansCount: inactiveLoans.length,
-    activeLoanNumbers: activeLoans.map(l => l.loanNumber || 'Unnamed'),
-    inactiveLoanNumbers: inactiveLoans.map(l => l.loanNumber || 'Unnamed'),
-    inactiveLoanDetails: inactiveLoans.map(l => ({
-      loanNumber: l.loanNumber || 'Unnamed',
-      status: l.status || 'unknown',
-      isRenewed: l.isRenewed || false,
-      emiPaidCount: l.emiPaidCount || 0,
-      totalEmiCount: l.totalEmiCount || l.loanDays || 0,
-      isCompleted: (l.emiPaidCount || 0) >= (l.totalEmiCount || l.loanDays || 0)
-    }))
-  };
-  
-  console.log('\n📊 FINAL ACTIVE LOANS SUMMARY:', summary);
-  
-  return activeLoans;
-};
 
 // Helper function to check if a specific date payment exists
 const hasPaymentOnDate = (loan: Loan, dateString: string): boolean => {
@@ -191,8 +58,8 @@ const LoanSelectionModal: React.FC<{
     return todayPayment ? 'Paid' : 'Unpaid';
   };
 
-  // ✅ FIXED: Filter only active, non-renewed, non-completed loans
-  const activeLoans = getActiveLoans(customer);
+  // ✅ CHANGED: Get ALL loans without filtering
+  const allLoans = customer.loans || [];
 
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
@@ -222,9 +89,9 @@ const LoanSelectionModal: React.FC<{
 
         {/* Body - Scrollable content */}
         <div className="flex-1 overflow-y-auto px-8 py-6">
-          {activeLoans.length > 0 ? (
+          {allLoans.length > 0 ? (
             <div className="space-y-4">
-              {activeLoans.map((loan, index) => {
+              {allLoans.map((loan, index) => {
                 const paymentStatus = getPaymentStatus(loan);
                 const isPaidToday = paymentStatus === 'Paid';
                 const loanId = loan._id || `loan-${index}`;
@@ -292,6 +159,23 @@ const LoanSelectionModal: React.FC<{
                               </div>
                             </div>
                             
+                            <div className="flex gap-2 mb-2">
+                              <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                                loan.status === 'active' ? 'bg-green-100 text-green-800' :
+                                loan.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                loan.status === 'overdue' ? 'bg-red-100 text-red-800' :
+                                loan.status === 'completed' ? 'bg-gray-100 text-gray-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                Status: {loan.status || 'unknown'}
+                              </span>
+                              {loan.isRenewed && (
+                                <span className="px-2.5 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-medium">
+                                  Renewed
+                                </span>
+                              )}
+                            </div>
+                            
                             {isPaidToday && (
                               <div className="mt-3 p-2 bg-blue-50 border border-blue-100 rounded-lg">
                                 <p className="text-xs text-blue-700 flex items-center">
@@ -330,21 +214,10 @@ const LoanSelectionModal: React.FC<{
           ) : (
             <div className="text-center py-12">
               <div className="text-gray-300 text-6xl mb-6">💰</div>
-              <h4 className="text-xl font-semibold text-gray-800 mb-3">No Active Loans</h4>
+              <h4 className="text-xl font-semibold text-gray-800 mb-3">No Loans Found</h4>
               <p className="text-gray-600 max-w-md mx-auto">
-                {customer.loans && customer.loans.length > 0 
-                  ? 'This customer does not have any active, non-completed loans for EMI payment.'
-                  : 'This customer doesn\'t have any loans for EMI payment.'}
+                This customer doesn't have any loans for EMI payment.
               </p>
-              {customer.loans && customer.loans.length > 0 && (
-                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg inline-block">
-                  <p className="text-sm text-yellow-800">
-                    📊 Found {customer.loans.length} loan(s). Statuses: {customer.loans.map((l: Loan, i: number) => 
-                      `${l.loanNumber || 'L'+(i+1)}: ${l.status || 'unknown'}${l.isRenewed ? ' (renewed)' : ''} (${l.emiPaidCount || 0}/${l.totalEmiCount || l.loanDays || 0})`
-                    ).join(', ')}
-                  </p>
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -353,7 +226,7 @@ const LoanSelectionModal: React.FC<{
         <div className="flex-shrink-0 bg-gray-50 px-8 py-6 border-t border-gray-200 rounded-b-lg">
           <div className="flex justify-between items-center">
             <div className="text-sm text-gray-600">
-              <span className="font-medium">{activeLoans.length}</span> active loan{activeLoans.length !== 1 ? 's' : ''} found
+              <span className="font-medium">{allLoans.length}</span> loan{allLoans.length !== 1 ? 's' : ''} found
             </div>
             <div className="flex space-x-3">
               <button
@@ -362,16 +235,16 @@ const LoanSelectionModal: React.FC<{
               >
                 Cancel
               </button>
-              {activeLoans.length > 0 && (
+              {allLoans.length > 0 && (
                 <button
                   onClick={() => {
-                    if (activeLoans.length > 0) {
-                      onLoanSelect(activeLoans[0]);
+                    if (allLoans.length > 0) {
+                      onLoanSelect(allLoans[0]);
                     }
                   }}
                   className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
                 >
-                  {hasPaymentOnDate(activeLoans[0], new Date().toISOString().split('T')[0]) 
+                  {hasPaymentOnDate(allLoans[0], new Date().toISOString().split('T')[0]) 
                     ? 'Pay Advance (First Loan)' 
                     : 'Pay First Loan'}
                 </button>
@@ -552,7 +425,7 @@ export default function CustomersSection({
     }
   };
 
-  // ✅ ENHANCED: Handle EMI button click with better debugging
+  // ✅ ENHANCED: Handle EMI button click - NO VALIDATION HERE
   const handleUpdateEMIClick = async (customer: Customer) => {
     try {
       const customerId = customer._id || customer.id;
@@ -569,55 +442,31 @@ export default function CustomersSection({
         console.log('✅ Customer details fetched successfully:', details.name);
         
         // Safely access customer loans
-        const customerLoans = details.loans;
-        console.log('📦 Total loans in customer data:', customerLoans?.length || 0);
+        const customerLoans = details.loans || [];
+        console.log('📦 Total loans in customer data:', customerLoans.length);
         
-        // ✅ Use the ENHANCED helper function with detailed logging
-        const activeLoans = getActiveLoans(details);
-        
+        // ✅ CHANGED: NO VALIDATION - Send ALL loans to EMIUpdateModal
         console.log('📊 FINAL RESULT:', {
           customerName: details.name,
-          totalLoans: customerLoans?.length || 0,
-          activeLoansFound: activeLoans.length,
-          hasActiveLoans: activeLoans.length > 0
+          totalLoans: customerLoans.length,
+          hasLoans: customerLoans.length > 0
         });
         
-        if (activeLoans.length === 0) {
-          // ✅ IMPROVED: Show detailed error message
-          let errorMessage = `❌ No active loans found for ${details.name}.`;
-          
-          if (customerLoans && customerLoans.length > 0) {
-            errorMessage += `\n\n📋 Loan Details:\n`;
-            customerLoans.forEach((loan: Loan, index: number) => {
-              const emiPaidCount = loan.emiPaidCount || 0;
-              const totalEmiCount = loan.totalEmiCount || loan.loanDays || 0;
-              const isCompleted = emiPaidCount >= totalEmiCount;
-              
-              errorMessage += `\n${index + 1}. ${loan.loanNumber || 'Unnamed Loan'}: `;
-              errorMessage += `Status: ${loan.status || 'unknown'}`;
-              errorMessage += loan.isRenewed ? ' (Renewed)' : '';
-              errorMessage += ` | Paid: ${emiPaidCount}/${totalEmiCount}`;
-              errorMessage += isCompleted ? ' (COMPLETED)' : '';
-            });
-            
-            errorMessage += `\n\n💡 Reason: Loans are either completed (all EMIs paid), renewed, or not active.`;
-            errorMessage += `\n💡 Note: Only loans with 'active' status AND remaining EMIs are shown for payment.`;
-          }
-          
-          console.warn('No active loans found, showing detailed alert');
-          alert(errorMessage);
+        if (customerLoans.length === 0) {
+          // Only show alert if there are NO loans at all
+          alert(`❌ No loans found for ${details.name}. Please add a loan first.`);
           return;
         }
         
         console.log('🎉 Proceeding with EMI payment...');
         
-        if (activeLoans.length === 1) {
-          // If only one active loan, directly proceed to EMI payment
-          console.log('📤 Calling onUpdateEMI with single loan:', activeLoans[0].loanNumber);
-          onUpdateEMI(details, activeLoans[0]);
+        if (customerLoans.length === 1) {
+          // If only one loan, directly proceed to EMI payment
+          console.log('📤 Calling onUpdateEMI with loan:', customerLoans[0].loanNumber);
+          onUpdateEMI(details, customerLoans[0]);
         } else {
-          // If multiple active loans, show selection modal
-          console.log('📋 Multiple active loans found, showing selection modal');
+          // If multiple loans, show selection modal
+          console.log('📋 Multiple loans found, showing selection modal');
           setSelectedCustomerForEMI(details);
           setShowLoanSelection(true);
         }
