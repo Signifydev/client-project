@@ -662,7 +662,7 @@ export default function CustomerDetailsModal({
                                       'bg-gray-100 text-gray-800 border border-gray-300'
                                     }`}>
                                       {/* ✅ FIXED: Show "Active" instead of "Overdue" */}
-                                      {shouldShowCompleted ? 'Completed' : (loan.status === 'overdue' ? 'Active' : loan.status)}
+                                      {shouldShowCompleted ? 'Completed' : 'Active'}
                                     </span>
                                     {isRenewed && (
                                       <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-300">
