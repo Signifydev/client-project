@@ -217,7 +217,6 @@ export async function POST(request) {
       
       // ✅ FIXED: Check if loan is active and can accept payments
       const canAcceptPayment =
-  ['active', 'overdue'].includes(loan.status) &&
   !loan.isRenewed &&
   loan.emiPaidCount < loan.totalEmiCount;
       
