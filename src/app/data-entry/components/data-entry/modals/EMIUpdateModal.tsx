@@ -34,7 +34,7 @@ const getValidLoans = (loans: Loan[]): Loan[] => {
     const isRenewed = loan.isRenewed === true;
 
     // ✅ FORCE allow overdue
-    if (status.includes('over')) return true;
+    if (status.includes('over') && !isCompleted && !isRenewed) return true;
 
     // Normal allowed statuses
     const allowedStatus = ['active', 'pending'];

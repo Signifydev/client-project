@@ -231,9 +231,14 @@ export const getAllCustomerLoans = (customer: Customer, customerDetails: Custome
         }
         
         // ✅ FIXED: Check if loan is actually completed (only based on FULL payments)
-        const isCompleted = loan.isCompleted === true || 
-                           loanStatus === 'completed' ||
-                           (loan.emiPaidCount && loan.totalEmiCount && loan.emiPaidCount >= loan.totalEmiCount);
+        const isCompleted =
+  loan.isCompleted === true ||
+  loanStatus === 'completed' ||
+  (
+    typeof loan.emiPaidCount === 'number' &&
+    typeof loan.totalEmiCount === 'number' &&
+    loan.emiPaidCount >= loan.totalEmiCount
+  );
         
         if (isCompleted) {
           finalStatus = 'completed';
@@ -328,10 +333,13 @@ export const getActiveLoans = (loans: Loan[]): Loan[] => {
     const emiPaid = loan.emiPaidCount || 0;
     const totalEmi = loan.totalEmiCount || loan.loanDays || 0;
 
-    const isCompleted = emiPaid >= totalEmi || loan.isCompleted === true;
+    const isCompleted =
+      typeof emiPaid === 'number' &&
+      typeof totalEmi === 'number' &&
+      emiPaid >= totalEmi;
+
     const isRenewed = loan.isRenewed === true || status === 'renewed';
 
-    // Allowed statuses for EMI
     const allowedStatus = ['active', 'pending', 'overdue'];
 
     return (
@@ -341,6 +349,7 @@ export const getActiveLoans = (loans: Loan[]): Loan[] => {
     );
   });
 };
+
 
 
 export const validateLoanBusinessRules = (loanType: string, emiType: string, customEmiAmount?: string): { isValid: boolean; error?: string } => {
