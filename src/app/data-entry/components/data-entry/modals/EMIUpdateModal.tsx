@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { CustomerDetails, Loan } from '@/src/app/data-entry/types/dataEntry';
 
 interface EMIUpdateModalProps {
@@ -21,70 +21,107 @@ interface PartialPayment {
   paymentDate: string;
 }
 
-// ✅ Helper function for IST date (UTC+5:30)
-const getLocalISODate = (date?: Date | string): string => {
-  let d: Date;
+// ======================
+// INDUSTRIAL STANDARD DATE UTILITIES
+// ======================
+
+/**
+ * Get current date in YYYY-MM-DD format for IST timezone (UTC+5:30)
+ * Industrial standard: Always use timezone-aware date functions for financial applications
+ */
+const getCurrentISODate = (): string => {
+  const now = new Date();
   
-  if (date) {
-    d = new Date(date);
-  } else {
-    d = new Date();
-  }
+  // Get current date in IST (India Standard Time, UTC+5:30)
+  // Method 1: Using toLocaleDateString with timezone (Most reliable)
+  const istDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
   
-  // Convert to IST (UTC+5:30)
-  const istOffset = 5.5 * 60 * 60 * 1000; // 5.5 hours in milliseconds
-  const istTime = new Date(d.getTime() + istOffset);
+  // Alternative Method 2: Manual offset calculation (for backup)
+  // const istOffset = 5.5 * 60 * 60 * 1000; // 5.5 hours in milliseconds
+  // const istTime = new Date(now.getTime() + istOffset);
   
-  return istTime.toISOString().split('T')[0];
+  const year = istDate.getFullYear();
+  const month = String(istDate.getMonth() + 1).padStart(2, '0');
+  const day = String(istDate.getDate()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}`;
 };
 
-// ✅ FIXED: Show ALL loans including overdue - only filter out truly completed or renewed
-const getAvailableLoans = (loans: Loan[]): Loan[] => {
-  console.log('🔍 Available loans check - Input:', loans.length);
+/**
+ * Format any date to YYYY-MM-DD format (for date input compatibility)
+ * Handles Date objects, ISO strings, and YYYY-MM-DD strings
+ */
+const formatDateForInput = (date: Date | string): string => {
+  if (!date) return '';
   
-  const availableLoans = loans.filter((loan: Loan) => {
+  let dateObj: Date;
+  
+  if (typeof date === 'string') {
+    // If it's already in YYYY-MM-DD format, return as-is
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return date;
+    }
+    // Otherwise parse it
+    dateObj = new Date(date);
+  } else {
+    dateObj = date;
+  }
+  
+  // Validate date
+  if (isNaN(dateObj.getTime())) {
+    console.warn('Invalid date provided to formatDateForInput:', date);
+    return '';
+  }
+  
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}`;
+};
+
+/**
+ * Parse date string from input to Date object
+ * Industrial standard: Always normalize dates for backend
+ */
+const parseInputDate = (dateString: string): Date => {
+  if (!dateString) return new Date();
+  
+  // For YYYY-MM-DD format, create date at noon IST to avoid timezone issues
+  const [year, month, day] = dateString.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day, 5, 30, 0)); // 5:30 AM UTC = 11:00 AM IST
+};
+
+// ======================
+// LOAN FILTERING UTILITY
+// ======================
+
+/**
+ * Filter available loans for payment
+ * Industrial standard: Extract business logic to pure functions
+ */
+const getAvailableLoans = (loans: Loan[]): Loan[] => {
+  if (!loans || loans.length === 0) return [];
+  
+  return loans.filter((loan: Loan) => {
     const emiPaid = loan.emiPaidCount || 0;
     const totalEmi = loan.totalEmiCount || loan.loanDays || 0;
     const isCompleted = emiPaid >= totalEmi;
     const loanStatus = (loan.status || '').toLowerCase();
     
-    console.log('🔍 Loan check:', {
-      loanNumber: loan.loanNumber,
-      status: loan.status,
-      emiPaidCount: emiPaid,
-      totalEmiCount: totalEmi,
-      isCompleted: isCompleted,
-      isRenewed: loan.isRenewed,
-      // Add this for debugging
-      loanType: loan.loanType,
-      amount: loan.amount
-    });
-    
-    // 🚨 FIX: Allow overdue loans to pass through
-    // Only exclude:
-    // 1. Truly completed loans (all EMIs paid)
-    // 2. Renewed loans (they have a new loan)
-    // 3. Loans marked as 'completed' status
-    
+    // Exclude completed, renewed, or marked as completed loans
     const shouldExclude = 
       isCompleted || 
       loan.isRenewed || 
       loanStatus === 'completed';
     
-    console.log(`🔍 ${loan.loanNumber}: Should exclude? ${shouldExclude}`);
-    
     return !shouldExclude;
   });
-  
-  console.log(`✅ Available loans result: ${availableLoans.length} loans available`);
-  console.log('✅ Available loans list:', availableLoans.map(l => ({
-    loanNumber: l.loanNumber,
-    status: l.status,
-    isRenewed: l.isRenewed
-  })));
-  
-  return availableLoans;
 };
+
+// ======================
+// MAIN COMPONENT
+// ======================
 
 export default function EMIUpdateModal({
   isOpen,
@@ -93,6 +130,10 @@ export default function EMIUpdateModal({
   loans,
   onPaymentSuccess
 }: EMIUpdateModalProps) {
+  // ======================
+  // STATE MANAGEMENT
+  // ======================
+  
   // Main form state
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
   const [paymentType, setPaymentType] = useState<PaymentType>('single');
@@ -115,35 +156,46 @@ export default function EMIUpdateModal({
   const [advanceEmiCount, setAdvanceEmiCount] = useState<number>(0);
   const [advanceTotalAmount, setAdvanceTotalAmount] = useState<number>(0);
 
-  // ✅ SIMPLIFIED: Use available loans function
+  // Derived state
   const availableLoans = getAvailableLoans(loans);
-
-  // ✅ FIXED: Initialize form without default date
-  useEffect(() => {
-    if (isOpen) {
-      // ✅ REMOVED: Default date setting - let user choose
-      setPaymentDate('');
-      setAdvanceStartDate('');
-      setAdvanceEndDate('');
-      
-      if (availableLoans.length > 0) {
-        setSelectedLoan(availableLoans[0]);
-        setMessage(null);
-      } else if (loans.length > 0) {
-        setSelectedLoan(null);
-        setMessage({
-          type: 'info',
-          text: 'All loans are either completed or renewed. Please add a new loan.'
-        });
-      }
-    }
-  }, [isOpen, availableLoans, loans.length]);
-
-  // Calculate EMI amount for selected loan
   const emiAmount = selectedLoan?.emiAmount || 0;
 
-  // ✅ FIXED: Reset form without default date
-  const resetForm = () => {
+  // ======================
+  // INITIALIZATION
+  // ======================
+
+  const initializeForm = useCallback(() => {
+    const today = getCurrentISODate();
+    
+    setPaymentDate(today);
+    setAdvanceStartDate(today);
+    setAdvanceEndDate(today);
+    
+    if (availableLoans.length > 0) {
+      setSelectedLoan(availableLoans[0]);
+      setMessage(null);
+    } else if (loans.length > 0) {
+      setSelectedLoan(null);
+      setMessage({
+        type: 'info',
+        text: 'All loans are either completed or renewed. Please add a new loan.'
+      });
+    }
+  }, [availableLoans, loans.length]);
+
+  useEffect(() => {
+    if (isOpen) {
+      initializeForm();
+    }
+  }, [isOpen, initializeForm]);
+
+  // ======================
+  // FORM UTILITIES
+  // ======================
+
+  const resetForm = useCallback(() => {
+    const today = getCurrentISODate();
+    
     if (availableLoans.length > 0) {
       setSelectedLoan(availableLoans[0]);
     } else {
@@ -152,27 +204,30 @@ export default function EMIUpdateModal({
     
     setPaymentType('single');
     setAmount('');
-    setPaymentDate(''); // ✅ REMOVED: Default today's date
+    setPaymentDate(today);
     setCollectedBy('');
     setNotes('');
     setMessage(null);
     setExistingPartial(null);
     setShowCompletionModal(false);
     setCompletionAmount('');
-    setAdvanceStartDate('');
-    setAdvanceEndDate('');
+    setAdvanceStartDate(today);
+    setAdvanceEndDate(today);
     setAdvanceEmiCount(0);
     setAdvanceTotalAmount(0);
-  };
+  }, [availableLoans]);
 
-  // ✅ FIXED: Check for existing partial payment without UTC conversion
+  // ======================
+  // API INTERACTIONS
+  // ======================
+
   const checkForExistingPartial = async (): Promise<PartialPayment | null> => {
     if (!selectedLoan || !paymentDate || parseFloat(amount) >= emiAmount) {
       return null;
     }
 
     try {
-      // ✅ FIXED: Use paymentDate as-is (already in YYYY-MM-DD format from date input)
+      // Use the date as-is (already in YYYY-MM-DD format from input)
       const formattedDate = paymentDate;
       
       const response = await fetch(
@@ -202,12 +257,63 @@ export default function EMIUpdateModal({
     }
   };
 
-  // Handle form submission - ✅ REMOVED STATUS VALIDATION
+  // ======================
+  // BUSINESS LOGIC
+  // ======================
+
+  const calculateAdvancePayments = useCallback(() => {
+    if (!selectedLoan || !advanceStartDate || !advanceEndDate) return;
+    
+    const start = parseInputDate(advanceStartDate);
+    const end = parseInputDate(advanceEndDate);
+    
+    if (start > end) {
+      setMessage({ type: 'error', text: 'Start date must be before end date' });
+      return;
+    }
+    
+    // Calculate number of EMIs between dates based on loan frequency
+    let emiCount = 0;
+    const frequency = selectedLoan.loanType || 'Monthly';
+    
+    if (frequency === 'Daily') {
+      const diffTime = Math.abs(end.getTime() - start.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      emiCount = diffDays + 1; // Inclusive
+    } else if (frequency === 'Weekly') {
+      const diffTime = Math.abs(end.getTime() - start.getTime());
+      const diffWeeks = Math.ceil(diffTime / (1000 * 60 * 60 * 24 * 7));
+      emiCount = diffWeeks + 1;
+    } else { // Monthly
+      const startYear = start.getFullYear();
+      const startMonth = start.getMonth();
+      const endYear = end.getFullYear();
+      const endMonth = end.getMonth();
+      
+      emiCount = (endYear - startYear) * 12 + (endMonth - startMonth) + 1;
+    }
+    
+    setAdvanceEmiCount(emiCount);
+    setAdvanceTotalAmount(emiCount * emiAmount);
+    setAmount((emiCount * emiAmount).toString());
+  }, [selectedLoan, advanceStartDate, advanceEndDate, emiAmount]);
+
+  useEffect(() => {
+    if (paymentType === 'advance' && advanceStartDate && advanceEndDate) {
+      calculateAdvancePayments();
+    }
+  }, [paymentType, advanceStartDate, advanceEndDate, calculateAdvancePayments]);
+
+  // ======================
+  // EVENT HANDLERS
+  // ======================
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     setMessage(null);
 
+    // Validation
     if (!selectedLoan) {
       setMessage({ type: 'error', text: 'Please select a loan' });
       setIsSubmitting(false);
@@ -227,7 +333,7 @@ export default function EMIUpdateModal({
       return;
     }
 
-    // 🚨 SMART DETECTION: Check for existing partial payment
+    // Smart partial payment detection
     if (paymentType === 'single' && paymentAmount < emiAmount) {
       const existing = await checkForExistingPartial();
       
@@ -235,7 +341,6 @@ export default function EMIUpdateModal({
         setExistingPartial(existing);
         setCompletionAmount(paymentAmount.toString());
         
-        // Auto-suggest completion
         const shouldComplete = window.confirm(
           `Found existing partial payment of ₹${existing.amount}.\n\n` +
           `Do you want to complete it with ₹${paymentAmount}?\n` +
@@ -247,27 +352,24 @@ export default function EMIUpdateModal({
           setIsSubmitting(false);
           return;
         } else {
-          // User doesn't want to complete, maybe they want new partial
           setMessage({
             type: 'warning',
             text: `There's already a partial payment (₹${existing.amount}). Creating another partial payment for the same date is not recommended.`
           });
-          // Continue with payment creation (will fail with duplicate error from API)
         }
       }
     }
 
-    // ✅ Check if customer exists before using
+    // Customer validation
     if (!customer || !customer._id) {
       setMessage({ type: 'error', text: 'Customer information not available' });
       setIsSubmitting(false);
       return;
     }
 
-    // ✅ Partial payments don't increment emiPaidCount
-    const isPartialPayment = paymentType === 'partial' || paymentAmount < emiAmount;
-
     // Prepare payment data
+    const isPartialPayment = paymentType === 'partial' || paymentAmount < emiAmount;
+    
     const paymentData: any = {
       loanId: selectedLoan._id,
       customerId: customer._id,
@@ -316,12 +418,8 @@ export default function EMIUpdateModal({
           text: `✅ Payment recorded successfully! ${result.message}`
         });
         
-        // Call success callback
-        if (onPaymentSuccess) {
-          onPaymentSuccess();
-        }
+        onPaymentSuccess?.();
         
-        // Reset form after delay
         setTimeout(() => {
           resetForm();
           onClose();
@@ -353,7 +451,6 @@ export default function EMIUpdateModal({
     }
   };
 
-  // Handle partial completion
   const handleCompletePartial = async () => {
     if (!existingPartial || !completionAmount) return;
     
@@ -385,17 +482,12 @@ export default function EMIUpdateModal({
           text: `✅ Partial payment completed! Total: ₹${newTotal} ${isComplete ? '(Fully Paid)' : ''}`
         });
         
-        // Call success callback
-        if (onPaymentSuccess) {
-          onPaymentSuccess();
-        }
+        onPaymentSuccess?.();
         
-        // Close modals and reset
         setShowCompletionModal(false);
         setExistingPartial(null);
         setCompletionAmount('');
         
-        // Close main modal after delay
         setTimeout(() => {
           resetForm();
           onClose();
@@ -416,55 +508,12 @@ export default function EMIUpdateModal({
     }
   };
 
-  // Calculate advance payment details
-  const calculateAdvancePayments = () => {
-    if (!selectedLoan || !advanceStartDate || !advanceEndDate) return;
-    
-    const start = new Date(advanceStartDate);
-    const end = new Date(advanceEndDate);
-    
-    if (start > end) {
-      setMessage({ type: 'error', text: 'Start date must be before end date' });
-      return;
-    }
-    
-    // Calculate number of EMIs between dates based on loan frequency
-    let emiCount = 0;
-    const frequency = selectedLoan.loanType || 'Monthly';
-    
-    if (frequency === 'Daily') {
-      const diffTime = Math.abs(end.getTime() - start.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      emiCount = diffDays + 1; // Inclusive
-    } else if (frequency === 'Weekly') {
-      const diffTime = Math.abs(end.getTime() - start.getTime());
-      const diffWeeks = Math.ceil(diffTime / (1000 * 60 * 60 * 24 * 7));
-      emiCount = diffWeeks + 1;
-    } else { // Monthly
-      const startYear = start.getFullYear();
-      const startMonth = start.getMonth();
-      const endYear = end.getFullYear();
-      const endMonth = end.getMonth();
-      
-      emiCount = (endYear - startYear) * 12 + (endMonth - startMonth) + 1;
-    }
-    
-    setAdvanceEmiCount(emiCount);
-    setAdvanceTotalAmount(emiCount * emiAmount);
-    setAmount((emiCount * emiAmount).toString());
-  };
+  // ======================
+  // RENDER LOGIC
+  // ======================
 
-  // Handle advance date changes
-  useEffect(() => {
-    if (paymentType === 'advance' && advanceStartDate && advanceEndDate) {
-      calculateAdvancePayments();
-    }
-  }, [advanceStartDate, advanceEndDate, paymentType]);
-
-  // Don't render if modal is not open
   if (!isOpen) return null;
 
-  // ✅ SIMPLIFIED: Check for ANY available loans
   const hasAvailableLoans = availableLoans.length > 0;
   
   if (!hasAvailableLoans) {
@@ -536,7 +585,7 @@ export default function EMIUpdateModal({
           </div>
 
           <form onSubmit={handleSubmit} className="p-6 space-y-6">
-            {/* Loan Selection - Show ALL available loans */}
+            {/* Loan Selection */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Select Loan *
@@ -735,7 +784,7 @@ export default function EMIUpdateModal({
               )}
             </div>
 
-            {/* ✅ FIXED: Payment Date - No max restriction */}
+            {/* ✅ INDUSTRIAL STANDARD: Payment Date with NO restrictions */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Payment Date *
@@ -746,9 +795,10 @@ export default function EMIUpdateModal({
                 onChange={(e) => setPaymentDate(e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 required
+                // NO max attribute - allows any date (past, present, future)
               />
               <p className="text-xs text-gray-500 mt-2">
-                Select any date - past, present, or future
+                Select any date - past (old EMIs), present (today), or future (advance payments)
               </p>
             </div>
 
@@ -898,6 +948,7 @@ export default function EMIUpdateModal({
                     onChange={(e) => setPaymentDate(e.target.value)}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
                     required
+                    // NO max attribute - allows any date
                   />
                   <p className="text-xs text-gray-500 mt-2">
                     Select any date - past, present, or future
