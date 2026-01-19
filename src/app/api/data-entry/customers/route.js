@@ -146,7 +146,7 @@ export async function GET(request) {
       
       // Enhance customers with loan summary
       for (const customer of customers) {
-        const loans = await Loan.find({ customerId: customer._id, status: 'active' });
+        const loans = await Loan.find({ customerId: customer._id, status: { $in: ['active','overdue'] } });
         customer.totalLoans = loans.length;
         customer.totalLoanAmount = loans.reduce((sum, loan) => sum + (loan.amount || 0), 0);
         customer.activeLoan = loans.find(loan => loan.status === 'active');

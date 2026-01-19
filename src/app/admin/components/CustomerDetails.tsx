@@ -9,24 +9,6 @@ interface CustomerDetailsProps {
   onDelete: (customerId: string) => void;
 }
 
-interface EMIPayment {
-  _id: string;
-  paymentDate: string;
-  amount: number;
-  status: string;
-  collectedBy: string;
-  loanId?: string;
-  loanNumber?: string;
-  notes?: string;
-  paymentMethod?: string;
-  paymentType?: 'single' | 'advance';
-  advanceFromDate?: string;
-  advanceToDate?: string;
-  advanceEmiCount?: number;
-  advanceTotalAmount?: number;
-  isAdvancePayment?: boolean;
-}
-
 interface LoanPaymentSummary {
   loanNumber: string;
   loanId: string;
@@ -39,10 +21,11 @@ interface LoanPaymentSummary {
 }
 
 // Extended Customer interface with our enhanced properties
-interface ExtendedCustomer extends Customer {
+interface ExtendedCustomer extends Omit<Customer, 'emiPayments'> {
   loans?: any[];
   phoneArray?: string[];
-  emiPayments?: EMIPayment[];
+  // Use the imported EMIPayment type from Customer type
+  emiPayments?: Customer['emiPayments'];
   loanSummary?: {
     totalLoans: number;
     totalLoanAmount: number;
@@ -59,7 +42,7 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
   const [activeTab, setActiveTab] = useState('details');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedLoanFilter, setSelectedLoanFilter] = useState<string>('all');
-  const [emiPayments, setEmiPayments] = useState<EMIPayment[]>([]);
+  const [emiPayments, setEmiPayments] = useState<Customer['emiPayments']>([]);
   const [loadingPayments, setLoadingPayments] = useState(false);
   const [loanPaymentSummaries, setLoanPaymentSummaries] = useState<LoanPaymentSummary[]>([]);
   const [detailedCustomer, setDetailedCustomer] = useState<ExtendedCustomer | null>(null);
@@ -129,30 +112,35 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
   }, [customer._id]);
 
   // Calculate loan payment summaries
-  const calculateLoanPaymentSummaries = (payments: EMIPayment[], loans: any[]) => {
+  const calculateLoanPaymentSummaries = (payments: Customer['emiPayments'] | undefined, loans: any[]) => {
     const loanMap = new Map<string, LoanPaymentSummary>();
     
-    payments.forEach((payment: EMIPayment) => {
-      const loanKey = payment.loanId || 'unknown';
-      const loanNumber = payment.loanNumber || 'Unknown Loan';
-      
-      if (!loanMap.has(loanKey)) {
-        loanMap.set(loanKey, {
-          loanNumber,
-          loanId: loanKey,
-          totalPaid: 0,
-          paymentCount: 0
-        });
-      }
-      
-      const summary = loanMap.get(loanKey)!;
-      summary.totalPaid += payment.amount;
-      summary.paymentCount++;
-      
-      if (!summary.lastPaymentDate || new Date(payment.paymentDate) > new Date(summary.lastPaymentDate)) {
-        summary.lastPaymentDate = payment.paymentDate;
-      }
-    });
+    // ✅ FIXED: Check if payments exists before iterating
+    if (payments && Array.isArray(payments)) {
+      payments.forEach((payment: any) => {
+        if (!payment) return;
+        
+        const loanKey = payment.loanId || 'unknown';
+        const loanNumber = payment.loanNumber || 'Unknown Loan';
+        
+        if (!loanMap.has(loanKey)) {
+          loanMap.set(loanKey, {
+            loanNumber,
+            loanId: loanKey,
+            totalPaid: 0,
+            paymentCount: 0
+          });
+        }
+        
+        const summary = loanMap.get(loanKey)!;
+        summary.totalPaid += payment.amount || 0;
+        summary.paymentCount++;
+        
+        if (!summary.lastPaymentDate || (payment.paymentDate && new Date(payment.paymentDate) > new Date(summary.lastPaymentDate))) {
+          summary.lastPaymentDate = payment.paymentDate;
+        }
+      });
+    }
     
     // Get loan details from customer data
     loans.forEach(loan => {
@@ -172,10 +160,10 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
   }, [fetchDetailedCustomer]);
 
   useEffect(() => {
-    if (activeTab === 'transaction-history' && emiPayments.length === 0) {
+    if (activeTab === 'transaction-history' && (!emiPayments || emiPayments.length === 0)) {
       fetchEmiPayments();
     }
-  }, [activeTab, emiPayments.length, fetchEmiPayments]);
+  }, [activeTab, emiPayments, fetchEmiPayments]);
 
   const handleDeleteClick = () => {
     setShowDeleteConfirm(true);
@@ -348,22 +336,22 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
   // Filter payments based on selected loan
   const getFilteredPayments = () => {
     if (selectedLoanFilter === 'all') {
-      return emiPayments;
+      return emiPayments || [];
     }
     
     if (selectedLoanFilter === 'unknown') {
-      return emiPayments.filter(payment => !payment.loanId || payment.loanId === 'unknown');
+      return (emiPayments || []).filter(payment => !payment || !payment.loanId || payment.loanId === 'unknown');
     }
     
-    return emiPayments.filter(payment => payment.loanId === selectedLoanFilter);
+    return (emiPayments || []).filter(payment => payment && payment.loanId === selectedLoanFilter);
   };
 
   const filteredPayments = getFilteredPayments();
 
   // Calculate payment statistics
-  const totalPaidAmount = emiPayments.reduce((sum, payment) => sum + payment.amount, 0);
-  const advancePayments = emiPayments.filter(p => p.isAdvancePayment);
-  const singlePayments = emiPayments.filter(p => !p.isAdvancePayment);
+  const totalPaidAmount = (emiPayments || []).reduce((sum, payment) => sum + (payment?.amount || 0), 0);
+  const advancePayments = (emiPayments || []).filter(p => p?.isAdvancePayment);
+  const singlePayments = (emiPayments || []).filter(p => !p?.isAdvancePayment);
 
   // Get customer data for display (use detailed if available)
   const displayCustomer = detailedCustomer || customer;
@@ -773,7 +761,7 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
                 </div>
                 <div>
                   <p className="text-sm text-green-700 font-medium">Total Payments</p>
-                  <p className="text-2xl font-bold text-green-800">{emiPayments.length}</p>
+                  <p className="text-2xl font-bold text-green-800">{emiPayments?.length || 0}</p>
                 </div>
               </div>
             </div>
@@ -824,7 +812,7 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
                   >
                     <span className="text-2xl mb-1">📊</span>
                     <span className="text-sm font-medium">All Loans</span>
-                    <span className="text-xs mt-1">{emiPayments.length} payments</span>
+                    <span className="text-xs mt-1">{(emiPayments || []).length} payments</span>
                   </button>
 
                   {/* Loan-specific Buttons */}
@@ -847,7 +835,7 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
                   ))}
 
                   {/* Unknown Loan Button */}
-                  {emiPayments.some(p => !p.loanId || p.loanId === 'unknown') && (
+                  {(emiPayments || []).some(p => !p?.loanId || p.loanId === 'unknown') && (
                     <button
                       onClick={() => setSelectedLoanFilter('unknown')}
                       className={`flex flex-col items-center justify-center w-24 h-24 rounded-full transition-all duration-300 ${
@@ -859,7 +847,7 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
                       <span className="text-2xl mb-1">❓</span>
                       <span className="text-sm font-medium">Unknown</span>
                       <span className="text-xs mt-1">
-                        {emiPayments.filter(p => !p.loanId || p.loanId === 'unknown').length} payments
+                        {(emiPayments || []).filter(p => !p?.loanId || p.loanId === 'unknown').length} payments
                       </span>
                     </button>
                   )}
@@ -950,34 +938,34 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
                         {filteredPayments.map((payment) => (
-                          <tr key={payment._id} className="hover:bg-gray-50">
+                          <tr key={payment?._id} className="hover:bg-gray-50">
                             <td className="px-4 py-3 whitespace-nowrap">
                               <div className="text-sm font-medium text-gray-900">
-                                {safeFormatDate(payment.paymentDate)}
+                                {payment?.paymentDate ? safeFormatDate(payment.paymentDate) : 'N/A'}
                               </div>
                               <div className="text-xs text-gray-500">
-                                {safeFormatDateTime(payment.paymentDate).split(', ')[1]}
+                                {payment?.paymentDate ? safeFormatDateTime(payment.paymentDate).split(', ')[1] : ''}
                               </div>
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">
                               <span className="text-sm font-semibold text-green-600">
-                                ₹{payment.amount.toLocaleString()}
+                                ₹{(payment?.amount || 0).toLocaleString()}
                               </span>
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                payment.status === 'Paid' ? 'bg-green-100 text-green-800' :
-                                payment.status === 'Partial' ? 'bg-yellow-100 text-yellow-800' :
-                                payment.status === 'Advance' ? 'bg-blue-100 text-blue-800' :
-                                payment.status === 'Due' ? 'bg-orange-100 text-orange-800' :
-                                payment.status === 'Overdue' ? 'bg-red-100 text-red-800' :
+                                payment?.status === 'Paid' ? 'bg-green-100 text-green-800' :
+                                payment?.status === 'Partial' ? 'bg-yellow-100 text-yellow-800' :
+                                payment?.status === 'Advance' ? 'bg-blue-100 text-blue-800' :
+                                payment?.status === 'Due' ? 'bg-orange-100 text-orange-800' :
+                                payment?.status === 'Overdue' ? 'bg-red-100 text-red-800' :
                                 'bg-gray-100 text-gray-800'
                               }`}>
-                                {payment.status}
+                                {payment?.status || 'Unknown'}
                               </span>
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">
-                              {payment.loanNumber ? (
+                              {payment?.loanNumber ? (
                                 <span className="text-sm font-medium text-gray-900">
                                   {payment.loanNumber}
                                 </span>
@@ -986,18 +974,18 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
                               )}
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                              {payment.collectedBy}
+                              {payment?.collectedBy || 'Unknown'}
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">
                               <div className="flex flex-col gap-1">
                                 <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
-                                  payment.paymentType === 'advance'
+                                  payment?.paymentType === 'advance'
                                     ? 'bg-purple-100 text-purple-800'
                                     : 'bg-blue-100 text-blue-800'
                                 }`}>
-                                  {payment.paymentType === 'advance' ? 'Advance' : 'Single'}
+                                  {payment?.paymentType === 'advance' ? 'Advance' : 'Single'}
                                 </span>
-                                {payment.isAdvancePayment && payment.advanceEmiCount && (
+                                {payment?.isAdvancePayment && payment?.advanceEmiCount && (
                                   <span className="text-xs text-gray-600">
                                     {payment.advanceEmiCount} EMI(s)
                                   </span>
@@ -1005,10 +993,10 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
                               </div>
                             </td>
                             <td className="px-4 py-3">
-                              <div className="text-sm text-gray-900 max-w-xs truncate" title={payment.notes}>
-                                {payment.notes || '-'}
+                              <div className="text-sm text-gray-900 max-w-xs truncate" title={payment?.notes}>
+                                {payment?.notes || '-'}
                               </div>
-                              {payment.advanceFromDate && payment.advanceToDate && (
+                              {payment?.advanceFromDate && payment?.advanceToDate && (
                                 <div className="text-xs text-gray-500 mt-1">
                                   {safeFormatDate(payment.advanceFromDate)} to {safeFormatDate(payment.advanceToDate)}
                                 </div>
@@ -1038,14 +1026,14 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
                   <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                     <p className="text-sm font-medium text-gray-600">Total Amount</p>
                     <p className="text-xl font-bold text-gray-900">
-                      ₹{filteredPayments.reduce((sum, p) => sum + p.amount, 0).toLocaleString()}
+                      ₹{filteredPayments.reduce((sum, p) => sum + (p?.amount || 0), 0).toLocaleString()}
                     </p>
                   </div>
                   <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                     <p className="text-sm font-medium text-gray-600">Average Payment</p>
                     <p className="text-xl font-bold text-gray-900">
                       ₹{filteredPayments.length > 0 
-                        ? Math.round(filteredPayments.reduce((sum, p) => sum + p.amount, 0) / filteredPayments.length).toLocaleString()
+                        ? Math.round(filteredPayments.reduce((sum, p) => sum + (p?.amount || 0), 0) / filteredPayments.length).toLocaleString()
                         : '0'}
                     </p>
                   </div>
@@ -1053,7 +1041,7 @@ export default function CustomerDetails({ customer, onBack, onDelete }: Customer
                     <p className="text-sm font-medium text-gray-600">Payment Range</p>
                     <p className="text-xl font-bold text-gray-900">
                       ₹{filteredPayments.length > 0 
-                        ? `${Math.min(...filteredPayments.map(p => p.amount)).toLocaleString()} - ₹${Math.max(...filteredPayments.map(p => p.amount)).toLocaleString()}`
+                        ? `${Math.min(...filteredPayments.map(p => p?.amount || 0)).toLocaleString()} - ₹${Math.max(...filteredPayments.map(p => p?.amount || 0)).toLocaleString()}`
                         : '0'}
                     </p>
                   </div>

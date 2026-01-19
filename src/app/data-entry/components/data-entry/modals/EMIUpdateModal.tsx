@@ -22,14 +22,15 @@ interface PartialPayment {
   paymentDate: string;
 }
 
-// ✅ REMOVED ALL VALIDATION: Show ALL loans except truly completed ones
+// ✅ FIXED: Show ALL loans including overdue - only filter out truly completed or renewed
 const getAvailableLoans = (loans: Loan[]): Loan[] => {
-  console.log('🔍 Available loans:', loans.length);
-  return loans.filter((loan: Loan) => {
-    // Only filter out loans where ALL EMIs are paid (truly completed)
+  console.log('🔍 Available loans check - Input:', loans.length);
+  
+  const availableLoans = loans.filter((loan: Loan) => {
     const emiPaid = loan.emiPaidCount || 0;
     const totalEmi = loan.totalEmiCount || loan.loanDays || 0;
     const isCompleted = emiPaid >= totalEmi;
+    const loanStatus = (loan.status || '').toLowerCase();
     
     console.log('🔍 Loan check:', {
       loanNumber: loan.loanNumber,
@@ -37,14 +38,36 @@ const getAvailableLoans = (loans: Loan[]): Loan[] => {
       emiPaidCount: emiPaid,
       totalEmiCount: totalEmi,
       isCompleted: isCompleted,
-      isRenewed: loan.isRenewed
+      isRenewed: loan.isRenewed,
+      // Add this for debugging
+      loanType: loan.loanType,
+      amount: loan.amount
     });
     
-    // Allow ALL loans except:
+    // 🚨 FIX: Allow overdue loans to pass through
+    // Only exclude:
     // 1. Truly completed loans (all EMIs paid)
     // 2. Renewed loans (they have a new loan)
-    return !isCompleted && !loan.isRenewed;
+    // 3. Loans marked as 'completed' status
+    
+    const shouldExclude = 
+      isCompleted || 
+      loan.isRenewed || 
+      loanStatus === 'completed';
+    
+    console.log(`🔍 ${loan.loanNumber}: Should exclude? ${shouldExclude}`);
+    
+    return !shouldExclude;
   });
+  
+  console.log(`✅ Available loans result: ${availableLoans.length} loans available`);
+  console.log('✅ Available loans list:', availableLoans.map(l => ({
+    loanNumber: l.loanNumber,
+    status: l.status,
+    isRenewed: l.isRenewed
+  })));
+  
+  return availableLoans;
 };
 
 export default function EMIUpdateModal({

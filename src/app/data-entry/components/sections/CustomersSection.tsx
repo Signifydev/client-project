@@ -425,60 +425,63 @@ export default function CustomersSection({
     }
   };
 
-  // ✅ ENHANCED: Handle EMI button click - NO VALIDATION HERE
-  const handleUpdateEMIClick = async (customer: Customer) => {
-    try {
-      const customerId = customer._id || customer.id;
-      if (!customerId) {
-        alert('Customer ID not found');
+ // ✅ COMPLETELY REMOVED VALIDATION: Handle EMI button click - NO VALIDATION AT ALL
+const handleUpdateEMIClick = async (customer: Customer) => {
+  try {
+    const customerId = customer._id || customer.id;
+    if (!customerId) {
+      alert('Customer ID not found');
+      return;
+    }
+
+    console.log('🚀 Starting EMI update process for:', customer.name);
+    console.log('📞 Fetching fresh customer details...');
+    
+    const details = await fetchCustomerDetails(customerId);
+    if (details) {
+      console.log('✅ Customer details fetched successfully:', details.name);
+      
+      // ✅ COMPLETELY REMOVED VALIDATION: Use ALL loans regardless of status
+      const customerLoans = details.loans || [];
+      console.log('📦 Total loans found (no filtering):', customerLoans.length);
+      
+      // 🚨 DEBUG: Show all loans with their status
+      console.log('🔍 ALL LOANS (NO FILTERING):', customerLoans.map(loan => ({
+        loanNumber: loan.loanNumber,
+        status: loan.status,
+        emiPaidCount: loan.emiPaidCount,
+        totalEmiCount: loan.totalEmiCount,
+        isRenewed: loan.isRenewed,
+        isCompleted: (loan.emiPaidCount || 0) >= (loan.totalEmiCount || loan.loanDays || 0)
+      })));
+      
+      if (customerLoans.length === 0) {
+        // Only show alert if there are NO loans at all
+        alert(`❌ No loans found for ${details.name}. Please add a loan first.`);
         return;
       }
-
-      console.log('🚀 Starting EMI update process for:', customer.name);
-      console.log('📞 Fetching fresh customer details...');
       
-      const details = await fetchCustomerDetails(customerId);
-      if (details) {
-        console.log('✅ Customer details fetched successfully:', details.name);
-        
-        // Safely access customer loans
-        const customerLoans = details.loans || [];
-        console.log('📦 Total loans in customer data:', customerLoans.length);
-        
-        // ✅ CHANGED: NO VALIDATION - Send ALL loans to EMIUpdateModal
-        console.log('📊 FINAL RESULT:', {
-          customerName: details.name,
-          totalLoans: customerLoans.length,
-          hasLoans: customerLoans.length > 0
-        });
-        
-        if (customerLoans.length === 0) {
-          // Only show alert if there are NO loans at all
-          alert(`❌ No loans found for ${details.name}. Please add a loan first.`);
-          return;
-        }
-        
-        console.log('🎉 Proceeding with EMI payment...');
-        
-        if (customerLoans.length === 1) {
-          // If only one loan, directly proceed to EMI payment
-          console.log('📤 Calling onUpdateEMI with loan:', customerLoans[0].loanNumber);
-          onUpdateEMI(details, customerLoans[0]);
-        } else {
-          // If multiple loans, show selection modal
-          console.log('📋 Multiple loans found, showing selection modal');
-          setSelectedCustomerForEMI(details);
-          setShowLoanSelection(true);
-        }
+      console.log('🎉 Proceeding with EMI payment (NO VALIDATION)...');
+      
+      if (customerLoans.length === 1) {
+        // If only one loan, directly proceed to EMI payment
+        console.log('📤 Calling onUpdateEMI with loan:', customerLoans[0].loanNumber);
+        onUpdateEMI(details, customerLoans[0]);
       } else {
-        console.error('❌ Failed to fetch customer details');
-        alert('Failed to fetch customer loan details');
+        // If multiple loans, show selection modal
+        console.log('📋 Multiple loans found, showing selection modal');
+        setSelectedCustomerForEMI(details);
+        setShowLoanSelection(true);
       }
-    } catch (error: any) {
-      console.error('❌ Error in handleUpdateEMIClick:', error);
-      alert('Failed to fetch customer details: ' + error.message);
+    } else {
+      console.error('❌ Failed to fetch customer details');
+      alert('Failed to fetch customer loan details');
     }
-  };
+  } catch (error: any) {
+    console.error('❌ Error in handleUpdateEMIClick:', error);
+    alert('Failed to fetch customer details: ' + error.message);
+  }
+};
 
   // Handle EMI Calendar button click
   const handleViewEMICalendarClick = async (customer: Customer) => {

@@ -53,14 +53,16 @@ export const useEMI = (currentUserOffice?: string): UseEMIReturn => {
         
         abortControllerRef.current = new AbortController();
         
-        // FIX: Use const instead of let since url is not reassigned
+        // FIXED: Use properly defined string
         const url = '/api/data-entry/customers';
         const params = new URLSearchParams();
         
-        // Only fetch active customers
-        params.append('status', 'active');
+        // ✅ FIXED: Use properly defined string variable
+        const statusFilterValue = 'active,overdue';
+        params.append('status', statusFilterValue);
         
-        if (currentUserOffice && currentUserOffice !== 'all') {
+        // ✅ FIXED: Check if currentUserOffice is defined before using it
+        if (currentUserOffice && currentUserOffice !== 'all' && currentUserOffice.trim() !== '') {
           params.append('officeCategory', currentUserOffice);
         }
         
@@ -89,17 +91,19 @@ export const useEMI = (currentUserOffice?: string): UseEMIReturn => {
         console.log(`📊 Raw data received: ${data.length} customers`);
         
         // DEBUG: Log customer data to see what fields are available
-        data.slice(0, 5).forEach((customer, index) => {
-          console.log(`Customer ${index + 1}:`, {
-            name: customer.name,
-            customerNumber: customer.customerNumber,
-            loanAmount: customer.loanAmount,
-            emiAmount: customer.emiAmount,
-            totalLoans: customer.totalLoans,
-            totalLoanAmount: customer.totalLoanAmount,
-            status: customer.status
+        if (data.length > 0) {
+          data.slice(0, Math.min(5, data.length)).forEach((customer, index) => {
+            console.log(`Customer ${index + 1}:`, {
+              name: customer.name,
+              customerNumber: customer.customerNumber,
+              loanAmount: customer.loanAmount,
+              emiAmount: customer.emiAmount,
+              totalLoans: customer.totalLoans,
+              totalLoanAmount: customer.totalLoanAmount,
+              status: customer.status
+            });
           });
-        });
+        }
         
         // IMPORTANT: Filter for customers who have active loans
         // Check multiple fields to determine if customer has loans
@@ -111,12 +115,14 @@ export const useEMI = (currentUserOffice?: string): UseEMIReturn => {
             (customer.loanAmount && customer.loanAmount > 0) ||
             (customer.activeLoan !== undefined);
           
-          console.log(`Customer ${customer.name}: hasLoanData = ${hasLoanData}`, {
-            totalLoans: customer.totalLoans,
-            totalLoanAmount: customer.totalLoanAmount,
-            loanAmount: customer.loanAmount,
-            hasActiveLoan: !!customer.activeLoan
-          });
+          if (data.length <= 5) { // Only log for small datasets
+            console.log(`Customer ${customer.name}: hasLoanData = ${hasLoanData}`, {
+              totalLoans: customer.totalLoans,
+              totalLoanAmount: customer.totalLoanAmount,
+              loanAmount: customer.loanAmount,
+              hasActiveLoan: !!customer.activeLoan
+            });
+          }
           
           return hasLoanData;
         });
@@ -169,10 +175,14 @@ export const useEMI = (currentUserOffice?: string): UseEMIReturn => {
     
     const overdueCount = emiCustomers.filter(customer => {
       if (!customer.lastPaymentDate) return false;
-      const diffDays = Math.floor(
-        (new Date().getTime() - new Date(customer.lastPaymentDate).getTime()) / (1000 * 60 * 60 * 24)
-      );
-      return diffDays > 7;
+      try {
+        const diffDays = Math.floor(
+          (new Date().getTime() - new Date(customer.lastPaymentDate).getTime()) / (1000 * 60 * 60 * 24)
+        );
+        return diffDays > 7;
+      } catch {
+        return false;
+      }
     }).length;
     
     // Calculate total active loans (using totalLoans field)
@@ -223,9 +233,12 @@ export const fetchCustomerLoans = async (customerId: string): Promise<Loan[]> =>
     const result = await response.json();
     
     if (result.success && result.data && result.data.loans) {
-      return result.data.loans.filter((loan: Loan) => 
-        loan.status === 'active' || loan.status === 'pending'
-      );
+      // ✅ FIXED: Handle undefined loan.status
+      return result.data.loans.filter((loan: Loan) => {
+        // Check if loan.status exists and is one of the allowed statuses
+        const loanStatus = loan.status || '';
+        return ['active', 'overdue', 'pending'].includes(loanStatus);
+      });
     }
     return [];
   } catch (error) {

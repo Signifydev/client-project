@@ -318,14 +318,20 @@ export async function GET(request, { params }) {
         }
         
         let finalStatus = loan.status || 'active';
-        
-        // Only mark as completed if ALL EMIs are paid
-        if (emiPaidCount >= totalEmiCount) {
-          finalStatus = 'completed';
-        } else {
-          
-          finalStatus = loan.status || 'active';
-        }
+
+// Only mark as completed if ALL EMIs are paid
+if (emiPaidCount >= totalEmiCount) {
+  finalStatus = 'completed';
+} else {
+  // ✅ FIX: Keep the original status if it's overdue, pending, etc.
+  // Don't overwrite 'overdue' with 'active'
+  finalStatus = loan.status || 'active';
+  
+  // If status is empty or undefined but loan has payments, mark as active
+  if (!loan.status && emiPaidCount > 0) {
+    finalStatus = 'active';
+  }
+}
         
         return {
           _id: loan._id,

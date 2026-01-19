@@ -215,10 +215,11 @@ export async function POST(request) {
         );
       }
       
-      // ✅ FIXED: Check if loan is active and can accept payments
       const canAcceptPayment =
   !loan.isRenewed &&
-  loan.emiPaidCount < loan.totalEmiCount;
+  loan.emiPaidCount < loan.totalEmiCount &&
+  (loan.status === 'active' || loan.status === 'overdue');
+
       
       if (!canAcceptPayment) {
         return NextResponse.json(
