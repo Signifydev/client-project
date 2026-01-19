@@ -215,10 +215,10 @@ export async function POST(request) {
         );
       }
       
-      const canAcceptPayment =
+     const canAcceptPayment =
   !loan.isRenewed &&
   loan.emiPaidCount < loan.totalEmiCount &&
-  (loan.status === 'active' || loan.status === 'overdue');
+  loan.status === 'active';
 
       
       if (!canAcceptPayment) {

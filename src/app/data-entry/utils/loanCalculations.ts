@@ -340,7 +340,7 @@ export const getActiveLoans = (loans: Loan[]): Loan[] => {
 
     const isRenewed = loan.isRenewed === true || status === 'renewed';
 
-    const allowedStatus = ['active', 'pending', 'overdue'];
+    const allowedStatus = ['active', 'pending'];
 
     return (
       allowedStatus.includes(status) &&
