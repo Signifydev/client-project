@@ -392,6 +392,31 @@ if (emiPaidCount >= totalEmiCount) {
       })
     };
 
+    // ==============================================
+    // 🚀 ADDED: DEBUG LOGGING TO SEE WHAT'S BEING RETURNED
+    // ==============================================
+    console.log('🚀 API Route - Total loans being returned:', customerWithLoans.loans.length);
+    console.log('🚀 API Route - Loan status breakdown:', {
+      all: customerWithLoans.loans.length,
+      active: customerWithLoans.loans.filter(l => l.status === 'active').length,
+      overdue: customerWithLoans.loans.filter(l => l.status === 'overdue').length,
+      pending: customerWithLoans.loans.filter(l => l.status === 'pending').length,
+      completed: customerWithLoans.loans.filter(l => l.status === 'completed').length,
+      other: customerWithLoans.loans.filter(l => !['active', 'overdue', 'pending', 'completed'].includes(l.status)).length
+    });
+    
+    console.log('🚀 API Route - Detailed loan statuses:', customerWithLoans.loans.map(loan => ({
+      loanNumber: loan.loanNumber,
+      status: loan.status,
+      emiPaidCount: loan.emiPaidCount,
+      totalEmiCount: loan.totalEmiCount,
+      isCompleted: loan.isCompleted,
+      isRenewed: loan.isRenewed,
+      amount: loan.amount,
+      emiAmount: loan.emiAmount
+    })));
+    // ==============================================
+
     // Fetch EMI payments for this customer
     try {
       const emiPayments = await EMIPayment.find({ customerId: id })
