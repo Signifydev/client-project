@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { CustomerDetails, Loan } from '@/src/app/data-entry/types/dataEntry';
-import { formatToDDMMYYYY } from '@/src/app/data-entry/utils/dateCalculations';
 
 interface EMIUpdateModalProps {
   isOpen: boolean;
@@ -21,6 +20,23 @@ interface PartialPayment {
   remainingAmount: number;
   paymentDate: string;
 }
+
+// ✅ Helper function for IST date (UTC+5:30)
+const getLocalISODate = (date?: Date | string): string => {
+  let d: Date;
+  
+  if (date) {
+    d = new Date(date);
+  } else {
+    d = new Date();
+  }
+  
+  // Convert to IST (UTC+5:30)
+  const istOffset = 5.5 * 60 * 60 * 1000; // 5.5 hours in milliseconds
+  const istTime = new Date(d.getTime() + istOffset);
+  
+  return istTime.toISOString().split('T')[0];
+};
 
 // ✅ FIXED: Show ALL loans including overdue - only filter out truly completed or renewed
 const getAvailableLoans = (loans: Loan[]): Loan[] => {
@@ -102,13 +118,13 @@ export default function EMIUpdateModal({
   // ✅ SIMPLIFIED: Use available loans function
   const availableLoans = getAvailableLoans(loans);
 
-  // Initialize form
+  // ✅ FIXED: Initialize form without default date
   useEffect(() => {
     if (isOpen) {
-      const today = new Date().toISOString().split('T')[0];
-      setPaymentDate(today);
-      setAdvanceStartDate(today);
-      setAdvanceEndDate(today);
+      // ✅ REMOVED: Default date setting - let user choose
+      setPaymentDate('');
+      setAdvanceStartDate('');
+      setAdvanceEndDate('');
       
       if (availableLoans.length > 0) {
         setSelectedLoan(availableLoans[0]);
@@ -126,7 +142,7 @@ export default function EMIUpdateModal({
   // Calculate EMI amount for selected loan
   const emiAmount = selectedLoan?.emiAmount || 0;
 
-  // Reset form
+  // ✅ FIXED: Reset form without default date
   const resetForm = () => {
     if (availableLoans.length > 0) {
       setSelectedLoan(availableLoans[0]);
@@ -136,23 +152,28 @@ export default function EMIUpdateModal({
     
     setPaymentType('single');
     setAmount('');
-    setPaymentDate(new Date().toISOString().split('T')[0]);
+    setPaymentDate(''); // ✅ REMOVED: Default today's date
     setCollectedBy('');
     setNotes('');
     setMessage(null);
     setExistingPartial(null);
     setShowCompletionModal(false);
     setCompletionAmount('');
+    setAdvanceStartDate('');
+    setAdvanceEndDate('');
+    setAdvanceEmiCount(0);
+    setAdvanceTotalAmount(0);
   };
 
-  // Check for existing partial payment
+  // ✅ FIXED: Check for existing partial payment without UTC conversion
   const checkForExistingPartial = async (): Promise<PartialPayment | null> => {
     if (!selectedLoan || !paymentDate || parseFloat(amount) >= emiAmount) {
       return null;
     }
 
     try {
-      const formattedDate = new Date(paymentDate).toISOString().split('T')[0];
+      // ✅ FIXED: Use paymentDate as-is (already in YYYY-MM-DD format from date input)
+      const formattedDate = paymentDate;
       
       const response = await fetch(
         `/api/data-entry/emi-payments?loanId=${selectedLoan._id}&date=${formattedDate}&partialOnly=true`
@@ -714,7 +735,7 @@ export default function EMIUpdateModal({
               )}
             </div>
 
-            {/* Payment Date */}
+            {/* ✅ FIXED: Payment Date - No max restriction */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Payment Date *
@@ -725,8 +746,10 @@ export default function EMIUpdateModal({
                 onChange={(e) => setPaymentDate(e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 required
-                max={new Date().toISOString().split('T')[0]}
               />
+              <p className="text-xs text-gray-500 mt-2">
+                Select any date - past, present, or future
+              </p>
             </div>
 
             {/* Collected By */}
@@ -874,9 +897,11 @@ export default function EMIUpdateModal({
                     value={paymentDate}
                     onChange={(e) => setPaymentDate(e.target.value)}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                    max={new Date().toISOString().split('T')[0]}
                     required
                   />
+                  <p className="text-xs text-gray-500 mt-2">
+                    Select any date - past, present, or future
+                  </p>
                 </div>
 
                 {/* New Total Preview */}
