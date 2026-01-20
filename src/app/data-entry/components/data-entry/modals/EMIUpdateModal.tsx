@@ -84,6 +84,7 @@ const generatePaymentDates = (
     return dates;
   }
   
+  // eslint-disable-next-line prefer-const
   let currentDate = new Date(start);
   
   if (loanType === 'Daily') {
