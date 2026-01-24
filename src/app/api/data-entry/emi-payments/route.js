@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import EMIPayment from '@/lib/models/EMIPayment';
 import Loan from '@/lib/models/Loan';
-import SafeSession from '../safeSession';
+import SafeSession from '@/lib/safeSession';
 
 // ============================================================================
 // DATE UTILITY FUNCTIONS (CONSISTENT WITH MODELS)
