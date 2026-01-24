@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import EMIPayment from '@/lib/models/EMIPayment';
 import Loan from '@/lib/models/Loan';
-import SafeSession from '@/lib/safeSession';
+import SafeSession from '../safeSession';
 
 // ============================================================================
 // DATE UTILITY FUNCTIONS (CONSISTENT WITH MODELS)
@@ -143,7 +143,7 @@ export async function GET(request) {
 }
 
 // ============================================================================
-// ✅ 2. CREATE NEW PAYMENT (UPDATED FOR CONSISTENCY WITH MODELS)
+// ✅ 2. CREATE NEW PAYMENT - FIXED FOR PARTIAL PAYMENT SUPPORT
 // ============================================================================
 export async function POST(request) {
   await applyRateLimiting();
@@ -155,7 +155,8 @@ export async function POST(request) {
       loanId: body.loanId,
       amount: body.amount,
       paymentDate: body.paymentDate,
-      collectedBy: body.collectedBy
+      paymentType: body.paymentType,
+      isPartial: body.isPartial
     });
     
     // ✅ ENHANCED VALIDATION
@@ -200,7 +201,6 @@ export async function POST(request) {
     
     await connectDB();
     
-    // ✅ USE EMIPayment.createPayment METHOD FOR CONSISTENCY
     return await SafeSession.withTransaction('Create Payment', async (session) => {
       // 1. Get loan details for validation
       const loan = await Loan.findById(body.loanId).session(session);
@@ -215,12 +215,11 @@ export async function POST(request) {
         );
       }
       
-     const canAcceptPayment =
-  !loan.isRenewed &&
-  loan.emiPaidCount < loan.totalEmiCount &&
-  ['active', 'overdue'].includes(loan.status);
+      const canAcceptPayment =
+        !loan.isRenewed &&
+        loan.emiPaidCount < loan.totalEmiCount &&
+        ['active', 'overdue'].includes(loan.status);
 
-      
       if (!canAcceptPayment) {
         return NextResponse.json(
           { 
@@ -238,10 +237,11 @@ export async function POST(request) {
       }
       
       // 2. Check for duplicate payment on same date
-      const existingPayment = await EMIPayment.checkDuplicate(
-        body.loanId,
-        body.paymentDate
-      ).session(session);
+      const existingPayment = await EMIPayment.findOne({
+        loanId: body.loanId,
+        paymentDate: body.paymentDate,
+        status: { $in: ['Paid', 'Partial', 'Advance'] }
+      }).session(session);
       
       if (existingPayment) {
         // Special handling for partial payment completion
@@ -249,8 +249,8 @@ export async function POST(request) {
           const remaining = existingPayment.partialRemainingAmount || 
                            (existingPayment.originalEmiAmount - existingPayment.amount);
           
-          // If amount matches remaining, complete the partial
-          if (Math.abs(amount - remaining) < 0.01) {
+          // ✅ FIXED: Allow completing partial payments
+          if (amount <= remaining) {
             const completionResult = await completePartialPayment(
               existingPayment._id,
               amount,
@@ -289,15 +289,15 @@ export async function POST(request) {
         }
       }
       
-      // 3. Prepare payment data
+      // 3. ✅ USE UNIFIED CREATE PAYMENT METHOD FOR ALL PAYMENT TYPES
       const paymentData = {
         loanId: body.loanId,
         customerId: loan.customerId,
-        customerName: loan.customerName,
+        customerName: body.customerName || loan.customerName,
         customerNumber: loan.customerNumber,
         loanNumber: loan.loanNumber,
         amount: amount,
-        paymentDate: body.paymentDate, // YYYY-MM-DD string
+        paymentDate: body.paymentDate,
         status: body.status || 'Paid',
         paymentType: body.paymentType || 'single',
         collectedBy: body.collectedBy,
@@ -306,7 +306,8 @@ export async function POST(request) {
         transactionId: body.transactionId
       };
       
-      // 4. ✅ USE EMIPayment.createPayment FOR CONSISTENT LOGIC
+      // 4. ✅ CRITICAL FIX: Use EMIPayment.createPayment for ALL payment types
+      // This method handles partial payments correctly with originalEmiAmount
       const result = await EMIPayment.createPayment(paymentData);
       
       return NextResponse.json({
@@ -526,7 +527,7 @@ export async function DELETE(request) {
 }
 
 // ============================================================================
-// ✅ HELPER FUNCTIONS (UPDATED FOR CONSISTENCY)
+// ✅ HELPER FUNCTIONS (UPDATED FOR PARTIAL PAYMENT SUPPORT)
 // ============================================================================
 
 /**
@@ -653,7 +654,7 @@ async function handleUpdatePayment(paymentId, body) {
 }
 
 /**
- * Handle partial payment completion (uses EMIPayment.completePartialPayment)
+ * Handle partial payment completion
  */
 async function handleCompletePartialPayment(paymentId, body) {
   // Validate required fields

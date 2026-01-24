@@ -19,6 +19,7 @@ interface PartialPayment {
   fullEmiAmount: number;
   remainingAmount: number;
   paymentDate: string;
+  loanNumber: string;
 }
 
 interface LastEMIPayment {
@@ -69,59 +70,6 @@ const formatDate = (dateString: string): string => {
   }
 };
 
-// ✅ NEW: Generate payment dates for advance payment
-const generatePaymentDates = (
-  startDate: string,
-  endDate: string,
-  loanType: string,
-  emiAmount: number
-): { date: string; amount: number }[] => {
-  const dates: { date: string; amount: number }[] = [];
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  
-  if (start > end) {
-    return dates;
-  }
-  
-  // eslint-disable-next-line prefer-const
-  let currentDate = new Date(start);
-  
-  if (loanType === 'Daily') {
-    // Daily payments - one for each day in range
-    while (currentDate <= end) {
-      const dateStr = currentDate.toISOString().split('T')[0];
-      dates.push({
-        date: dateStr,
-        amount: emiAmount
-      });
-      currentDate.setDate(currentDate.getDate() + 1);
-    }
-  } else if (loanType === 'Weekly') {
-    // Weekly payments - one for each week in range
-    while (currentDate <= end) {
-      const dateStr = currentDate.toISOString().split('T')[0];
-      dates.push({
-        date: dateStr,
-        amount: emiAmount
-      });
-      currentDate.setDate(currentDate.getDate() + 7);
-    }
-  } else if (loanType === 'Monthly') {
-    // Monthly payments - one for each month in range
-    while (currentDate <= end) {
-      const dateStr = currentDate.toISOString().split('T')[0];
-      dates.push({
-        date: dateStr,
-        amount: emiAmount
-      });
-      currentDate.setMonth(currentDate.getMonth() + 1);
-    }
-  }
-  
-  return dates;
-};
-
 export default function EMIUpdateModal({
   isOpen,
   onClose,
@@ -145,13 +93,6 @@ export default function EMIUpdateModal({
   const [completionAmount, setCompletionAmount] = useState<string>('');
   const [isCompleting, setIsCompleting] = useState(false);
   
-  // Advance payment state
-  const [advanceStartDate, setAdvanceStartDate] = useState<string>('');
-  const [advanceEndDate, setAdvanceEndDate] = useState<string>('');
-  const [advanceEmiCount, setAdvanceEmiCount] = useState<number>(0);
-  const [advanceTotalAmount, setAdvanceTotalAmount] = useState<number>(0);
-  const [advancePaymentDates, setAdvancePaymentDates] = useState<{ date: string; amount: number }[]>([]);
-  
   // Last EMI paid date state
   const [lastEMIPayment, setLastEMIPayment] = useState<LastEMIPayment | null>(null);
   const [isLoadingLastPayment, setIsLoadingLastPayment] = useState(false);
@@ -168,12 +109,6 @@ export default function EMIUpdateModal({
       if (!paymentDate) {
         setPaymentDate(today);
       }
-      if (!advanceStartDate) {
-        setAdvanceStartDate(today);
-      }
-      if (!advanceEndDate) {
-        setAdvanceEndDate(today);
-      }
       
       // ✅ Only set loan if not already selected
       if (!selectedLoan && availableLoans.length > 0) {
@@ -186,6 +121,19 @@ export default function EMIUpdateModal({
           text: 'All loans are either completed or renewed. Please add a new loan.'
         });
       }
+      
+      // Get current user for collectedBy
+      try {
+        const userData = localStorage.getItem('currentUser');
+        if (userData) {
+          const user = JSON.parse(userData);
+          const operatorName = user.name || user.username || 'Operator';
+          setCollectedBy(operatorName);
+        }
+      } catch (error) {
+        console.error('Error loading user:', error);
+        setCollectedBy('Operator');
+      }
     }
   }, [isOpen]);
 
@@ -195,6 +143,51 @@ export default function EMIUpdateModal({
       setSelectedLoan(availableLoans[0]);
     }
   }, [availableLoans, isOpen, selectedLoan]);
+
+  // Check for existing partial when loan or date changes
+  useEffect(() => {
+    const checkPartial = async () => {
+      if (!selectedLoan || !paymentDate || paymentType !== 'partial') return;
+      
+      try {
+        const formattedDate = paymentDate;
+        const response = await fetch(
+          `/api/data-entry/emi-payments?loanId=${selectedLoan._id}&date=${formattedDate}`
+        );
+
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.data && result.data.length > 0) {
+            const partial = result.data.find((p: any) => p.status === 'Partial');
+            if (partial) {
+              setExistingPartial({
+                _id: partial._id,
+                amount: partial.amount,
+                fullEmiAmount: partial.originalEmiAmount || selectedLoan.emiAmount,
+                remainingAmount: partial.partialRemainingAmount || 
+                               ((partial.originalEmiAmount || selectedLoan.emiAmount) - partial.amount),
+                paymentDate: partial.paymentDate,
+                loanNumber: partial.loanNumber
+              });
+              
+              // Auto-fill completion amount
+              setCompletionAmount((partial.partialRemainingAmount || 
+                ((partial.originalEmiAmount || selectedLoan.emiAmount) - partial.amount)).toString());
+            } else {
+              setExistingPartial(null);
+            }
+          } else {
+            setExistingPartial(null);
+          }
+        }
+      } catch (error) {
+        console.error('Error checking partial:', error);
+        setExistingPartial(null);
+      }
+    };
+
+    checkPartial();
+  }, [selectedLoan, paymentDate, paymentType]);
 
   // Fetch last EMI payment when loan is selected
   useEffect(() => {
@@ -259,125 +252,12 @@ export default function EMIUpdateModal({
     setExistingPartial(null);
     setShowCompletionModal(false);
     setCompletionAmount('');
-    setAdvanceStartDate(today);
-    setAdvanceEndDate(today);
-    setAdvanceEmiCount(0);
-    setAdvanceTotalAmount(0);
-    setAdvancePaymentDates([]);
     setLastEMIPayment(null);
   };
 
-  // ✅ FIXED: Check for existing partial payment
-  const checkForExistingPartial = async (): Promise<PartialPayment | null> => {
-    if (!selectedLoan || !paymentDate || parseFloat(amount) >= emiAmount) {
-      return null;
-    }
-
-    try {
-      const formattedDate = paymentDate;
-      
-      const response = await fetch(
-        `/api/data-entry/emi-payments?loanId=${selectedLoan._id}&date=${formattedDate}&partialOnly=true`
-      );
-
-      if (!response.ok) throw new Error('Failed to check partials');
-
-      const result = await response.json();
-      
-      if (result.success && result.data && result.data.length > 0) {
-        const partial = result.data[0];
-        return {
-          _id: partial._id,
-          amount: partial.amount,
-          fullEmiAmount: partial.fullEmiAmount || emiAmount,
-          remainingAmount: partial.partialRemainingAmount || 
-                          (partial.fullEmiAmount ? partial.fullEmiAmount - partial.amount : emiAmount - partial.amount),
-          paymentDate: partial.paymentDate
-        };
-      }
-      
-      return null;
-    } catch (error) {
-      console.error('Error checking partial:', error);
-      return null;
-    }
-  };
-
-  // ✅ NEW: Handle advance payment submission
-  const handleAdvancePayment = async () => {
-    if (!selectedLoan || !customer) {
-      setMessage({ type: 'error', text: 'Loan or customer information not available' });
-      return;
-    }
-
-    if (advancePaymentDates.length === 0) {
-      setMessage({ type: 'error', text: 'No payment dates calculated for the selected range' });
-      return;
-    }
-
-    setIsSubmitting(true);
-    setMessage(null);
-
-    try {
-      const response = await fetch('/api/data-entry/advance-payments', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          loanId: selectedLoan._id,
-          customerId: customer._id,
-          customerName: customer.name,
-          loanNumber: selectedLoan.loanNumber,
-          fromDate: advanceStartDate,
-          toDate: advanceEndDate,
-          amountPerEmi: emiAmount,
-          collectedBy: collectedBy || 'Operator',
-          notes: notes || `Advance payment from ${formatDate(advanceStartDate)} to ${formatDate(advanceEndDate)}`,
-          paymentType: 'advance'
-        }),
-      });
-
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        setMessage({
-          type: 'success',
-          text: `✅ ${result.payments.length} advance payments created successfully! Total: ₹${result.totalAmount}`
-        });
-        
-        if (onPaymentSuccess) {
-          onPaymentSuccess();
-        }
-        
-        setTimeout(() => {
-          resetForm();
-          onClose();
-        }, 1500);
-      } else {
-        setMessage({
-          type: 'error',
-          text: `❌ Error: ${result.error || 'Failed to create advance payments'}`
-        });
-      }
-    } catch (error: any) {
-      setMessage({
-        type: 'error',
-        text: `❌ Error: ${error.message || 'Network error'}`
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Handle form submission
+  // ✅ FIXED: Handle form submission with proper partial payment handling
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (paymentType === 'advance') {
-      await handleAdvancePayment();
-      return;
-    }
     
     setIsSubmitting(true);
     setMessage(null);
@@ -401,44 +281,29 @@ export default function EMIUpdateModal({
       return;
     }
 
-    // 🚨 SMART DETECTION: Check for existing partial payment
-    if (paymentType === 'single' && paymentAmount < emiAmount) {
-      const existing = await checkForExistingPartial();
-      
-      if (existing) {
-        setExistingPartial(existing);
-        setCompletionAmount(paymentAmount.toString());
-        
-        const shouldComplete = window.confirm(
-          `Found existing partial payment of ₹${existing.amount}.\n\n` +
-          `Do you want to complete it with ₹${paymentAmount}?\n` +
-          `This will make the total ₹${existing.amount + paymentAmount} out of ₹${existing.fullEmiAmount}`
-        );
-        
-        if (shouldComplete) {
-          setShowCompletionModal(true);
-          setIsSubmitting(false);
-          return;
-        } else {
-          setMessage({
-            type: 'warning',
-            text: `There's already a partial payment (₹${existing.amount}). Creating another partial payment for the same date is not recommended.`
-          });
-        }
-      }
-    }
-
-    // ✅ Check if customer exists before using
+    // Check if customer exists before using
     if (!customer || !customer._id) {
       setMessage({ type: 'error', text: 'Customer information not available' });
       setIsSubmitting(false);
       return;
     }
 
-    // ✅ Partial payments don't increment emiPaidCount
-    const isPartialPayment = paymentType === 'partial' || paymentAmount < emiAmount;
+    // 🚨 CRITICAL FIX: Handle partial payments correctly
+    if (paymentType === 'partial' || paymentAmount < emiAmount) {
+      // If there's an existing partial, show completion modal
+      if (existingPartial) {
+        setCompletionAmount(paymentAmount.toString());
+        setShowCompletionModal(true);
+        setIsSubmitting(false);
+        return;
+      }
+      
+      // For new partial payments, use specialized logic
+      return await handlePartialPayment(paymentAmount);
+    }
 
-    // Prepare payment data
+    // ✅ For full payments, continue with existing logic
+    // Prepare payment data for full payment
     const paymentData: any = {
       loanId: selectedLoan._id,
       customerId: customer._id,
@@ -448,27 +313,13 @@ export default function EMIUpdateModal({
       paymentDate: paymentDate,
       collectedBy: collectedBy || 'Operator',
       notes: notes,
-      paymentType: paymentType,
-      isPartialPayment: isPartialPayment,
-      doesNotIncrementCount: isPartialPayment
+      paymentType: 'single',
+      paymentMethod: 'Cash'
     };
 
-    // Set status based on payment type
-    if (paymentType === 'single') {
-      paymentData.status = paymentAmount >= emiAmount ? 'Paid' : 'Partial';
-      if (paymentAmount < emiAmount) {
-        paymentData.isPartial = true;
-        paymentData.fullEmiAmount = emiAmount;
-        paymentData.partialRemainingAmount = emiAmount - paymentAmount;
-      }
-    } else if (paymentType === 'partial') {
-      paymentData.status = 'Partial';
-      paymentData.isPartial = true;
-      paymentData.fullEmiAmount = emiAmount;
-      paymentData.partialRemainingAmount = emiAmount - paymentAmount;
-    }
-
     try {
+      console.log('📤 Submitting payment:', paymentData);
+      
       const response = await fetch('/api/data-entry/emi-payments', {
         method: 'POST',
         headers: {
@@ -482,7 +333,7 @@ export default function EMIUpdateModal({
       if (response.ok && result.success) {
         setMessage({
           type: 'success',
-          text: `✅ Payment recorded successfully! ${result.message}`
+          text: `✅ Payment recorded successfully!`
         });
         
         if (onPaymentSuccess) {
@@ -494,8 +345,16 @@ export default function EMIUpdateModal({
           onClose();
         }, 1500);
       } else {
-        if (result.error === 'PARTIAL_EXISTS') {
-          setExistingPartial(result.existingPartial);
+        // Handle specific error cases
+        if (result.error === 'PARTIAL_PAYMENT_EXISTS') {
+          setExistingPartial({
+            _id: result.data?.partialPaymentId || '',
+            amount: result.data?.paidAmount || 0,
+            fullEmiAmount: result.data?.originalEmiAmount || emiAmount,
+            remainingAmount: result.data?.remainingAmount || (emiAmount - paymentAmount),
+            paymentDate: paymentDate,
+            loanNumber: selectedLoan.loanNumber
+          });
           setShowCompletionModal(true);
         } else if (result.error === 'DUPLICATE_PAYMENT') {
           setMessage({
@@ -519,6 +378,88 @@ export default function EMIUpdateModal({
     }
   };
 
+  // 🚨 CRITICAL: Handle partial payment creation
+  const handlePartialPayment = async (paymentAmount: number) => {
+    if (!selectedLoan || !customer) {
+      setMessage({ type: 'error', text: 'Loan or customer information not available' });
+      setIsSubmitting(false);
+      return;
+    }
+
+    // ✅ FIXED: Use correct partial payment structure
+    const partialPaymentData = {
+      loanId: selectedLoan._id,
+      amount: paymentAmount,
+      paymentDate: paymentDate,
+      collectedBy: collectedBy || 'Operator',
+      customerName: customer.name,
+      notes: notes || `Partial payment: ₹${paymentAmount} of ₹${emiAmount}`,
+      paymentType: 'single', // Let API determine if it's partial
+      paymentMethod: 'Cash'
+    };
+
+    console.log('📤 Sending partial payment data:', partialPaymentData);
+
+    try {
+      const response = await fetch('/api/data-entry/emi-payments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(partialPaymentData),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        const isPartial = result.data?.payment?.status === 'Partial';
+        const messageText = isPartial 
+          ? `✅ Partial payment recorded! ₹${paymentAmount} (Remaining: ₹${emiAmount - paymentAmount})`
+          : `✅ Payment recorded successfully!`;
+        
+        setMessage({
+          type: 'success',
+          text: messageText
+        });
+        
+        if (onPaymentSuccess) {
+          onPaymentSuccess();
+        }
+        
+        setTimeout(() => {
+          resetForm();
+          onClose();
+        }, 1500);
+      } else {
+        // Handle specific error from API
+        if (result.error === 'PARTIAL_PAYMENT_EXISTS') {
+          setExistingPartial({
+            _id: result.data?.partialPaymentId || '',
+            amount: result.data?.paidAmount || 0,
+            fullEmiAmount: result.data?.originalEmiAmount || emiAmount,
+            remainingAmount: result.data?.remainingAmount || (emiAmount - paymentAmount),
+            paymentDate: paymentDate,
+            loanNumber: selectedLoan.loanNumber
+          });
+          setShowCompletionModal(true);
+        } else {
+          setMessage({
+            type: 'error',
+            text: `❌ Failed to record payment: ${result.error || result.message || 'Unknown error'}`
+          });
+        }
+      }
+    } catch (error: any) {
+      console.error('Error creating partial payment:', error);
+      setMessage({
+        type: 'error',
+        text: `❌ Network Error: ${error.message || 'Failed to connect to server'}`
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // Handle partial completion
   const handleCompletePartial = async () => {
     if (!existingPartial || !completionAmount) return;
@@ -526,29 +467,46 @@ export default function EMIUpdateModal({
     setIsCompleting(true);
     setMessage(null);
 
+    const additionalAmount = parseFloat(completionAmount);
+    if (isNaN(additionalAmount) || additionalAmount <= 0) {
+      setMessage({
+        type: 'error',
+        text: 'Please enter a valid amount'
+      });
+      setIsCompleting(false);
+      return;
+    }
+
     try {
-      const response = await fetch(`/api/data-entry/emi-payments/${existingPartial._id}/complete`, {
-        method: 'PATCH',
+      // ✅ FIXED: Use correct completion endpoint structure
+      const completionData = {
+        partialPaymentId: existingPartial._id,
+        additionalAmount: additionalAmount,
+        paymentDate: paymentDate,
+        collectedBy: collectedBy || 'Operator',
+        paymentType: 'partial_completion',
+        notes: notes || `Completion payment for ${customer?.name || 'Customer'}`
+      };
+
+      console.log('📤 Completing partial payment:', completionData);
+      
+      const response = await fetch('/api/data-entry/emi-payments', {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          additionalAmount: parseFloat(completionAmount),
-          paymentDate: paymentDate,
-          collectedBy: collectedBy || 'Operator',
-          notes: `Completion payment for ${customer?.name || 'Customer'}`
-        }),
+        body: JSON.stringify(completionData),
       });
 
       const result = await response.json();
 
       if (response.ok && result.success) {
-        const newTotal = existingPartial.amount + parseFloat(completionAmount);
-        const isComplete = newTotal >= existingPartial.fullEmiAmount;
+        const newTotal = existingPartial.amount + additionalAmount;
+        const isComplete = result.data?.isNowFullyPaid || (newTotal >= existingPartial.fullEmiAmount);
         
         setMessage({
           type: 'success',
-          text: `✅ Partial payment completed! Total: ₹${newTotal} ${isComplete ? '(Fully Paid)' : ''}`
+          text: `✅ Partial payment completed! Total: ₹${newTotal} ${isComplete ? '(Fully Paid, EMI count incremented)' : '(Still Partial)'}`
         });
         
         if (onPaymentSuccess) {
@@ -566,54 +524,36 @@ export default function EMIUpdateModal({
       } else {
         setMessage({
           type: 'error',
-          text: `❌ Failed to complete: ${result.error}`
+          text: `❌ Failed to complete: ${result.error || result.message}`
         });
       }
     } catch (error: any) {
       setMessage({
         type: 'error',
-        text: `❌ Error: ${error.message}`
+        text: `❌ Error: ${error.message || 'Network error'}`
       });
     } finally {
       setIsCompleting(false);
     }
   };
 
-  // Calculate advance payment details
-  const calculateAdvancePayments = () => {
-    if (!selectedLoan || !advanceStartDate || !advanceEndDate) {
-      setAdvanceEmiCount(0);
-      setAdvanceTotalAmount(0);
-      setAdvancePaymentDates([]);
-      return;
+  // Handle payment type change
+  const handlePaymentTypeChange = (type: PaymentType) => {
+    setPaymentType(type);
+    setMessage(null);
+    
+    // Reset amount when switching types
+    if (type === 'single' && selectedLoan) {
+      setAmount(emiAmount.toString());
+    } else {
+      setAmount('');
     }
     
-    const start = new Date(advanceStartDate);
-    const end = new Date(advanceEndDate);
-    
-    if (start > end) {
-      setMessage({ type: 'error', text: 'Start date must be before end date' });
-      setAdvanceEmiCount(0);
-      setAdvanceTotalAmount(0);
-      setAdvancePaymentDates([]);
-      return;
+    // Clear existing partial when changing type
+    if (type !== 'partial') {
+      setExistingPartial(null);
     }
-    
-    // Generate payment dates based on loan type
-    const dates = generatePaymentDates(advanceStartDate, advanceEndDate, selectedLoan.loanType, emiAmount);
-    
-    setAdvancePaymentDates(dates);
-    setAdvanceEmiCount(dates.length);
-    setAdvanceTotalAmount(dates.length * emiAmount);
-    setAmount((dates.length * emiAmount).toString());
   };
-
-  // Handle advance date changes
-  useEffect(() => {
-    if (paymentType === 'advance' && advanceStartDate && advanceEndDate && selectedLoan) {
-      calculateAdvancePayments();
-    }
-  }, [advanceStartDate, advanceEndDate, paymentType, selectedLoan]);
 
   // Don't render if modal is not open
   if (!isOpen) return null;
@@ -742,6 +682,25 @@ export default function EMIUpdateModal({
                   </div>
                 </div>
                 
+                {/* Existing Partial Warning */}
+                {existingPartial && paymentType === 'partial' && (
+                  <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                    <div className="flex items-center text-yellow-700">
+                      <span className="mr-2">⚠️</span>
+                      <span className="text-sm">
+                        Partial payment exists (₹{existingPartial.amount} paid, ₹{existingPartial.remainingAmount} remaining)
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowCompletionModal(true)}
+                      className="mt-2 text-xs bg-yellow-100 text-yellow-800 px-3 py-1 rounded hover:bg-yellow-200"
+                    >
+                      Complete this partial
+                    </button>
+                  </div>
+                )}
+                
                 {/* Last EMI Paid Date Information */}
                 <div className="mt-3 p-3 bg-white border border-blue-100 rounded">
                   <div className="flex items-center justify-between">
@@ -772,26 +731,6 @@ export default function EMIUpdateModal({
                     )}
                   </div>
                 </div>
-                
-                {/* Loan Progress Bar */}
-                <div className="mt-3">
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-blue-700">Progress</span>
-                    <span className="text-blue-900">
-                      {selectedLoan.totalEmiCount ? 
-                        Math.round(((selectedLoan.emiPaidCount || 0) / selectedLoan.totalEmiCount) * 100) : 0}%
-                    </span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-blue-100">
-                    <div 
-                      className="h-2 rounded-full bg-blue-600 transition-all duration-300"
-                      style={{ 
-                        width: `${selectedLoan.totalEmiCount ? 
-                          Math.min(((selectedLoan.emiPaidCount || 0) / selectedLoan.totalEmiCount) * 100, 100) : 0}%` 
-                      }}
-                    ></div>
-                  </div>
-                </div>
               </div>
             )}
 
@@ -803,19 +742,19 @@ export default function EMIUpdateModal({
               <div className="grid grid-cols-3 gap-3">
                 <button
                   type="button"
-                  onClick={() => setPaymentType('single')}
+                  onClick={() => handlePaymentTypeChange('single')}
                   className={`py-3 rounded-lg border-2 text-center ${
                     paymentType === 'single'
                       ? 'border-blue-500 bg-blue-50 text-blue-700'
                       : 'border-gray-200 text-gray-700 hover:border-gray-300'
                   }`}
                 >
-                  <div className="font-medium">Single EMI</div>
-                  <div className="text-xs mt-1">One payment</div>
+                  <div className="font-medium">Full EMI</div>
+                  <div className="text-xs mt-1">Pay full amount</div>
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPaymentType('partial')}
+                  onClick={() => handlePaymentTypeChange('partial')}
                   className={`py-3 rounded-lg border-2 text-center ${
                     paymentType === 'partial'
                       ? 'border-blue-500 bg-blue-50 text-blue-700'
@@ -823,11 +762,11 @@ export default function EMIUpdateModal({
                   }`}
                 >
                   <div className="font-medium">Partial</div>
-                  <div className="text-xs mt-1">Less than EMI</div>
+                  <div className="text-xs mt-1">Pay less than EMI</div>
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPaymentType('advance')}
+                  onClick={() => handlePaymentTypeChange('advance')}
                   className={`py-3 rounded-lg border-2 text-center ${
                     paymentType === 'advance'
                       ? 'border-blue-500 bg-blue-50 text-blue-700'
@@ -840,76 +779,7 @@ export default function EMIUpdateModal({
               </div>
             </div>
 
-            {/* Advance Payment Fields */}
-            {paymentType === 'advance' && selectedLoan && (
-              <div className="p-4 bg-green-50 border border-green-200 rounded-lg space-y-4">
-                <h4 className="font-medium text-green-900">Advance Payment Details</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Start Date
-                    </label>
-                    <input
-                      type="date"
-                      value={advanceStartDate}
-                      onChange={(e) => setAdvanceStartDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      End Date
-                    </label>
-                    <input
-                      type="date"
-                      value={advanceEndDate}
-                      onChange={(e) => setAdvanceEndDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                      required
-                    />
-                  </div>
-                </div>
-                
-                {/* Payment Dates Preview */}
-                {advancePaymentDates.length > 0 && (
-                  <div className="mt-4">
-                    <div className="flex justify-between items-center mb-2">
-                      <p className="text-sm font-medium text-green-900">
-                        {advancePaymentDates.length} Payments Will Be Created:
-                      </p>
-                      <span className="font-bold text-green-900 text-xl">
-                        ₹{advanceTotalAmount}
-                      </span>
-                    </div>
-                    
-                    <div className="max-h-40 overflow-y-auto border border-green-200 rounded-md p-3 bg-white">
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div className="font-medium text-green-800">Date</div>
-                        <div className="font-medium text-green-800 text-right">Amount</div>
-                        
-                        {advancePaymentDates.map((payment, index) => (
-                          <>
-                            <div key={`date-${index}`} className="text-gray-700">
-                              {formatDate(payment.date)}
-                            </div>
-                            <div key={`amount-${index}`} className="text-green-900 text-right font-medium">
-                              ₹{payment.amount}
-                            </div>
-                          </>
-                        ))}
-                      </div>
-                    </div>
-                    
-                    <p className="text-xs text-green-700 mt-2">
-                      Each payment will be recorded separately as an individual EMI.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Payment Amount - Hidden for Advance Payment */}
+            {/* Payment Amount */}
             {paymentType !== 'advance' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -924,7 +794,7 @@ export default function EMIUpdateModal({
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Enter amount"
+                    placeholder={paymentType === 'partial' ? 'Enter partial amount' : 'Enter amount'}
                     step="0.01"
                     min="0"
                     required
@@ -932,18 +802,24 @@ export default function EMIUpdateModal({
                 </div>
                 {selectedLoan && (
                   <p className="text-xs text-gray-500 mt-2">
-                    Full EMI amount: ₹{emiAmount}
-                    {parseFloat(amount) < emiAmount && parseFloat(amount) > 0 && (
-                      <span className="text-yellow-600 ml-2">
-                        Remaining: ₹{emiAmount - parseFloat(amount)}
-                      </span>
+                    {paymentType === 'partial' ? (
+                      <>
+                        Full EMI amount: ₹{emiAmount}
+                        {parseFloat(amount) < emiAmount && parseFloat(amount) > 0 && (
+                          <span className="text-yellow-600 ml-2">
+                            Remaining: ₹{emiAmount - parseFloat(amount)}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      `Full EMI amount: ₹${emiAmount}`
                     )}
                   </p>
                 )}
               </div>
             )}
 
-            {/* Payment Date - Hidden for Advance Payment */}
+            {/* Payment Date */}
             {paymentType !== 'advance' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1023,16 +899,14 @@ export default function EMIUpdateModal({
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting || (paymentType === 'advance' && advancePaymentDates.length === 0)}
+                disabled={isSubmitting}
                 className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center"
               >
                 {isSubmitting ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    {paymentType === 'advance' ? 'Creating Payments...' : 'Processing...'}
+                    Processing...
                   </>
-                ) : paymentType === 'advance' ? (
-                  `Create ${advancePaymentDates.length} Payments`
                 ) : (
                   'Record Payment'
                 )}
@@ -1042,7 +916,7 @@ export default function EMIUpdateModal({
         </div>
       </div>
 
-      {/* Partial Completion Modal (unchanged) */}
+      {/* Partial Completion Modal */}
       {showCompletionModal && existingPartial && (
         <div className="fixed inset-0 bg-black bg-opacity-70 z-[60] flex items-center justify-center p-4">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
@@ -1088,7 +962,7 @@ export default function EMIUpdateModal({
                       value={completionAmount}
                       onChange={(e) => setCompletionAmount(e.target.value)}
                       className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                      placeholder="Enter amount"
+                      placeholder={`Enter amount (max: ₹${existingPartial.remainingAmount})`}
                       step="0.01"
                       min="0"
                       max={existingPartial.remainingAmount}
@@ -1111,9 +985,6 @@ export default function EMIUpdateModal({
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
                     required
                   />
-                  <p className="text-xs text-gray-500 mt-2">
-                    Select any date - past, present, or future
-                  </p>
                 </div>
 
                 {/* New Total Preview */}
