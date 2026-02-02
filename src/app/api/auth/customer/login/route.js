@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { connectDB } from "@/lib/db";
-import Customer from "@/models/Customer";
+import Customer from '@/lib/models/Customer';
 import { generateOTP, hashOTP } from "@/lib/otp";
 
 export async function POST(req) {

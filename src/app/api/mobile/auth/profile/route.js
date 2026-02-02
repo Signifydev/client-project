@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import { connectDB } from '@/lib/db';
-import Customer from '@/models/Customer';
-import Loan from '@/models/Loan';
+import Customer from '@/lib/models/Customer';
+import Loan from '@/lib/models/Loan';
 
 export async function GET(req) {
   try {
