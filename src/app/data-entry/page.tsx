@@ -12,6 +12,7 @@ const CustomersSection = lazy(() => import('@/src/app/data-entry/components/sect
 const EMISection = lazy(() => import('@/src/app/data-entry/components/sections/EMISection'));
 const CollectionSection = lazy(() => import('@/src/app/data-entry/components/sections/CollectionSection'));
 const RequestsSection = lazy(() => import('@/src/app/data-entry/components/sections/RequestsSection'));
+const TeamManagementSection = lazy(() => import('@/src/app/data-entry/components/sections/TeamManagementSection'));
 
 // Import modal components with lazy loading
 import AddCustomerModal from '@/src/app/data-entry/components/data-entry/modals/AddCustomerModal';
@@ -24,6 +25,7 @@ const EMICalendarModal = lazy(() => import('@/src/app/data-entry/components/data
 const CustomerDetailsModal = lazy(() => import('@/src/app/data-entry/components/data-entry/modals/CustomerDetailsModal'));
 const DeleteConfirmationModal = lazy(() => import('@/src/app/data-entry/components/data-entry/modals/DeleteConfirmationModal'));
 const EMITransactionsModal = lazy(() => import('@/src/app/data-entry/components/data-entry/modals/EMITransactionsModal'));
+const TeamMemberAssignmentModal = lazy(() => import('@/src/app/data-entry/components/data-entry/modals/TeamMemberAssignmentModal'));
 
 // Import types
 import type {
@@ -32,7 +34,8 @@ import type {
   CustomerDetails,
   EditCustomerData,
   EditLoanData,
-  RenewLoanData
+  RenewLoanData,
+  TeamMember
 } from '@/src/app/data-entry/types/dataEntry';
 
 // Import cache clearing function
@@ -67,6 +70,8 @@ export default function DataEntryDashboard() {
   const [showEMICalendar, setShowEMICalendar] = useState(false);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [showEMITransactions, setShowEMITransactions] = useState(false);
+  // ✅ NEW: Team Management Modal
+  const [showTeamMemberAssignment, setShowTeamMemberAssignment] = useState(false);
   
   // Data states for modals
   const [customerDetails, setCustomerDetails] = useState<CustomerDetails | null>(null);
@@ -80,6 +85,9 @@ export default function DataEntryDashboard() {
   const [selectedLoanForPayment, setSelectedLoanForPayment] = useState<Loan | null>(null);
   const [customerTransactions, setCustomerTransactions] = useState<any[]>([]);
   const [customerExistingLoans, setCustomerExistingLoans] = useState<Loan[]>([]);
+  // ✅ NEW: Team Management Data States
+  const [selectedTeamMember, setSelectedTeamMember] = useState<TeamMember | null>(null);
+  const [teamManagementCustomers, setTeamManagementCustomers] = useState<Customer[]>([]);
   
   // Global states
   const [currentUserOffice, setCurrentUserOffice] = useState<string>('Office 1');
@@ -87,6 +95,7 @@ export default function DataEntryDashboard() {
     id: string;
     name: string;
     fullName: string;
+    permissions?: 'only_data_entry' | 'data_entry_plus_team'; // NEW: Permissions field
   }>({
     id: '',
     name: '',
@@ -140,6 +149,12 @@ export default function DataEntryDashboard() {
         setShowDeleteConfirmation(false);
         setDeleteLoanData(null);
         break;
+      case 'teamMemberAssignment':
+        // ✅ NEW: Team Management Modal
+        setShowTeamMemberAssignment(false);
+        setSelectedTeamMember(null);
+        setTeamManagementCustomers([]);
+        break;
     }
   }, []);
 
@@ -155,6 +170,7 @@ export default function DataEntryDashboard() {
     setShowEMICalendar(false);
     setShowDeleteConfirmation(false);
     setShowEMITransactions(false);
+    setShowTeamMemberAssignment(false); // ✅ NEW
     
     // Clear modal data
     setCustomerDetails(null);
@@ -168,6 +184,9 @@ export default function DataEntryDashboard() {
     setSelectedLoanForPayment(null);
     setCustomerTransactions([]);
     setCustomerExistingLoans([]);
+    // ✅ NEW: Clear team management data
+    setSelectedTeamMember(null);
+    setTeamManagementCustomers([]);
   }, []);
 
   // Initialize user
@@ -203,7 +222,8 @@ export default function DataEntryDashboard() {
           setCurrentOperator({
             id: operatorId,
             name: operatorName,
-            fullName: operatorFullName
+            fullName: operatorFullName,
+            permissions: currentUser.permissions || 'only_data_entry' // NEW: Get permissions from user data
           });
           
         } catch (error) {
@@ -212,7 +232,8 @@ export default function DataEntryDashboard() {
           setCurrentOperator({
             id: 'operator_1',
             name: 'Operator',
-            fullName: 'operator_1 - Operator (Data Entry Operator)'
+            fullName: 'operator_1 - Operator (Data Entry Operator)',
+            permissions: 'only_data_entry' // NEW: Default permission
           });
         }
       } else {
@@ -221,7 +242,8 @@ export default function DataEntryDashboard() {
         setCurrentOperator({
           id: 'operator_1',
           name: 'Operator',
-          fullName: 'operator_1 - Operator (Data Entry Operator)'
+          fullName: 'operator_1 - Operator (Data Entry Operator)',
+          permissions: 'only_data_entry' // NEW: Default permission
         });
       }
     };
@@ -414,8 +436,9 @@ export default function DataEntryDashboard() {
       loans: 'loans' in customer ? (customer.loans || []) : [],
       _id: customer._id,
       name: customer.name,
+      status: (customer as any).status || 'active', // ADD THIS LINE
       createdAt: (customer as any).createdAt || new Date().toISOString(), // ✅ FIXED: Use type assertion
-      updatedAt: (customer as any).updatedAt || new Date().toISOString() // ✅ FIXED: Use type assertion
+      
     };
     
     setSelectedCustomer(customerForModal);
@@ -567,6 +590,29 @@ export default function DataEntryDashboard() {
     setShowAddCustomer(true);
   }, []);
 
+  // ✅ NEW: Handle Manage Team Member
+  const handleManageTeamMember = useCallback(async (teamMember: TeamMember) => {
+    console.log('👥 Managing team member:', teamMember.name);
+    
+    try {
+      // Fetch customers for this office category
+      const response = await fetch(`/api/data-entry/customers?officeCategory=${currentUserOffice}&includeTeamAssignment=true`);
+      const data = await response.json();
+      
+      if (data.success) {
+        setTeamManagementCustomers(data.data);
+        setSelectedTeamMember(teamMember);
+        setShowTeamMemberAssignment(true);
+      } else {
+        console.error('Error fetching customers for team management:', data.error);
+        alert('Error loading customer data for team management');
+      }
+    } catch (error) {
+      console.error('Error in team management:', error);
+      alert('Error loading team management data');
+    }
+  }, [currentUserOffice]);
+
   // ✅ FIXED: Handle modal success
   const handleModalSuccess = useCallback((callback?: () => void) => {
     console.log('✅ Modal action successful, refreshing data...');
@@ -603,6 +649,86 @@ export default function DataEntryDashboard() {
       fetchUpdatedCustomer();
     }
   }, [handleRefresh, closeAllModals, customerDetails]);
+
+  // ✅ NEW: Handle team member assignment
+  const handleAssignCustomers = useCallback(async (customerIds: string[], teamMemberNumber: string) => {
+    try {
+      console.log('🔗 Assigning customers:', customerIds.length, 'to team member:', teamMemberNumber);
+      
+      const response = await fetch('/api/data-entry/customers/assign-team', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          customerIds,
+          teamMemberNumber,
+          assignedBy: currentOperator.id,
+          assignedByOffice: currentUserOffice,
+          notes: `Assigned by ${currentOperator.name}`
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        console.log('✅ Assignment successful:', data.data.assignedCount, 'customers assigned');
+        alert(`Successfully assigned ${data.data.assignedCount} customer(s) to team member ${teamMemberNumber}`);
+        
+        // Refresh data
+        handleRefresh();
+        
+        return { success: true, data: data.data };
+      } else {
+        console.error('❌ Assignment failed:', data.error);
+        alert(`Failed to assign customers: ${data.error || 'Unknown error'}`);
+        return { success: false, error: data.error };
+      }
+    } catch (error: any) {
+      console.error('❌ Error assigning customers:', error);
+      alert(`Error assigning customers: ${error.message || 'Unknown error'}`);
+      return { success: false, error: error.message };
+    }
+  }, [currentUserOffice, currentOperator, handleRefresh]);
+
+  // ✅ NEW: Handle remove team assignment
+  const handleRemoveAssignment = useCallback(async (customerIds: string[]) => {
+    try {
+      console.log('🗑️ Removing assignment from:', customerIds.length, 'customers');
+      
+      const response = await fetch('/api/data-entry/customers/remove-team-assignment', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          customerIds,
+          removedBy: currentOperator.id,
+          notes: `Removed by ${currentOperator.name}`
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        console.log('✅ Removal successful:', data.data.removedCount, 'customers updated');
+        alert(`Successfully removed assignment from ${data.data.removedCount} customer(s)`);
+        
+        // Refresh data
+        handleRefresh();
+        
+        return { success: true, data: data.data };
+      } else {
+        console.error('❌ Removal failed:', data.error);
+        alert(`Failed to remove assignment: ${data.error || 'Unknown error'}`);
+        return { success: false, error: data.error };
+      }
+    } catch (error: any) {
+      console.error('❌ Error removing assignment:', error);
+      alert(`Error removing assignment: ${error.message || 'Unknown error'}`);
+      return { success: false, error: error.message };
+    }
+  }, [currentOperator, handleRefresh]);
 
   // Function to handle actual loan deletion after confirmation
   const handleConfirmDeleteLoan = useCallback(async () => {
@@ -707,6 +833,24 @@ export default function DataEntryDashboard() {
     handleShowUpdateEMI();
   }, [handleShowUpdateEMI]);
 
+  // Define tabs based on user permissions
+  const getTabs = useCallback(() => {
+    const baseTabs = [
+      { id: 'dashboard', label: 'Dashboard' },
+      { id: 'customers', label: 'Customers' },
+      { id: 'emi', label: 'EMI' },
+      { id: 'collection', label: 'Collection' },
+      { id: 'requests', label: 'Requests' }
+    ];
+    
+    // Add Team Management tab only if user has 'data_entry_plus_team' permissions
+    if (currentOperator.permissions === 'data_entry_plus_team') {
+      baseTabs.push({ id: 'team-management', label: 'Team Management' });
+    }
+    
+    return baseTabs;
+  }, [currentOperator.permissions]);
+
   // Render current tab with Suspense
   const renderCurrentTab = useCallback(() => {
     console.log('🎨 Rendering tab:', activeTab);
@@ -773,6 +917,17 @@ export default function DataEntryDashboard() {
             />
           </Suspense>
         );
+      case 'team-management':
+        return (
+          <Suspense fallback={<SectionLoader />}>
+            <TeamManagementSection
+              currentUserOffice={currentUserOffice}
+              currentOperator={currentOperator}
+              refreshKey={refreshKey}
+              onManageTeamMember={handleManageTeamMember}
+            />
+          </Suspense>
+        );
       default:
         return (
           <div className="p-8 text-center">
@@ -796,7 +951,8 @@ export default function DataEntryDashboard() {
     handleViewEMICalendar,
     handleShowAddCustomerFromCustomers,
     handleRefresh,
-    handleShowUpdateEMIForCollection
+    handleShowUpdateEMIForCollection,
+    handleManageTeamMember
   ]);
 
   // Function to render tab-specific header
@@ -810,13 +966,14 @@ export default function DataEntryDashboard() {
         <div className="mb-4 flex justify-between items-center">
           <div>
             <h2 className="text-lg font-semibold text-gray-800 capitalize">
-              {activeTab} Management
+              {activeTab === 'team-management' ? 'Team Management' : activeTab} Management
             </h2>
             <p className="text-sm text-gray-600">
               {activeTab === 'customers' ? 'Manage customer records and information' :
               activeTab === 'emi' ? 'Handle EMI payments and schedules' :
               activeTab === 'collection' ? 'Track collections and payments' :
               activeTab === 'requests' ? 'Review your submitted requests' :
+              activeTab === 'team-management' ? 'Manage Recovery Team members and customer assignments' :
               'Overview of data entry operations'}
             </p>
           </div>
@@ -830,6 +987,9 @@ export default function DataEntryDashboard() {
       );
     }
   };
+
+  // Get current tabs based on permissions
+  const tabs = getTabs();
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -851,6 +1011,18 @@ export default function DataEntryDashboard() {
               <span className="ml-4 text-lg font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-lg">
                 {currentUserOffice}
               </span>
+              {/* Permission Indicator */}
+              {currentOperator.permissions && (
+                <span className={`ml-2 text-sm font-medium px-2 py-1 rounded ${
+                  currentOperator.permissions === 'data_entry_plus_team' 
+                    ? 'bg-purple-100 text-purple-800' 
+                    : 'bg-green-100 text-green-800'
+                }`}>
+                  {currentOperator.permissions === 'data_entry_plus_team' 
+                    ? 'Data Entry + Team' 
+                    : 'Only Data Entry'}
+                </span>
+              )}
             </div>
             <div className="flex items-center space-x-4">
               <div className="text-gray-700 bg-gray-100 px-3 py-1 rounded-md">
@@ -900,13 +1072,7 @@ export default function DataEntryDashboard() {
       <div className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <nav className="flex space-x-8 overflow-x-auto">
-            {[
-              { id: 'dashboard', label: 'Dashboard' },
-              { id: 'customers', label: 'Customers' },
-              { id: 'emi', label: 'EMI' },
-              { id: 'collection', label: 'Collection' },
-              { id: 'requests', label: 'Requests' }
-            ].map((tab) => (
+            {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => handleTabChange(tab.id)}
@@ -1078,6 +1244,24 @@ export default function DataEntryDashboard() {
         </div>
       )}
 
+      {/* ✅ NEW: Team Member Assignment Modal */}
+      {showTeamMemberAssignment && selectedTeamMember && (
+        <div className="z-[190]">
+          <Suspense fallback={<ModalLoader />}>
+            <TeamMemberAssignmentModal
+              isOpen={showTeamMemberAssignment}
+              onClose={() => closeModal('teamMemberAssignment')}
+              teamMember={selectedTeamMember}
+              customers={teamManagementCustomers}
+              currentUserOffice={currentUserOffice}
+              currentOperator={currentOperator}
+              onAssignCustomers={handleAssignCustomers}
+              onRemoveAssignment={handleRemoveAssignment}
+            />
+          </Suspense>
+        </div>
+      )}
+
       {/* Delete Confirmation Modal - HIGHEST PRIORITY */}
       {showDeleteConfirmation && deleteLoanData && (
         <div className="z-[9999]">
@@ -1099,6 +1283,7 @@ export default function DataEntryDashboard() {
       <div className="fixed bottom-4 right-4 bg-black bg-opacity-80 text-white text-xs p-2 rounded-md z-50 hidden md:block">
         <div>Office: {currentUserOffice}</div>
         <div>Operator: {currentOperator.name}</div>
+        <div>Permissions: {currentOperator.permissions || 'only_data_entry'}</div>
         <div>Tab: {activeTab}</div>
         <div>Modals: {[
           showCustomerDetails && 'Customer Details',
@@ -1110,6 +1295,7 @@ export default function DataEntryDashboard() {
           showUpdateEMI && 'Update EMI',
           showEMICalendar && 'EMI Calendar',
           showEMITransactions && 'EMI Transactions',
+          showTeamMemberAssignment && 'Team Assignment',
           showDeleteConfirmation && 'Delete Confirmation'
         ].filter(Boolean).join(', ')}</div>
         <div className="text-green-400">🟢 Connected</div>

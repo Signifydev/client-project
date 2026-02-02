@@ -45,8 +45,8 @@ export interface Customer {
     } | string;
   };
   additionalLoans?: any[];
-  loans?: any[]; // NEW: For enhanced loan data
-  phoneArray?: string[]; // NEW: For phone number array
+  loans?: any[];
+  phoneArray?: string[];
   profilePicture?: string | {
     filename?: string;
     url?: string;
@@ -59,7 +59,6 @@ export interface Customer {
   createdAt?: string;
   updatedAt?: string;
   
-  // NEW: Loan summary fields from enhanced API
   loanSummary?: {
     totalLoans: number;
     totalLoanAmount: number;
@@ -71,7 +70,6 @@ export interface Customer {
     renewedLoans: number;
   };
   
-  // NEW: EMI payments for transaction history
   emiPayments?: EMIPayment[];
 }
 
@@ -83,10 +81,12 @@ export interface TeamMember {
   whatsappNumber?: string;
   address?: string;
   officeCategory?: string;
-  operatorNumber?: string;
+  operatorNumber?: string; // For Data Entry Operators
+  teamMemberNumber?: string; // For Recovery Team
   status: 'active' | 'inactive';
   loginId: string;
   password?: string;
+  permissions?: 'only_data_entry' | 'data_entry_plus_team'; // NEW: Permission field
   joinDate?: string;
   updatedAt?: string;
 }
@@ -139,7 +139,6 @@ export interface CollectionData {
   };
 }
 
-// EMI Payment Interface
 export interface EMIPayment {
   _id: string;
   customerId: string;
@@ -166,7 +165,6 @@ export interface EMIPayment {
   updatedAt: string;
 }
 
-// Loan Interface
 export interface Loan {
   _id: string;
   loanId?: string;
@@ -200,7 +198,6 @@ export interface Loan {
   updatedAt: string;
 }
 
-// EMI History Interface
 export interface EMIHistory {
   paymentDate: string;
   amount: number;
@@ -218,7 +215,6 @@ export interface EMIHistory {
   createdAt: string;
 }
 
-// Loan Payment Summary Interface
 export interface LoanPaymentSummary {
   loanNumber: string;
   loanId: string;
@@ -230,7 +226,6 @@ export interface LoanPaymentSummary {
   loanType?: string;
 }
 
-// API Response Interface
 export interface ApiResponse<T = any> {
   success: boolean;
   data?: T;
@@ -238,7 +233,6 @@ export interface ApiResponse<T = any> {
   message?: string;
 }
 
-// EMI Payments API Response
 export interface EMIPaymentsResponse {
   payments: EMIPayment[];
   statistics: {
@@ -253,7 +247,6 @@ export interface EMIPaymentsResponse {
   };
 }
 
-// Customer Loan Summary
 export interface CustomerLoanSummary {
   totalLoans: number;
   totalLoanAmount: number;
@@ -265,7 +258,6 @@ export interface CustomerLoanSummary {
   renewedLoans: number;
 }
 
-// Search Filters
 export interface SearchFilters {
   searchTerm?: string;
   customerNumber?: string;
@@ -277,7 +269,6 @@ export interface SearchFilters {
   endDate?: string;
 }
 
-// Pagination
 export interface Pagination {
   page: number;
   limit: number;
@@ -285,13 +276,11 @@ export interface Pagination {
   totalPages: number;
 }
 
-// Paginated Response
 export interface PaginatedResponse<T = any> {
   data: T[];
   pagination: Pagination;
 }
 
-// Notification
 export interface Notification {
   id: string;
   type: 'payment' | 'request' | 'system' | 'warning';
@@ -302,7 +291,6 @@ export interface Notification {
   data?: any;
 }
 
-// Document
 export interface Document {
   id: string;
   type: 'shop_fi' | 'home_fi' | 'aadhar' | 'pan' | 'other';
@@ -313,7 +301,6 @@ export interface Document {
   verified: boolean;
 }
 
-// Loan Renewal Data
 export interface LoanRenewalData {
   originalLoanId: string;
   newLoanAmount: number;

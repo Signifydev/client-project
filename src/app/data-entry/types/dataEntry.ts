@@ -43,6 +43,9 @@ export interface Customer {
   formattedDate?: string;
   submittedBy?: string;
   officeCategory?: string;
+  // ✅ NEW: Team Member Assignment
+  teamMemberNumber?: string;
+  isAssignedToTeam?: boolean;
 }
 
 /**
@@ -73,6 +76,51 @@ export interface CustomerDetails {
   loans?: Loan[];
   whatsappNumber?: string;
   lastPaymentDate?: string; // Added for performance optimization
+  // ✅ NEW: Team Member Assignment
+  teamMemberNumber?: string;
+  isAssignedToTeam?: boolean;
+}
+
+// ✅ NEW: Team Member Interface for Data Entry
+export interface TeamMember {
+  _id: string;
+  name: string;
+  phone: string;
+  whatsappNumber?: string;
+  address?: string;
+  loginId: string;
+  role: 'Recovery Team' | 'Data Entry Operator';
+  operatorNumber?: string; // For Data Entry Operators
+  teamMemberNumber?: string; // For Recovery Team (TM1-TM15)
+  officeCategory?: string;
+  status: 'active' | 'inactive';
+  joinDate?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// ✅ NEW: Customer Assignment Interface
+export interface CustomerAssignment {
+  customerId: string;
+  customerNumber: string;
+  customerName: string;
+  teamMemberNumber?: string;
+  assignedAt?: string;
+  assignedBy?: string;
+}
+
+// ✅ NEW: Team Management Stats
+export interface TeamManagementStats {
+  totalTeamMembers: number;
+  activeTeamMembers: number;
+  totalAssignedCustomers: number;
+  unassignedCustomers: number;
+  assignmentByTeamMember: Array<{
+    teamMemberNumber: string;
+    teamMemberName: string;
+    customerCount: number;
+    totalLoanAmount: number;
+  }>;
 }
 
 export interface CustomerNumberSuggestion {
@@ -609,6 +657,80 @@ export interface RenewLoanData {
 }
 
 // =============================================
+// TEAM MANAGEMENT TYPES (NEW)
+// =============================================
+
+/**
+ * Team Member Assignment Request
+ */
+export interface TeamMemberAssignmentRequest {
+  customerIds: string[];
+  teamMemberNumber: string;
+  assignedBy: string;
+  assignedByOffice: string;
+  notes?: string;
+}
+
+/**
+ * Team Member Assignment Response
+ */
+export interface TeamMemberAssignmentResponse {
+  success: boolean;
+  data: {
+    assignedCount: number;
+    failedCount: number;
+    totalCustomers: number;
+    teamMemberNumber: string;
+    assignedCustomers: Array<{
+      customerId: string;
+      customerNumber: string;
+      customerName: string;
+      success: boolean;
+      message?: string;
+    }>;
+  };
+}
+
+/**
+ * Team Member Removal Request
+ */
+export interface TeamMemberRemovalRequest {
+  customerIds: string[];
+  removedBy: string;
+  notes?: string;
+}
+
+/**
+ * Team Member Removal Response
+ */
+export interface TeamMemberRemovalResponse {
+  success: boolean;
+  data: {
+    removedCount: number;
+    failedCount: number;
+    totalCustomers: number;
+    removedCustomers: Array<{
+      customerId: string;
+      customerNumber: string;
+      customerName: string;
+      success: boolean;
+      message?: string;
+    }>;
+  };
+}
+
+/**
+ * Bulk Assignment Preview
+ */
+export interface BulkAssignmentPreview {
+  customers: Customer[];
+  teamMemberNumber: string;
+  teamMemberName?: string;
+  totalCustomers: number;
+  totalLoanAmount: number;
+}
+
+// =============================================
 // FILTER & REQUEST TYPES
 // =============================================
 
@@ -968,6 +1090,26 @@ export interface CustomerDetailsModalProps extends BaseModalProps {
   currentUserOffice: string;
 }
 
+// ✅ NEW: Team Management Modal Props
+export interface TeamManagementModalProps extends BaseModalProps {
+  teamMember: TeamMember;
+  customers: Customer[];
+  currentUserOffice: string;
+  currentOperator: Operator;
+  onAssignCustomers: (customerIds: string[], teamMemberNumber: string) => Promise<void>;
+  onRemoveAssignment: (customerIds: string[]) => Promise<void>;
+}
+
+// ✅ NEW: Customer Assignment Modal Props
+export interface CustomerAssignmentModalProps extends BaseModalProps {
+  teamMemberNumber: string;
+  teamMemberName?: string;
+  customers: Customer[];
+  assignedCustomers: Customer[];
+  onAssign: (customerIds: string[]) => Promise<void>;
+  onRemove: (customerIds: string[]) => Promise<void>;
+}
+
 // =============================================
 // SECTION COMPONENTS PROPS TYPES (NEW - REQUIRED FOR OPTIMIZATIONS)
 // =============================================
@@ -1016,6 +1158,10 @@ export interface CollectionSectionProps {
  */
 export interface RequestsSectionProps {
   refreshKey: number;
+  currentUserOffice?: string;
+  currentOperatorId?: string;
+  currentOperatorName?: string;
+  onRefresh?: () => void;
 }
 
 /**
@@ -1026,6 +1172,15 @@ export interface DashboardSectionProps {
   onNavigateToTab: (tab: string) => void;
   onShowAddCustomer: () => void;
   onShowUpdateEMI: () => void;
+}
+
+// ✅ NEW: Team Management Section Props
+export interface TeamManagementSectionProps {
+  currentUserOffice: string;
+  currentOperator: Operator;
+  refreshKey: number;
+  onViewTeamMemberDetails?: (teamMember: TeamMember) => void;
+  onManageTeamMember?: (teamMember: TeamMember) => void;
 }
 
 // =============================================
@@ -1158,6 +1313,40 @@ export interface CollectionApiResponse {
       partialPaymentsAmount?: number; // ✅ NEW: Added
     };
   };
+  error?: string;
+  message?: string;
+}
+
+// ✅ NEW: Team Management API Response Types
+export interface TeamMembersResponse {
+  success: boolean;
+  data?: TeamMember[];
+  error?: string;
+  message?: string;
+}
+
+export interface CustomerAssignmentResponse {
+  success: boolean;
+  data?: {
+    assignedCount: number;
+    failedCount: number;
+    totalCustomers: number;
+    teamMemberNumber: string;
+    assignedCustomers: Array<{
+      customerId: string;
+      customerNumber: string;
+      customerName: string;
+      success: boolean;
+      message?: string;
+    }>;
+  };
+  error?: string;
+  message?: string;
+}
+
+export interface TeamManagementStatsResponse {
+  success: boolean;
+  data?: TeamManagementStats;
   error?: string;
   message?: string;
 }

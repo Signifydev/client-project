@@ -15,11 +15,16 @@ export default function RecoveryTeamModal({ member, onSave, onClose }: RecoveryT
     phone: member?.phone || '',
     whatsappNumber: member?.whatsappNumber || '',
     address: member?.address || '',
+    officeCategory: member?.officeCategory || 'Office 1',
+    teamMemberNumber: member?.teamMemberNumber || '',
     loginId: member?.loginId || '',
     password: member?.password || '',
     confirmPassword: '',
     status: member?.status || 'active'
   });
+
+  // Team Member Numbers TM1 to TM15
+  const teamMemberNumbers = Array.from({ length: 15 }, (_, i) => `TM${i + 1}`);
 
   const generateRandomId = () => {
     const prefix = 'RT';
@@ -62,6 +67,11 @@ export default function RecoveryTeamModal({ member, onSave, onClose }: RecoveryT
 
     if (!member && !formData.password) {
       alert('Please generate credentials!');
+      return;
+    }
+
+    if (!formData.teamMemberNumber) {
+      alert('Please select Team Member Number!');
       return;
     }
 
@@ -132,11 +142,51 @@ export default function RecoveryTeamModal({ member, onSave, onClose }: RecoveryT
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Office Category *
+                </label>
+                <select
+                  required
+                  value={formData.officeCategory}
+                  onChange={(e) => setFormData({ ...formData, officeCategory: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg"
+                >
+                  <option value="Office 1">Office 1</option>
+                  <option value="Office 2">Office 2</option>
+                </select>
+                <p className="text-sm text-gray-500 mt-2">
+                  This determines which customers the recovery team member can access
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Team Member Number *
+                </label>
+                <select
+                  required
+                  value={formData.teamMemberNumber}
+                  onChange={(e) => setFormData({ ...formData, teamMemberNumber: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg"
+                >
+                  <option value="">Select Team Member Number</option>
+                  {teamMemberNumbers.map(number => (
+                    <option key={number} value={number}>{number}</option>
+                  ))}
+                </select>
+                <p className="text-sm text-gray-500 mt-2">
+                  Unique identifier for recovery team member (TM1-TM15)
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Status
                 </label>
                 <select
                   value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-lg"
                 >
                   <option value="active">Active</option>

@@ -20,10 +20,20 @@ export default function DataEntryOperatorModal({ member, onSave, onClose }: Data
     loginId: member?.loginId || '',
     password: member?.password || '',
     confirmPassword: '',
+    permissions: member?.permissions || 'only_data_entry', // NEW: Permissions field
     status: member?.status || 'active'
   });
 
   const [showPassword, setShowPassword] = useState(false);
+
+  // Operator Numbers Operator 1 to Operator 10
+  const operatorNumbers = Array.from({ length: 10 }, (_, i) => `Operator ${i + 1}`);
+
+  // Permission options
+  const permissionOptions = [
+    { value: 'only_data_entry', label: 'Only Data Entry' },
+    { value: 'data_entry_plus_team', label: 'Data Entry + Team Management' }
+  ];
 
   const generateRandomId = () => {
     const prefix = 'DE';
@@ -74,11 +84,22 @@ export default function DataEntryOperatorModal({ member, onSave, onClose }: Data
       return;
     }
 
-    const { confirmPassword, ...saveData } = formData;
+    // Prepare data to save
+    const saveData = {
+      name: formData.name,
+      phone: formData.phone,
+      whatsappNumber: formData.whatsappNumber,
+      address: formData.address,
+      officeCategory: formData.officeCategory,
+      operatorNumber: formData.operatorNumber,
+      loginId: formData.loginId,
+      password: formData.password,
+      permissions: formData.permissions, // NEW: Include permissions
+      status: formData.status
+    };
+
     onSave(saveData);
   };
-
-  const operatorNumbers = Array.from({ length: 10 }, (_, i) => `Operator ${i + 1}`);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -160,7 +181,7 @@ export default function DataEntryOperatorModal({ member, onSave, onClose }: Data
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Operator Number *
@@ -177,7 +198,30 @@ export default function DataEntryOperatorModal({ member, onSave, onClose }: Data
                   ))}
                 </select>
                 <p className="text-sm text-gray-500 mt-2">
-                  This will be used to track operator activities
+                  Unique identifier for data entry operator (Operator 1-Operator 10)
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Data Entry Control Option *
+                </label>
+                <select
+                  required
+                  value={formData.permissions}
+                  onChange={(e) => setFormData({ ...formData, permissions: e.target.value as any })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
+                >
+                  {permissionOptions.map(option => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-sm text-gray-500 mt-2">
+                  {formData.permissions === 'only_data_entry' 
+                    ? 'Operator will NOT see Team Management section'
+                    : 'Operator will see Team Management section'}
                 </p>
               </div>
 
@@ -187,7 +231,7 @@ export default function DataEntryOperatorModal({ member, onSave, onClose }: Data
                 </label>
                 <select
                   value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
                 >
                   <option value="active">Active</option>
@@ -238,7 +282,7 @@ export default function DataEntryOperatorModal({ member, onSave, onClose }: Data
                     onChange={(e) => setFormData({ ...formData, loginId: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg bg-gray-50"
                     placeholder="Click generate to create Login ID"
-                    readOnly
+                    readOnly={!member}
                   />
                   <p className="text-sm text-gray-500 mt-1">
                     System-generated Login ID for data entry
@@ -304,6 +348,18 @@ export default function DataEntryOperatorModal({ member, onSave, onClose }: Data
                     </div>
                   </>
                 )}
+              </div>
+
+              {/* Permissions Information Box */}
+              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm text-blue-800 font-medium mb-2">
+                  <span className="inline-block w-4 h-4 bg-blue-500 text-white rounded-full text-xs text-center mr-2">ℹ️</span>
+                  <strong>Permission Information:</strong>
+                </p>
+                <ul className="text-sm text-blue-700 space-y-1 ml-6">
+                  <li>• <strong>Only Data Entry:</strong> Operator can ONLY manage customer data (No Team Management access)</li>
+                  <li>• <strong>Data Entry + Team Management:</strong> Operator can manage customer data AND team members</li>
+                </ul>
               </div>
 
               {formData.loginId && formData.password && !member && (

@@ -17,9 +17,11 @@ interface SaveMemberData {
   address?: string;
   officeCategory?: string;
   operatorNumber?: string;
+  teamMemberNumber?: string;
   status: 'active' | 'inactive';
   loginId?: string;
   password?: string;
+  permissions?: 'only_data_entry' | 'data_entry_plus_team';
 }
 
 export default function TeamManagement({ onBack }: TeamManagementProps) {
@@ -188,8 +190,11 @@ export default function TeamManagement({ onBack }: TeamManagementProps) {
           whatsappNumber: selectedTeamMember?.whatsappNumber,
           address: selectedTeamMember?.address,
           role: selectedTeamMember?.role,
+          operatorNumber: selectedTeamMember?.operatorNumber,
+          teamMemberNumber: selectedTeamMember?.teamMemberNumber,
           officeCategory: selectedTeamMember?.officeCategory,
-          status: selectedTeamMember?.status
+          status: selectedTeamMember?.status,
+          permissions: selectedTeamMember?.permissions
         }),
       });
 
@@ -208,8 +213,36 @@ export default function TeamManagement({ onBack }: TeamManagementProps) {
     }
   };
 
+  // Function to get permission badge style
+  const getPermissionBadgeStyle = (permissions: string | undefined) => {
+    switch (permissions) {
+      case 'only_data_entry':
+        return 'bg-green-100 text-green-800 border-green-200';
+      case 'data_entry_plus_team':
+        return 'bg-purple-100 text-purple-800 border-purple-200';
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  // Function to get permission label
+  const getPermissionLabel = (permissions: string | undefined) => {
+    switch (permissions) {
+      case 'only_data_entry':
+        return 'Only Data Entry';
+      case 'data_entry_plus_team':
+        return 'Data Entry + Team';
+      default:
+        return 'No Permission Set';
+    }
+  };
+
   const recoveryTeamMembers = teamMembers.filter(member => member.role === 'Recovery Team');
   const dataEntryOperators = teamMembers.filter(member => member.role === 'Data Entry Operator');
+
+  // Calculate permission statistics
+  const onlyDataEntryCount = dataEntryOperators.filter(m => m.permissions === 'only_data_entry').length;
+  const dataEntryPlusTeamCount = dataEntryOperators.filter(m => m.permissions === 'data_entry_plus_team').length;
 
   return (
     <div className="space-y-6">
@@ -257,6 +290,12 @@ export default function TeamManagement({ onBack }: TeamManagementProps) {
                 {recoveryTeamMembers.filter(m => m.status === 'active').length}
               </span>
             </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">Assigned Numbers</span>
+              <span className="text-lg font-semibold text-purple-600">
+                {recoveryTeamMembers.filter(m => m.teamMemberNumber).length}
+              </span>
+            </div>
           </div>
 
           <button 
@@ -294,6 +333,18 @@ export default function TeamManagement({ onBack }: TeamManagementProps) {
               <span className="text-sm text-gray-600">Office Categories</span>
               <span className="text-lg font-semibold text-purple-600">
                 {[...new Set(dataEntryOperators.map(m => m.officeCategory).filter(Boolean))].length}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">Only Data Entry</span>
+              <span className="text-lg font-semibold text-green-600">
+                {onlyDataEntryCount}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">Data Entry + Team</span>
+              <span className="text-lg font-semibold text-purple-600">
+                {dataEntryPlusTeamCount}
               </span>
             </div>
           </div>
@@ -353,6 +404,24 @@ export default function TeamManagement({ onBack }: TeamManagementProps) {
                         }`}>
                           {member.status}
                         </span>
+                        
+                        {/* Permission Badge (for Data Entry Operators only) */}
+                        {member.role === 'Data Entry Operator' && member.permissions && (
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getPermissionBadgeStyle(member.permissions)}`}>
+                            {getPermissionLabel(member.permissions)}
+                          </span>
+                        )}
+                        
+                        {member.operatorNumber && (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                            {member.operatorNumber}
+                          </span>
+                        )}
+                        {member.teamMemberNumber && (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                            {member.teamMemberNumber}
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center space-x-4 mt-1">
                         <p className="text-sm text-gray-600">{member.phone}</p>
@@ -361,9 +430,12 @@ export default function TeamManagement({ onBack }: TeamManagementProps) {
                             Office: <span className="font-medium">{member.officeCategory}</span>
                           </p>
                         )}
-                        {member.operatorNumber && (
-                          <p className="text-sm text-gray-600">
-                            Operator: <span className="font-medium">{member.operatorNumber}</span>
+                        <p className="text-sm text-gray-500">
+                          Login ID: <span className="font-mono">{member.loginId}</span>
+                        </p>
+                        {member.role === 'Data Entry Operator' && member.permissions && (
+                          <p className="text-sm text-gray-500">
+                            Access: <span className="font-medium">{getPermissionLabel(member.permissions)}</span>
                           </p>
                         )}
                         <p className="text-sm text-gray-500">
