@@ -359,80 +359,7 @@ export default function TeamManagementSection({
 
   return (
     <div className="space-y-6">
-      {/* Header with Stats */}
-      <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-lg p-6 text-white">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-2xl font-bold">Team Management</h1>
-            <p className="text-purple-100 mt-1">Manage Recovery Team members and customer assignments</p>
-          </div>
-          <button
-            onClick={handleRefresh}
-            className="bg-white text-purple-700 px-4 py-2 rounded-lg hover:bg-purple-50 transition-colors font-medium flex items-center"
-          >
-            <span className="mr-2">🔄</span> Refresh
-          </button>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
-          <div className="bg-white bg-opacity-20 backdrop-blur-sm rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-purple-100">Total Team Members</p>
-                <p className="text-2xl font-bold">{teamMembers.length}</p>
-              </div>
-              <div className="w-10 h-10 bg-white bg-opacity-30 rounded-full flex items-center justify-center">
-                <span className="text-lg">👥</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white bg-opacity-20 backdrop-blur-sm rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-purple-100">Active Members</p>
-                <p className="text-2xl font-bold">
-                  {teamMembers.filter(m => m.status === 'active').length}
-                </p>
-              </div>
-              <div className="w-10 h-10 bg-white bg-opacity-30 rounded-full flex items-center justify-center">
-                <span className="text-lg">✅</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white bg-opacity-20 backdrop-blur-sm rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-purple-100">Assigned Customers</p>
-                <p className="text-2xl font-bold">
-                  {customers.filter(c => c.teamMemberNumber && c.teamMemberNumber.trim() !== '').length}
-                </p>
-              </div>
-              <div className="w-10 h-10 bg-white bg-opacity-30 rounded-full flex items-center justify-center">
-                <span className="text-lg">📋</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white bg-opacity-20 backdrop-blur-sm rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-purple-100">Unassigned Customers</p>
-                <p className="text-2xl font-bold">
-                  {customers.filter(c => !c.teamMemberNumber || c.teamMemberNumber.trim() === '').length}
-                </p>
-              </div>
-              <div className="w-10 h-10 bg-white bg-opacity-30 rounded-full flex items-center justify-center">
-                <span className="text-lg">📝</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filters and Search */}
+      {/* Filters and Search for Team Members */}
       <div className="bg-white rounded-lg shadow-sm p-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex flex-col md:flex-row md:items-center gap-4">
@@ -611,7 +538,7 @@ export default function TeamManagementSection({
           </div>
         </div>
 
-        {/* Customers Table */}
+        {/* Customers Table - REMOVED Loan Details and Actions columns */}
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead>
@@ -626,13 +553,7 @@ export default function TeamManagementSection({
                   Business
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Loan Details
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Assigned To
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
                 </th>
               </tr>
             </thead>
@@ -660,20 +581,6 @@ export default function TeamManagementSection({
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900">{customer.businessName}</div>
                     <div className="text-sm text-gray-500">{customer.area}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {customer.loanAmount ? (
-                      <>
-                        <div className="text-sm font-medium text-gray-900">
-                          {formatCurrency(customer.loanAmount)}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          EMI: {formatCurrency(customer.emiAmount || 0)} ({customer.loanType || 'Daily'})
-                        </div>
-                      </>
-                    ) : (
-                      <span className="text-sm text-gray-500">No active loan</span>
-                    )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {customer.teamMemberNumber ? (
@@ -717,23 +624,6 @@ export default function TeamManagementSection({
                         </select>
                       </div>
                     )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button
-                      onClick={() => {
-                        if (customer.teamMemberNumber) {
-                          const member = teamMembers.find(m => m.teamMemberNumber === customer.teamMemberNumber);
-                          if (member) {
-                            handleManageTeamMember(member);
-                          }
-                        }
-                      }}
-                      className="text-purple-600 hover:text-purple-900 mr-4"
-                      disabled={!customer.teamMemberNumber}
-                      title={customer.teamMemberNumber ? "Manage assignment" : "Customer not assigned"}
-                    >
-                      Manage
-                    </button>
                   </td>
                 </tr>
               ))}
