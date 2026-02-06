@@ -8,11 +8,11 @@ export async function POST(req) {
   try {
     await connectDB();
 
-    const { loginId, password } = await req.json();
+    const { loginId, password, deviceId } = await req.json();
 
-    if (!loginId || !password) {
+    if (!loginId || !password || !deviceId) {
       return NextResponse.json(
-        { success: false, message: 'Missing credentials' },
+        { success: false, message: 'Missing credentials or device info' },
         { status: 400 }
       );
     }
@@ -35,6 +35,27 @@ export async function POST(req) {
       );
     }
 
+    // 🔒 SINGLE DEVICE LOGIN CHECK
+    if (
+      customer.activeDeviceId &&
+      customer.activeDeviceId !== deviceId
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          errorCode: 'ACTIVE_SESSION_EXISTS',
+          message:
+            'You are already logged in on another device. Please logout from that device first.',
+        },
+        { status: 403 }
+      );
+    }
+
+    // ✅ LOGIN ALLOWED — SAVE DEVICE
+    customer.activeDeviceId = deviceId;
+    customer.lastLoginAt = new Date();
+    await customer.save();
+
     const token = jwt.sign(
       {
         id: customer._id,
@@ -46,9 +67,11 @@ export async function POST(req) {
 
     return NextResponse.json({
       success: true,
-      otpRequired: customer.isFirstLogin,
-      customerId: customer._id,
       token,
+      customer: {
+        name: customer.name,
+        customerNumber: customer.customerNumber,
+      },
     });
 
   } catch (error) {
