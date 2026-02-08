@@ -36,11 +36,12 @@ export async function GET(req) {
 
     // ✅ FIXED: Correct way to fetch active loans
     const loans = await Loan.find({
-      customerId: customer._id,
-      status: 'active',
-      isRenewed: false,
-      $expr: { $lt: ['$emiPaidCount', '$totalEmiCount'] },
-    }).sort({ createdAt: -1 });
+  customerId: customer._id,
+  status: 'active',
+  isRenewed: false,
+  $expr: { $lt: ['$emiPaidCount', '$totalEmiCount'] }
+}).sort({ createdAt: -1 });
+
 
     // ✅ FIXED: Map loans for MOBILE APP
     const mobileLoans = loans.map((loan) => ({
