@@ -9,7 +9,6 @@ export async function GET(req) {
     await connectDB();
 
     const authHeader = req.headers.get('authorization');
-
     if (!authHeader) {
       return NextResponse.json(
         { success: false, message: 'Unauthorized' },
@@ -28,7 +27,6 @@ export async function GET(req) {
     }
 
     const customer = await Customer.findById(decoded.id);
-
     if (!customer) {
       return NextResponse.json(
         { success: false, message: 'Customer not found' },
@@ -36,15 +34,32 @@ export async function GET(req) {
       );
     }
 
+    // ✅ FIXED: Correct way to fetch active loans
     const loans = await Loan.find({
       customerId: customer._id,
-      isActive: true,
+      status: 'active',
+      isRenewed: false,
+      $expr: { $lt: ['$emiPaidCount', '$totalEmiCount'] },
     }).sort({ createdAt: -1 });
+
+    // ✅ FIXED: Map loans for MOBILE APP
+    const mobileLoans = loans.map((loan) => ({
+      loanNumber: loan.loanNumber,
+      loanAmount: loan.totalLoanAmount,      // 🔑 mapped
+      emiAmount: loan.emiAmount,
+      loanDays: loan.loanDays,
+      paidEmis: loan.emiPaidCount,            // 🔑 mapped
+      status: loan.status,
+      progress: loan.progressPercentage,      // 🔑 virtual
+      remainingAmount: loan.remainingAmount,
+      loanType: loan.loanType,
+      nextEmiDate: loan.nextEmiDateDisplay,
+    }));
 
     return NextResponse.json({
       success: true,
       customer,
-      loans,
+      loans: mobileLoans,
     });
 
   } catch (error) {
