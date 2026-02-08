@@ -1,58 +1,93 @@
-import { NextResponse } from 'next/server';
-import { connectDB } from '@/lib/db';
-import mongoose from 'mongoose';
-import bcrypt from 'bcryptjs';
+import { NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import { connectDB } from "@/lib/db";
+import Customer from "@/lib/models/Customer";
 
-export async function POST(request) {
+export async function POST(req) {
   try {
-    const { loginId, password, role } = await request.json();
+    await connectDB();
 
-    if (!loginId || !password) {
+    const { loginId, password, deviceId } = await req.json();
+
+    if (!loginId || !password || !deviceId) {
       return NextResponse.json(
-        { success: false, error: 'Login ID and password are required' },
+        { success: false, message: "Missing credentials" },
         { status: 400 }
       );
     }
 
-    await connectDB();
-    const db = mongoose.connection.db;
+    const customer = await Customer.findOne({ loginId });
 
-    // Find team member by loginId and role
-    const teamMember = await db.collection('team_members').findOne({ 
-      loginId: loginId,
-      role: role,
-      status: 'active'
-    });
-
-    if (!teamMember) {
+    if (!customer) {
       return NextResponse.json(
-        { success: false, error: 'Invalid credentials or role mismatch' },
+        { success: false, message: "Invalid credentials" },
         { status: 401 }
       );
     }
 
-    // Check password
-    const isPasswordValid = await bcrypt.compare(password, teamMember.password);
-
-    if (!isPasswordValid) {
+    if (customer.status !== "active" || customer.isActive !== true) {
       return NextResponse.json(
-        { success: false, error: 'Invalid credentials' },
+        { success: false, message: "Customer not approved or inactive" },
+        { status: 403 }
+      );
+    }
+
+    const isMatch = await bcrypt.compare(password, customer.password);
+
+    if (!isMatch) {
+      return NextResponse.json(
+        { success: false, message: "Invalid credentials" },
         { status: 401 }
       );
     }
 
-    // Return team member data (without password)
-    const { password: _, ...memberData } = teamMember;
+    // 🔒 SINGLE DEVICE LOGIN CHECK
+    if (
+      customer.activeDeviceId &&
+      customer.activeDeviceId !== deviceId
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          errorCode: "ACTIVE_SESSION_EXISTS",
+          message:
+            "You are already logged in on another device. Please logout from that device first."
+        },
+        { status: 403 }
+      );
+    }
+
+    // ✅ REGISTER DEVICE SESSION
+    customer.activeDeviceId = deviceId;
+    customer.lastLoginAt = new Date();
+    await customer.save();
+
+    // 🔐 ISSUE JWT
+    const token = jwt.sign(
+      {
+        id: customer._id,
+        role: "customer"
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
 
     return NextResponse.json({
       success: true,
-      data: memberData,
-      message: 'Login successful'
+      token,
+      customer: {
+        id: customer._id,
+        name: customer.name,
+        customerNumber: customer.customerNumber,
+        businessName: customer.businessName
+      }
     });
+
   } catch (error) {
-    console.error('Login Error:', error);
+    console.error("❌ Customer Login Error:", error);
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, message: "Internal server error" },
       { status: 500 }
     );
   }

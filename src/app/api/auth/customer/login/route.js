@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { connectDB } from "@/lib/db";
 import Customer from '@/lib/models/Customer';
-import { generateOTP, hashOTP } from "@/lib/otp";
+
 
 export async function POST(req) {
   try {
@@ -43,26 +43,6 @@ export async function POST(req) {
       );
     }
 
-    // 🔐 FIRST LOGIN → OTP
-    if (customer.isFirstLogin !== false) {
-      const otp = generateOTP();
-      const hashedOtp = await hashOTP(otp);
-
-      customer.otp = hashedOtp;
-      customer.otpExpiresAt = new Date(Date.now() + 5 * 60 * 1000);
-      customer.isFirstLogin = true;
-
-      await customer.save();
-
-      // TODO: Integrate SMS API here
-      console.log("📨 OTP sent to:", customer.phone?.[0], "OTP:", otp);
-
-      return NextResponse.json({
-        success: true,
-        otpRequired: true,
-        message: "OTP sent to registered mobile number"
-      });
-    }
 
     // ✅ NORMAL LOGIN (OTP already verified)
     return NextResponse.json({
